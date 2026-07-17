@@ -100,6 +100,7 @@ def _tool_to_dto(row: AiToolRow) -> AiTool:
         status=row.status,
         approved_by=row.approved_by,
         approved_at=row.approved_at,
+        first_seen=row.first_seen,
     )
 
 
@@ -143,12 +144,26 @@ class PgAuditRepo:
 
     def list(self, *, limit: int, offset: int,
              status: str | None = None,
-             decision: str | None = None) -> tuple[list[AuditRecord], int]:
+             decision: str | None = None,
+             cross_department_only: bool = False,
+             ) -> tuple[list[AuditRecord], int]:
         filters = []
         if status is not None:
             filters.append(AuditLog.status == status)
         if decision is not None:
             filters.append(AuditLog.decision == decision)
+        if cross_department_only:
+            # See app/repo/base.py for the definition -- keep this in sync
+            # with InMemoryAuditRepo.list's _is_cross_department, or the two
+            # backends disagree on what "cross-department" means. In the
+            # same where() as the other filters, not a post-query Python
+            # filter: total has to reflect this BEFORE limit/offset.
+            filters += [
+                AuditLog.content_department.is_not(None),
+                AuditLog.user_department.is_not(None),
+                AuditLog.content_department != AuditLog.user_department,
+                AuditLog.department_confidence > 0.6,
+            ]
 
         total = self.s.scalar(
             select(func.count()).select_from(AuditLog).where(*filters)

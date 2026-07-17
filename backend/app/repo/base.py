@@ -76,6 +76,11 @@ class AiTool:
     status: str                    # approved | unapproved | blocked
     approved_by: str | None
     approved_at: datetime | None
+    first_seen: datetime           # first time this host was ever seen.
+                                   # NEVER reset. register() on a known host
+                                   # returns it unchanged (SD-7) -- this field
+                                   # is the "first seen" in shadow-AI
+                                   # discovery, and moving it erases the story.
 
 
 @dataclass
@@ -99,7 +104,9 @@ class AuditRepo(Protocol):
     def get(self, log_id: str) -> AuditRecord | None: ...
     def list(self, *, limit: int, offset: int,
              status: str | None = None,
-             decision: str | None = None) -> tuple[list[AuditRecord], int]: ...
+             decision: str | None = None,
+             cross_department_only: bool = False,
+             ) -> tuple[list[AuditRecord], int]: ...
     def set_decision(self, log_id: str, *, approve: bool,
                      reviewer: str, remark: str) -> AuditRecord: ...
     def stats(self) -> StatsSummary: ...
@@ -146,6 +153,18 @@ class UserRepo(Protocol):
 # AuditRepo.list        newest first (ts desc, log_id desc as tie-break).
 #                       Returns (page, total_matching_filters) -- total is the
 #                       count BEFORE limit/offset, so the dashboard can page.
+#                       cross_department_only=True additionally requires:
+#                           content_department IS NOT NULL
+#                           AND user_department IS NOT NULL
+#                           AND content_department != user_department
+#                           AND department_confidence > 0.6
+#                       Strictly greater than 0.6 -- exactly 0.6 is NOT
+#                       cross-department; M6 renders it muted and unbadged,
+#                       because below the threshold the label is noise and
+#                       badging it would be a claim we cannot support.
+#                       Composes with status/decision as AND, not OR. Applied
+#                       BEFORE the count: total is the number of rows matching
+#                       ALL filters including this one, never the page size.
 # AuditRepo.set_decision
 #                       status -> "approved" | "denied". decision is NOT
 #                       touched: the verdict is a historical fact, the review
@@ -160,6 +179,11 @@ class UserRepo(Protocol):
 # ToolRepo.register     known host -> returned unchanged, NOT reset to
 #                       unapproved. Unknown host -> PUBLIC_AI / unapproved.
 #                       SD-7: record it, never hold on account of it.
+#                       first_seen: set once, on first registration, and
+#                       never moved after -- a known host's re-registration
+#                       (which happens on every single prompt to that host)
+#                       returns first_seen unchanged. This is what makes the
+#                       column mean "first" rather than "last".
 # ToolRepo.all          unapproved and blocked first, then host asc. M6 wants
 #                       the shadow AI at the top of the table.
 # UserRepo.by_id        unknown user_id -> None, never an exception. What M1

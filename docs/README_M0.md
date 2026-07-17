@@ -121,9 +121,11 @@ speculative, and adding to a Protocol later breaks no caller.
 
 ## Two things still open for the team
 
-1. **`AiTool` has no `first_seen`, but M6's tools table wants that column.**
-   The table has it; the DTO does not. Contract change — raise it at standup
-   rather than in a branch. Blocks M6 on day 4, not M1 today.
+1. ~~**`AiTool` has no `first_seen`...**~~ **Closed.** `first_seen` is now on
+   the `AiTool` DTO (additive field), set once at first `register()` and
+   never moved — a known host's re-registration, which happens on every
+   prompt to that host, returns it unchanged. Both backends and `seed.py`
+   agree on the value. See the pre-M6 backend patch.
 
 2. **`GET /v1/tools` is specced as "list[AiTool] + usage count"** and no method
    on `ToolRepo` returns a count. M1 can derive it from the audit log for now.

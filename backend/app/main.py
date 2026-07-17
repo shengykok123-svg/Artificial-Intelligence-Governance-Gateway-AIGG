@@ -269,10 +269,12 @@ def list_logs(
     offset: int = Query(0, ge=0),
     status: str | None = None,
     decision: str | None = None,
+    cross_department_only: bool = Query(False),
     repos: Repos = Depends(get_repos),
 ) -> dict:
     rows, total = repos.audit.list(limit=limit, offset=offset,
-                                   status=status, decision=decision)
+                                   status=status, decision=decision,
+                                   cross_department_only=cross_department_only)
     return {"items": rows, "total": total, "limit": limit, "offset": offset}
 
 

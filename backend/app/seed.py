@@ -193,7 +193,8 @@ def seed_memory(repos) -> None:
     repos.tools._seed([
         AiTool(host=h, tier=t, status=s,
                approved_by="admin@acme.my" if s == "approved" else None,
-               approved_at=now if s == "approved" else None)
+               approved_at=now if s == "approved" else None,
+               first_seen=now - timedelta(days=30))
         for h, t, s in TOOLS
     ])
 

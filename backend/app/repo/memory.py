@@ -36,6 +36,16 @@ def _rank(counter: Counter[str]) -> list[tuple[str, int]]:
     return sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))[:_TOP_N]
 
 
+def _is_cross_department(r: AuditRecord) -> bool:
+    """See app/repo/base.py for the definition. Strictly greater than 0.6."""
+    return (
+        r.content_department is not None
+        and r.user_department is not None
+        and r.content_department != r.user_department
+        and r.department_confidence > 0.6
+    )
+
+
 # --------------------------------------------------------------------------
 
 
@@ -57,12 +67,19 @@ class InMemoryAuditRepo:
 
     def list(self, *, limit: int, offset: int,
              status: str | None = None,
-             decision: str | None = None) -> tuple[list[AuditRecord], int]:
+             decision: str | None = None,
+             cross_department_only: bool = False,
+             ) -> tuple[list[AuditRecord], int]:
         rows = list(self._rows.values())
         if status is not None:
             rows = [r for r in rows if r.status == status]
         if decision is not None:
             rows = [r for r in rows if r.decision == decision]
+        if cross_department_only:
+            # See app/repo/base.py for the definition -- keep this in sync
+            # with PgAuditRepo.list's WHERE clause, or the two backends
+            # disagree on what "cross-department" means.
+            rows = [r for r in rows if _is_cross_department(r)]
         rows.sort(key=lambda r: (r.ts, r.log_id), reverse=True)
         total = len(rows)
         page = [deepcopy(r) for r in rows[offset:offset + limit]]
@@ -128,11 +145,7 @@ class InMemoryRuleRepo:
 
 class InMemoryToolRepo:
     def __init__(self, rows: list[AiTool] | None = None) -> None:
-        self._rows: dict[str, AiTool] = {}
-        self._first_seen: dict[str, datetime] = {}
-        for row in rows or []:
-            self._rows[row.host] = deepcopy(row)
-            self._first_seen[row.host] = _now()
+        self._rows: dict[str, AiTool] = {r.host: deepcopy(r) for r in (rows or [])}
 
     def by_host(self, host: str) -> AiTool | None:
         row = self._rows.get(host)
@@ -151,15 +164,13 @@ class InMemoryToolRepo:
         # SD-7: an unknown host is auto-registered, silently. Record it,
         # do not hold the prompt. This one method is the shadow-AI story.
         tool = AiTool(host=host, tier="PUBLIC_AI", status="unapproved",
-                      approved_by=None, approved_at=None)
+                      approved_by=None, approved_at=None, first_seen=_now())
         self._rows[host] = tool
-        self._first_seen[host] = _now()
         return deepcopy(tool)
 
     # Not part of IF-9. seed.py uses it.
     def _seed(self, rows: list[AiTool]) -> None:
         self._rows = {r.host: deepcopy(r) for r in rows}
-        self._first_seen = {r.host: _now() for r in rows}
 
     # Not part of IF-9. Used by M6's approve/block handler once M1 wires it;
     # kept off the protocol until the team agrees on it.

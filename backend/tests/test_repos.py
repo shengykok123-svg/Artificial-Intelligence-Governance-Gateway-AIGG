@@ -108,6 +108,115 @@ def test_list_filters(repos):
     assert total == 1
 
 
+# --------------------------------------------------------------------------
+# AuditRepo.list -- cross_department_only (M6's cross-department view)
+# --------------------------------------------------------------------------
+
+def test_cross_department_only_returns_only_matching_rows(repos):
+    repos.audit.create(rec(log_id="same", user_department="finance",
+                           content_department="finance",
+                           department_confidence=0.95))
+    repos.audit.create(rec(log_id="cross", user_department="finance",
+                           content_department="hr",
+                           department_confidence=0.61))
+    # Boundary: exactly 0.6 is NOT cross-department -- pinned per the
+    # contract in app/repo/base.py, not left to whatever the seed happens
+    # to produce.
+    repos.audit.create(rec(log_id="boundary", user_department="finance",
+                           content_department="hr",
+                           department_confidence=0.6))
+    repos.audit.create(rec(log_id="no-content-dept", user_department="finance",
+                           content_department=None,
+                           department_confidence=0.9))
+    repos.audit.create(rec(log_id="no-user-dept", user_department=None,
+                           content_department="hr",
+                           department_confidence=0.9))
+
+    page, total = repos.audit.list(limit=50, offset=0,
+                                   cross_department_only=True)
+    assert total == 1
+    assert [r.log_id for r in page] == ["cross"]
+
+
+def test_cross_department_only_composes_with_decision_filter(repos):
+    repos.audit.create(rec(log_id="cross-hold", decision="hold",
+                           user_department="finance",
+                           content_department="hr",
+                           department_confidence=0.9))
+    repos.audit.create(rec(log_id="cross-allow", decision="allow",
+                           user_department="finance",
+                           content_department="hr",
+                           department_confidence=0.9))
+    repos.audit.create(rec(log_id="same-hold", decision="hold",
+                           user_department="finance",
+                           content_department="finance",
+                           department_confidence=0.9))
+
+    page, total = repos.audit.list(limit=50, offset=0,
+                                   cross_department_only=True, decision="hold")
+    assert total == 1
+    assert [r.log_id for r in page] == ["cross-hold"]
+
+
+def test_cross_department_only_false_is_unchanged(repos):
+    repos.audit.create(rec(log_id="same", user_department="finance",
+                           content_department="finance"))
+    repos.audit.create(rec(log_id="cross", user_department="finance",
+                           content_department="hr",
+                           department_confidence=0.9))
+
+    _, implicit_total = repos.audit.list(limit=50, offset=0)
+    _, explicit_total = repos.audit.list(limit=50, offset=0,
+                                         cross_department_only=False)
+    assert implicit_total == explicit_total == 2
+
+
+def test_cross_department_only_total_reflects_filter_not_page_size(repos):
+    # The bug this whole change exists to prevent: a client-side toggle over
+    # one page filters the PAGE, not the LOG. total has to prove it didn't --
+    # 1 of 3 mismatches on a 20-row page looks completely correct and is not.
+    for i in range(5):
+        repos.audit.create(rec(log_id=f"cross-{i}", user_department="finance",
+                               content_department="hr",
+                               department_confidence=0.9))
+    for i in range(25):
+        repos.audit.create(rec(log_id=f"same-{i}", user_department="finance",
+                               content_department="finance"))
+
+    page, total = repos.audit.list(limit=2, offset=0,
+                                   cross_department_only=True)
+    assert total == 5             # not 30, and not 2
+    assert len(page) == 2
+
+
+def test_cross_department_only_against_real_seed_data(repos):
+    # Assert against what the seed really produces, not a number copied out
+    # of a prompt: recompute the predicate independently and compare.
+    from app.seed import _audit_rows
+
+    for row in _audit_rows():
+        repos.audit.create(row)
+
+    def is_cross_department(r) -> bool:
+        return (
+            r.content_department is not None
+            and r.user_department is not None
+            and r.content_department != r.user_department
+            and r.department_confidence > 0.6
+        )
+
+    everything, everything_total = repos.audit.list(limit=1000, offset=0)
+    assert everything_total == 30
+    expected_ids = {r.log_id for r in everything if is_cross_department(r)}
+    assert expected_ids   # the seed plants mismatches on purpose -- not empty
+
+    filtered, filtered_total = repos.audit.list(limit=1000, offset=0,
+                                                 cross_department_only=True)
+    assert filtered_total == len(expected_ids)
+    assert {r.log_id for r in filtered} == expected_ids
+    assert all(is_cross_department(r) for r in filtered)
+
+
 def test_set_decision_approve(repos):
     repos.audit.create(rec(log_id="q-1", decision="hold", status="pending"))
     out = repos.audit.set_decision("q-1", approve=True,
@@ -276,6 +385,25 @@ def test_register_is_idempotent_and_does_not_reset_approval(repos):
     again = repos.tools.register("chatgpt.com")
     assert again.status == "approved"
     assert again.approved_by == "admin@acme.my"
+
+
+def test_register_unknown_host_sets_first_seen_to_roughly_now(repos):
+    before = datetime.now(timezone.utc)
+    tool = repos.tools.register("brand-new.ai")
+    after = datetime.now(timezone.utc)
+    assert before <= tool.first_seen <= after
+
+
+def test_register_known_host_does_not_move_first_seen(repos):
+    first = repos.tools.register("chatgpt.com")
+    # register() happens on every single prompt to a known host -- if this
+    # moved, the column would mean "last seen", not "first seen".
+    again = repos.tools.register("chatgpt.com")
+    assert again.first_seen == first.first_seen
+
+    repos.tools._set_status("chatgpt.com", "approved", "admin@acme.my")
+    approved = repos.tools.by_host("chatgpt.com")
+    assert approved.first_seen == first.first_seen
 
 
 def test_by_host_unknown_returns_none(repos):

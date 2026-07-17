@@ -178,6 +178,42 @@ def test_shadow_ai_registers_and_does_not_hold(client: TestClient) -> None:
     assert row["usage_count"] >= 1
 
 
+def test_tools_include_first_seen(client: TestClient) -> None:
+    tools = client.get("/v1/tools", headers=HEADERS).json()
+    seeded = next(t for t in tools if t["host"] == "chatgpt.com")
+    assert seeded["first_seen"] is not None  # rides along on asdict() for free
+
+    inspect(client, target_host="brand-new-shadow.ai", prompt="hi")
+    tools = client.get("/v1/tools", headers=HEADERS).json()
+    fresh = next(t for t in tools if t["host"] == "brand-new-shadow.ai")
+    assert fresh["first_seen"] is not None
+
+
+# --------------------------------------------------------------------------
+# cross_department_only (M6's cross-department view)
+# --------------------------------------------------------------------------
+
+
+def test_logs_cross_department_only_filters_and_totals_correctly(client: TestClient) -> None:
+    def is_cross_department(row: dict) -> bool:
+        return (
+            row["content_department"] is not None
+            and row["user_department"] is not None
+            and row["content_department"] != row["user_department"]
+            and row["department_confidence"] > 0.6
+        )
+
+    everything = client.get("/v1/logs", headers=HEADERS, params={"limit": 200}).json()
+    assert everything["total"] == 30    # the seeded set, unfiltered
+    expected_ids = {r["log_id"] for r in everything["items"] if is_cross_department(r)}
+    assert expected_ids   # the seed plants mismatches on purpose
+
+    filtered = client.get("/v1/logs", headers=HEADERS,
+                          params={"limit": 200, "cross_department_only": "true"}).json()
+    assert filtered["total"] == len(expected_ids)
+    assert {r["log_id"] for r in filtered["items"]} == expected_ids
+
+
 # --------------------------------------------------------------------------
 # Errors
 # --------------------------------------------------------------------------
