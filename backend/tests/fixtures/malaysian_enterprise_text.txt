@@ -1,0 +1,1 @@
+M2 fixture: realistic Malaysian enterprise text with expected offsets asserted in the test.

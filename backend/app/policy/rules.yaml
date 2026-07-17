@@ -1,0 +1,111 @@
+# backend/app/policy/rules.yaml
+#
+# THIS IS SEED DATA, NOT RUNTIME CONFIG.
+#
+# It is how policy_rules gets its first fifteen rows and nothing more. After
+# reset_db.py has run once, the table is the only source of truth and M3
+# never reads this file -- M1 fetches the rows via RuleRepo.all() and passes
+# them into decide() as an argument.
+#
+# The reason is the case study's own complaint: if changing "MyKad to a public
+# AI tool" from redact to deny needs a git commit, we have rebuilt the exact
+# governance gap we are supposed to be closing. A compliance officer cannot
+# wait for a release. Changing a rule must be a row edit.
+#
+# Matching (M3's job, stated here only so the rows read sensibly):
+#   data_class must match exactly.
+#   ai_tool_tier, user_role, purpose accept "*" as a wildcard.
+#   Most specific match wins; ties break toward the stricter verdict.
+#
+# decision: allow | redact | hold | deny
+
+rules:
+  # --- MYKAD: Malaysian NRIC. PDPA 2010 personal data, the headline class.
+  - data_class: MYKAD
+    ai_tool_tier: PUBLIC_AI
+    user_role: "*"
+    purpose: "*"
+    decision: redact
+  - data_class: MYKAD
+    ai_tool_tier: ENTERPRISE_AI
+    user_role: "*"
+    purpose: "*"
+    decision: redact
+  - data_class: MYKAD
+    ai_tool_tier: INTERNAL_AI
+    user_role: "*"
+    purpose: "*"
+    decision: allow
+
+  # --- SALARY: HR may work with it on an enterprise tool; nobody paste it
+  #     into a public one.
+  - data_class: SALARY
+    ai_tool_tier: PUBLIC_AI
+    user_role: "*"
+    purpose: "*"
+    decision: hold
+  - data_class: SALARY
+    ai_tool_tier: ENTERPRISE_AI
+    user_role: hr
+    purpose: "*"
+    decision: allow
+  - data_class: SALARY
+    ai_tool_tier: ENTERPRISE_AI
+    user_role: "*"
+    purpose: "*"
+    decision: redact
+
+  # --- SECRET: an API key in a prompt is a credential leak, full stop.
+  #     The only class where deny is the default at every tier.
+  - data_class: SECRET
+    ai_tool_tier: PUBLIC_AI
+    user_role: "*"
+    purpose: "*"
+    decision: deny
+  - data_class: SECRET
+    ai_tool_tier: ENTERPRISE_AI
+    user_role: "*"
+    purpose: "*"
+    decision: deny
+  - data_class: SECRET
+    ai_tool_tier: INTERNAL_AI
+    user_role: "*"
+    purpose: "*"
+    decision: redact
+
+  # --- BANK_ACCT
+  - data_class: BANK_ACCT
+    ai_tool_tier: PUBLIC_AI
+    user_role: "*"
+    purpose: "*"
+    decision: redact
+  - data_class: BANK_ACCT
+    ai_tool_tier: ENTERPRISE_AI
+    user_role: finance
+    purpose: "*"
+    decision: allow
+
+  # --- Contactable personal data: redact on the way out, allow inside.
+  - data_class: EMAIL
+    ai_tool_tier: PUBLIC_AI
+    user_role: "*"
+    purpose: "*"
+    decision: redact
+  - data_class: PHONE
+    ai_tool_tier: PUBLIC_AI
+    user_role: "*"
+    purpose: "*"
+    decision: redact
+  - data_class: PERSON
+    ai_tool_tier: PUBLIC_AI
+    user_role: "*"
+    purpose: "*"
+    decision: redact
+
+  # --- DEPT_CONFIDENTIAL: what M8 catches and regex cannot. A human looks
+  #     at it rather than a pattern guessing.
+  - data_class: DEPT_CONFIDENTIAL
+    ai_tool_tier: PUBLIC_AI
+    user_role: "*"
+    purpose: "*"
+    decision: hold

@@ -1,0 +1,22 @@
+# M0
+sqlalchemy>=2.0
+psycopg[binary]>=3.1
+python-dotenv
+pyyaml
+# M1
+fastapi
+uvicorn[standard]
+pydantic>=2
+python-multipart
+# M5
+pdfplumber
+python-docx
+python-pptx
+pandas
+# M7
+cryptography
+# M8  (P2 - only if M1-M7 are done and the video is recorded)
+sentence-transformers
+# dev
+pytest
+httpx

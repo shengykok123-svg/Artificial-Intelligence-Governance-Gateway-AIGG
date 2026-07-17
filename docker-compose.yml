@@ -1,0 +1,29 @@
+# One "docker compose up -d" and a teammate has a database.
+#
+# This is the only heavyweight install of the week, and only one person needs
+# it, on one day. Everyone else runs REPO_BACKEND=memory until M0 lands, and
+# can keep running it afterwards for tests.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gateway-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gateway
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: gateway
+    ports:
+      - "5432:5432"
+    volumes:
+      # Named volume: the seed data survives a restart, so you reset the
+      # database because you changed the schema, not because Docker blinked.
+      - gateway_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  gateway_pgdata:

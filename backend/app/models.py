@@ -1,0 +1,142 @@
+# backend/app/models.py  -- PROVISIONAL. Expect this to change; that is fine.
+# Only app/repo/postgres.py imports it, so a change here is a change to two
+# mapping functions and nothing else.
+#
+# Nothing outside backend/app/repo/ may import this file. If you are reading
+# this from a detector, the engine, the vault or a router, you are in the
+# wrong place: go through the protocols in app/repo/base.py.
+#
+# SD-6: no indexes beyond the primary and foreign keys, and no Alembic.
+# The schema is moving all week; reset_db.py is cheaper than migrations over
+# five days. Alembic is the first post-MVP task -- the trigger is not a date,
+# it is the hosted database holding data we would mind losing.
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from sqlalchemy import (
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+)
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
+    relationship,
+)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # uuid4
+    user_id: Mapped[str] = mapped_column(String(64))
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    target_host: Mapped[str] = mapped_column(String(255))
+    prompt_text: Mapped[str] = mapped_column(Text)  # full prompt, no truncation -- SD-1
+    filename: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # data_classes lives in its own table now                        -- SD-3
+
+    decision: Mapped[str] = mapped_column(String(16))   # allow | redact | hold | deny
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16))     # auto | pending | approved | denied
+    reviewer: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    remark: Mapped[str | None] = mapped_column(Text, nullable=True)
+    map_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+    user_department: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    content_department: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    department_confidence: Mapped[float] = mapped_column(Float, default=0.0)
+
+    # SD-5: everything is retained for now and the MVP runs no purge job.
+    # The column exists so the retention story is a schedule we have not
+    # switched on yet, rather than a position we are defending. The proposal
+    # says: policy enforced by a scheduled purge; field demonstrated in MVP.
+    # Not on the DTO -- nothing above the repo reads it yet.
+    retention_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    data_classes: Mapped[list["AuditDataClass"]] = relationship(
+        back_populates="log",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class AuditDataClass(Base):
+    __tablename__ = "audit_data_classes"
+
+    audit_log_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("audit_logs.id", ondelete="CASCADE"), primary_key=True
+    )
+    data_class: Mapped[str] = mapped_column(String(32), primary_key=True)
+    # One row per detected class. The DTO above is still list[str];
+    # only to_dto()/from_dto() know this table exists.       -- SD-3
+
+    log: Mapped[AuditLog] = relationship(back_populates="data_classes")
+
+
+class TokenMap(Base):
+    __tablename__ = "token_map"
+
+    map_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), primary_key=True)  # "[MYKAD_1]"
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary)            # Fernet
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # One row per token. Decided, SD-4.
+    # This table is the reason storing the full prompt (SD-1) holds up: when
+    # decision == "redact", audit_logs holds the redacted text and the only
+    # copy of the original is here, encrypted, admin-only, and every read of
+    # it writes its own audit row (M7).
+
+
+class PolicyRule(Base):
+    __tablename__ = "policy_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    data_class: Mapped[str] = mapped_column(String(32))
+    ai_tool_tier: Mapped[str] = mapped_column(String(32))  # PUBLIC_AI | ENTERPRISE_AI | INTERNAL_AI
+    user_role: Mapped[str] = mapped_column(String(32))     # "*" wildcard allowed
+    purpose: Mapped[str] = mapped_column(String(32))       # "*" wildcard allowed
+    decision: Mapped[str] = mapped_column(String(16))
+    # Seeded from rules.yaml on first run. After that this table is the
+    # only source of truth. M3 receives these rows as an argument.
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    role: Mapped[str] = mapped_column(String(16))       # admin | staff
+    department: Mapped[str] = mapped_column(String(32)) # finance | hr | legal | engineering
+    # Source of truth for role and department. Decided, SD-2.
+    # Never a request header: our own threat model is "an authorised employee
+    # using an unauthorised tool", and a self-asserted role is a self-issued
+    # permission. Production reads this from an IdP claim; that is future work.
+
+
+class AiToolRow(Base):
+    __tablename__ = "ai_tools"
+
+    host: Mapped[str] = mapped_column(String(255), primary_key=True)  # "chatgpt.com"
+    tier: Mapped[str] = mapped_column(String(32))    # PUBLIC_AI | ENTERPRISE_AI | INTERNAL_AI
+    status: Mapped[str] = mapped_column(String(16))  # approved | unapproved | blocked
+    approved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # An unknown host is auto-registered here as PUBLIC_AI / unapproved,
+    # silently. Record it, do not hold the prompt. Decided, SD-7.
+    # first_seen is not on the AiTool DTO (which is frozen). M6 wants the
+    # column; raise it with the team rather than widening base.py here.

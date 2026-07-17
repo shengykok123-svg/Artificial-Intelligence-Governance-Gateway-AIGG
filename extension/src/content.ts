@@ -1,0 +1,222 @@
+// M4  Composer capture + send interception. Produces IF-1. Failed selector => do nothing, never freeze the composer.
+//
+// Delegated, capture-phase listeners on `document` re-resolve the composer
+// and send button on every event rather than binding once to a specific
+// node. Both target sites are SPAs that replace these nodes on re-render;
+// a one-time bind goes stale, a fresh lookup does not. The same lookup
+// returning null is also how "selector not found" degrades to "do nothing,
+// let the prompt through" -- there is no separate error path to forget.
+
+import { findComposer, findFileInput, findSendButton, siteKeyFor, type SiteKey } from "./selectors";
+import { removeBanner, showBanner } from "./banner";
+import type { AttachmentPayload, BackgroundMessage, InspectMessage, InspectOutcome } from "./types";
+
+const site = siteKeyFor(location.hostname);
+if (site) init(site);
+
+function init(site: SiteKey): void {
+  let isReplaying = false;
+  let capturedAttachments: AttachmentPayload[] = [];
+  let activeLogId: string | null = null;
+
+  document.addEventListener("change", onFileInputChange, true);
+  document.addEventListener("click", onClickCapture, true);
+  document.addEventListener("keydown", onKeydownCapture, true);
+  chrome.runtime.onMessage.addListener(onBackgroundMessage);
+
+  function onFileInputChange(e: Event): void {
+    const input = findFileInput(site);
+    if (!input || e.target !== input) return;
+    const files = Array.from(input.files ?? []);
+    if (files.length === 0) return;
+    void encodeFiles(files).then((encoded) => {
+      capturedAttachments = encoded;
+    });
+  }
+
+  function onClickCapture(e: MouseEvent): void {
+    if (isReplaying) return;
+    const sendBtn = findSendButton(site);
+    const target = e.target as Element | null;
+    if (!sendBtn || !target || !(target === sendBtn || sendBtn.contains(target))) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    void attemptSend();
+  }
+
+  function onKeydownCapture(e: KeyboardEvent): void {
+    if (isReplaying) return;
+    if (e.key !== "Enter" || e.shiftKey) return;
+    const composer = findComposer(site);
+    const target = e.target as Node | null;
+    if (!composer || !target || !composer.contains(target)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    void attemptSend();
+  }
+
+  async function attemptSend(): Promise<void> {
+    const composer = findComposer(site);
+    if (!composer) return; // no composer found -- let whatever happens, happen
+
+    const prompt = getComposerText(composer).trim();
+    if (!prompt && capturedAttachments.length === 0) return;
+
+    const files = capturedAttachments;
+    capturedAttachments = [];
+
+    const message: InspectMessage = { type: "INSPECT", prompt, files, targetHost: location.hostname };
+
+    let outcome: InspectOutcome;
+    try {
+      outcome = await chrome.runtime.sendMessage<InspectMessage, InspectOutcome>(message);
+    } catch (err) {
+      // Messaging layer itself failed (e.g. service worker briefly gone).
+      // Same policy as an unreachable backend: fail OPEN.
+      console.warn("[aigg] sendMessage failed, failing open:", err);
+      replaySend(composer);
+      return;
+    }
+
+    if (!outcome.ok) {
+      handleFailure(composer, outcome);
+      return;
+    }
+
+    const result = outcome.result;
+    switch (result.decision) {
+      case "allow":
+        replaySend(composer);
+        return;
+
+      case "redact":
+        // Composer contents are replaced BEFORE replay, never after --
+        // otherwise the original, unredacted text is what actually ships.
+        removeBanner();
+        setComposerText(composer, result.redacted_prompt ?? prompt);
+        showBanner(
+          composer,
+          "redact",
+          `redacted before sending (${result.data_classes.join(", ") || "sensitive data"}).`,
+        );
+        replaySend(composer);
+        return;
+
+      case "hold":
+        activeLogId = result.log_id;
+        showBanner(composer, "hold", "held for compliance review -- waiting for approval.");
+        return;
+
+      case "deny":
+        showBanner(composer, "deny", `blocked: ${result.reason}`);
+        return;
+    }
+  }
+
+  function handleFailure(composer: HTMLElement, outcome: Extract<InspectOutcome, { ok: false }>): void {
+    switch (outcome.reason) {
+      case "unreachable":
+        // Fail OPEN. A gateway that bricks the composer when the backend
+        // blinks does not survive a demo, and blocking here would make the
+        // tool itself the bypass. Known limitation -- see extension/README.md.
+        replaySend(composer);
+        return;
+
+      case "unconfigured":
+        showBanner(composer, "unconfigured", "extension not configured (unknown user) -- letting this through.");
+        replaySend(composer);
+        return;
+
+      case "unsupported_file":
+        // Fail CLOSED: we cannot vouch for a file we never inspected.
+        showBanner(composer, "unsupported_file", `attachment could not be read -- blocked. ${outcome.message}`);
+        return;
+    }
+  }
+
+  function onBackgroundMessage(message: BackgroundMessage): void {
+    if (message.type !== "HOLD_RESOLVED" || message.log_id !== activeLogId) return;
+    activeLogId = null;
+
+    const composer = findComposer(site);
+    if (message.status === "approved") {
+      if (composer) {
+        showBanner(composer, "hold", "approved -- sending now.");
+        replaySend(composer); // replays the ORIGINAL prompt: hold never touched composer contents
+      }
+    } else if (message.status === "denied") {
+      if (composer) showBanner(composer, "denied", "denied by reviewer. Not sent.");
+    } else {
+      if (composer) showBanner(composer, "timeout", "still pending after 5 minutes. Not sent -- try again shortly.");
+    }
+  }
+
+  function replaySend(composer: HTMLElement): void {
+    isReplaying = true;
+    try {
+      const btn = findSendButton(site);
+      if (btn) {
+        btn.click();
+        return;
+      }
+      // Fallback only: React handlers frequently ignore synthetic
+      // KeyboardEvents, so a real button click above is always preferred.
+      composer.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    } finally {
+      isReplaying = false;
+    }
+  }
+}
+
+async function encodeFiles(files: File[]): Promise<AttachmentPayload[]> {
+  return Promise.all(
+    files.map(async (file) => ({
+      filename: file.name,
+      mime: file.type || "application/octet-stream",
+      content_b64: await fileToBase64(file),
+    })),
+  );
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+function getComposerText(el: HTMLElement): string {
+  if (el.isContentEditable) return el.innerText;
+  if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) return el.value;
+  return el.textContent ?? "";
+}
+
+/** The standard workaround for React-controlled inputs: go through the
+ * browser's native input pipeline (execCommand / native value setter +
+ * a real "input" event) rather than assigning text/value directly, which
+ * React's synthetic event system does not observe. */
+function setComposerText(el: HTMLElement, text: string): void {
+  el.focus();
+
+  if (el.isContentEditable) {
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    const inserted = document.execCommand("insertText", false, text);
+    if (!inserted) {
+      el.textContent = text;
+      el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+    }
+    return;
+  }
+
+  if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+    const proto = el instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, "value")?.set?.call(el, text);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+}

@@ -1,0 +1,97 @@
+<!-- M4  popup markup -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>AI Governance Gateway</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        width: 280px;
+        padding: 12px;
+        font-size: 13px;
+        color: #111827;
+      }
+      h1 {
+        font-size: 14px;
+        margin: 0 0 8px;
+      }
+      label {
+        display: block;
+        margin-top: 8px;
+        font-weight: 600;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 4px 6px;
+        margin-top: 2px;
+        font: inherit;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .row label {
+        margin: 0;
+        font-weight: normal;
+      }
+      #status {
+        padding: 6px 8px;
+        border-radius: 6px;
+        margin-top: 4px;
+        background: #f3f4f6;
+      }
+      #mockWarning {
+        display: none;
+        margin-top: 8px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        background: #fef3c7;
+        color: #92400e;
+      }
+      a {
+        color: #2563eb;
+      }
+      button {
+        margin-top: 10px;
+        width: 100%;
+        padding: 6px;
+        font: inherit;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>AI Governance Gateway</h1>
+    <div id="status">no verdict yet</div>
+    <div id="mockWarning"></div>
+
+    <label for="baseUrl">Base URL</label>
+    <input id="baseUrl" placeholder="http://localhost:8000" />
+
+    <label for="userId">User ID</label>
+    <input id="userId" list="seededUsers" placeholder="wei.eng@acme.my" />
+    <datalist id="seededUsers">
+      <option value="admin@acme.my"></option>
+      <option value="siti.finance@acme.my"></option>
+      <option value="aiman.hr@acme.my"></option>
+      <option value="wei.eng@acme.my"></option>
+    </datalist>
+
+    <label for="apiKey">API key</label>
+    <input id="apiKey" type="password" placeholder="dev-key-change-me" />
+
+    <div class="row">
+      <input id="mockMode" type="checkbox" />
+      <label for="mockMode">MOCK_MODE (cycle verdicts, no backend)</label>
+    </div>
+
+    <button id="save">Save</button>
+    <p><a href="http://localhost:5173" target="_blank" id="dashboardLink" rel="noopener">Open dashboard</a></p>
+
+    <script type="module" src="./popup.ts"></script>
+  </body>
+</html>
