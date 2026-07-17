@@ -15,12 +15,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.detect.base import Classification, Detector, DocumentClassifier, Document, Span
+from app.errors import Forbidden
 from app.extract.files import UnsupportedFile
 from app.policy.engine import PolicyContext, Verdict
 from app.repo import Repos, get_repos
 from app.repo.base import AuditRecord
 from app.schemas import InspectRequest, InspectResponse
-from app.vault.tokeniser import Forbidden
 
 load_dotenv()
 

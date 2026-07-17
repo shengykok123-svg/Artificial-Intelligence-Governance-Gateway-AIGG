@@ -10,10 +10,10 @@ import base64
 import uuid
 
 from app.detect.base import Classification, DataClass, Document, Span
+from app.errors import Forbidden
 from app.extract.files import UnsupportedFile
 from app.policy.engine import PolicyContext, Verdict
 from app.repo.base import RuleRow, TokenEntry, VaultRepo
-from app.vault.tokeniser import Forbidden
 
 # --------------------------------------------------------------------------
 # DELETE WHEN M2 LANDS
