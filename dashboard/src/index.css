@@ -1,1 +1,13 @@
 /* M6  Tailwind. 16px minimum body text - judges see this on a projector. */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  font-size: 16px;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900;
+}
