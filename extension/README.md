@@ -80,6 +80,21 @@ in sync — a missing composer and a missing send button degrade the same way.
   matters under MV3's lifecycle.
 - **`src/types.ts`** — the TypeScript mirror of IF-1/IF-2/IF-3 and
   `backend/app/schemas.py`. Nothing else defines these shapes.
+- **`src/mainworld.ts`** — a second content script injected with
+  `"world": "MAIN"` (runs as the page's own JS, not the extension's isolated
+  copy). It is the *only* code allowed to write the composer. `content.ts`
+  runs isolated: it shares the DOM with the page but not the page's JS, so a
+  DOM write from there is invisible to ChatGPT's/Gemini's own editor state
+  (ProseMirror et al. keep an internal document model and re-render the DOM
+  from it) — a write from the isolated world can leave the composer *looking*
+  redacted while the internal model, which is what actually gets submitted,
+  never saw it. `content.ts` asks `mainworld.ts` to do the write over
+  `window.postMessage` (the standard bridge between the two worlds, since
+  `window` message events are the one thing they share besides the DOM), then
+  independently re-reads the DOM and requires it to hold the redacted text
+  stable for 120ms before ever replaying. If the write fails or the text
+  doesn't stick, the send is blocked entirely — redaction fails **closed**,
+  never silently ships the original.
 
 ## user_id (the IF-1 -> IF-2 gap)
 

@@ -92,15 +92,18 @@ function init(site: SiteKey): void {
         return;
 
       case "redact": {
-        // Replacing the text is not enough. ProseMirror keeps its own document
-        // model and syncs from the DOM asynchronously -- and that model, not the
-        // DOM, is what gets submitted. Sending in the same tick ships the
-        // ORIGINAL while the screen shows the token. Verify, then send.
+        // The write itself must happen in the MAIN world (mainworld.ts), not
+        // here. This content script is isolated: it shares the DOM with the
+        // page but not the page's JS, so a DOM write from here is invisible
+        // to ProseMirror's internal document model -- and that model, not
+        // the DOM, is what actually gets submitted. A write from here can
+        // leave the composer LOOKING redacted while the original still ships.
+        // Verify the result reads back stable before ever replaying.
         const redacted = result.redacted_prompt ?? prompt;
         removeBanner();
-        setComposerText(composer, redacted);
 
-        const settled = await composerSettledOn(composer, redacted);
+        const wrote = await setComposerViaMainWorld(redacted);
+        const settled = wrote && (await composerSettledOn(composer, redacted));
         if (!settled) {
           showBanner(composer, "deny",
             "Redaction could not be applied in place. Nothing was sent.");
@@ -224,30 +227,30 @@ async function composerSettledOn(el: HTMLElement, expected: string): Promise<boo
   return false;
 }
 
-/** The standard workaround for React-controlled inputs: go through the
- * browser's native input pipeline (execCommand / native value setter +
- * a real "input" event) rather than assigning text/value directly, which
- * React's synthetic event system does not observe. */
-function setComposerText(el: HTMLElement, text: string): void {
-  el.focus();
+/** Ask mainworld.ts (running in the page's own JS context) to write the
+ * composer, and wait for its reply. window.postMessage is the standard
+ * bridge here: an isolated-world content script and the page's main-world
+ * JS share nothing except the DOM and this one `window` messaging channel.
+ * Resolves false if mainworld.ts never answers (e.g. it failed to find the
+ * composer either) rather than hanging -- the caller must fail closed. */
+function setComposerViaMainWorld(text: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const nonce = Math.random().toString(36).slice(2);
+    const timeout = setTimeout(() => {
+      window.removeEventListener("message", onResponse);
+      resolve(false);
+    }, 1500);
 
-  if (el.isContentEditable) {
-    const selection = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    selection?.removeAllRanges();
-    selection?.addRange(range);
-    const inserted = document.execCommand("insertText", false, text);
-    if (!inserted) {
-      el.textContent = text;
-      el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+    function onResponse(e: MessageEvent): void {
+      if (e.source !== window) return;
+      const data = e.data as { __aigg?: string; nonce?: string; ok?: boolean } | undefined;
+      if (data?.__aigg !== "SET_COMPOSER_DONE" || data.nonce !== nonce) return;
+      clearTimeout(timeout);
+      window.removeEventListener("message", onResponse);
+      resolve(Boolean(data.ok));
     }
-    return;
-  }
 
-  if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
-    const proto = el instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
-    Object.getOwnPropertyDescriptor(proto, "value")?.set?.call(el, text);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  }
+    window.addEventListener("message", onResponse);
+    window.postMessage({ __aigg: "SET_COMPOSER", text, nonce }, "*");
+  });
 }

@@ -16,6 +16,12 @@
       "matches": ["https://chatgpt.com/*", "https://gemini.google.com/*"],
       "js": ["src/content.ts"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://chatgpt.com/*", "https://gemini.google.com/*"],
+      "js": ["src/mainworld.ts"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ],
   "permissions": ["storage"],
