@@ -91,11 +91,22 @@ function init(site: SiteKey): void {
         replaySend(composer);
         return;
 
-      case "redact":
-        // Composer contents are replaced BEFORE replay, never after --
-        // otherwise the original, unredacted text is what actually ships.
+      case "redact": {
+        // Replacing the text is not enough. ProseMirror keeps its own document
+        // model and syncs from the DOM asynchronously -- and that model, not the
+        // DOM, is what gets submitted. Sending in the same tick ships the
+        // ORIGINAL while the screen shows the token. Verify, then send.
+        const redacted = result.redacted_prompt ?? prompt;
         removeBanner();
-        setComposerText(composer, result.redacted_prompt ?? prompt);
+        setComposerText(composer, redacted);
+
+        const settled = await composerSettledOn(composer, redacted);
+        if (!settled) {
+          showBanner(composer, "deny",
+            "Redaction could not be applied in place. Nothing was sent.");
+          return; // FAIL CLOSED. Never ship the original.
+        }
+
         showBanner(
           composer,
           "redact",
@@ -103,6 +114,7 @@ function init(site: SiteKey): void {
         );
         replaySend(composer);
         return;
+      }
 
       case "hold":
         activeLogId = result.log_id;
@@ -191,6 +203,25 @@ function getComposerText(el: HTMLElement): string {
   if (el.isContentEditable) return el.innerText;
   if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) return el.value;
   return el.textContent ?? "";
+}
+
+/** True once the composer reads `expected` AND KEEPS reading it. A single read
+ *  is not enough: if ProseMirror's internal model still holds the original, it
+ *  re-renders the DOM back and the check must catch that revert. */
+async function composerSettledOn(el: HTMLElement, expected: string): Promise<boolean> {
+  const want = expected.trim();
+  const deadline = Date.now() + 1500;
+  let stableSince = 0;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 30));
+    if (getComposerText(el).trim() === want) {
+      if (stableSince === 0) stableSince = Date.now();
+      if (Date.now() - stableSince >= 120) return true;
+    } else {
+      stableSince = 0; // reverted -- internal state won
+    }
+  }
+  return false;
 }
 
 /** The standard workaround for React-controlled inputs: go through the
