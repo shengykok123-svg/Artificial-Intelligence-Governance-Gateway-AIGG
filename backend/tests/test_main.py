@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import io
+import zipfile
 
 import pdfplumber
 import pytest
@@ -14,10 +15,64 @@ from docx import Document as DocxDocument
 from fastapi.testclient import TestClient
 from pptx import Presentation
 
+from app.extract.files import extract
 from app.main import API_KEY, _check_demo_guard, _pdf_bytes_from_text, app
 from app.repo import reset_memory_repos
 
 HEADERS = {"X-Api-Key": API_KEY}
+
+
+def xlsx_bytes_with_shared_strings(*values: str) -> bytes:
+    shared_items = "".join(f'<si><t>{value}</t></si>' for value in values)
+    cells = "".join(f'<c r="A{idx + 1}" t="s"><v>{idx}</v></c>' for idx, _ in enumerate(values))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "[Content_Types].xml",
+            """<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+</Types>""",
+        )
+        archive.writestr(
+            "_rels/.rels",
+            """<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>""",
+        )
+        archive.writestr(
+            "xl/_rels/workbook.xml.rels",
+            """<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+</Relationships>""",
+        )
+        archive.writestr(
+            "xl/workbook.xml",
+            """<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>""",
+        )
+        archive.writestr(
+            "xl/worksheets/sheet1.xml",
+            f"""<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData><row r="1">{cells}</row></sheetData>
+</worksheet>""",
+        )
+        archive.writestr(
+            "xl/sharedStrings.xml",
+            f"""<?xml version="1.0" encoding="UTF-8"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="{len(values)}" uniqueCount="{len(values)}">{shared_items}</sst>""",
+        )
+    return buf.getvalue()
 
 
 @pytest.fixture(autouse=True)
@@ -328,6 +383,8 @@ def test_docx_attachment_redaction_returns_redacted_copy(client: TestClient) -> 
     docx.add_paragraph("Employee IC 880412-08-5561 needs a reply.")
     table = docx.add_table(rows=1, cols=1)
     table.cell(0, 0).text = "Backup IC 880412-08-5561"
+    docx.sections[0].header.paragraphs[0].text = "Header IC 880412-08-5561"
+    docx.sections[0].footer.paragraphs[0].text = "Footer IC 880412-08-5561"
     buf = io.BytesIO()
     docx.save(buf)
 
@@ -353,16 +410,21 @@ def test_docx_attachment_redaction_returns_redacted_copy(client: TestClient) -> 
     redacted_text = "\n".join(
         [p.text for p in redacted_doc.paragraphs]
         + [cell.text for table in redacted_doc.tables for row in table.rows for cell in row.cells]
+        + [p.text for section in redacted_doc.sections for p in section.header.paragraphs]
+        + [p.text for section in redacted_doc.sections for p in section.footer.paragraphs]
     )
     assert "880412-08-5561" not in redacted_text
     assert "[MYKAD_1]" in redacted_text
     assert "[MYKAD_2]" in redacted_text
+    assert "[MYKAD_3]" in redacted_text
+    assert "[MYKAD_4]" in redacted_text
 
 
 def test_pptx_attachment_redaction_returns_redacted_copy(client: TestClient) -> None:
     deck = Presentation()
     slide = deck.slides.add_slide(deck.slide_layouts[5])
     slide.shapes.title.text = "Employee IC 880412-08-5561 needs a reply."
+    slide.notes_slide.notes_text_frame.text = "Speaker IC 880412-08-5561"
     buf = io.BytesIO()
     deck.save(buf)
 
@@ -391,8 +453,11 @@ def test_pptx_attachment_redaction_returns_redacted_copy(client: TestClient) -> 
         for shape in slide.shapes
         if hasattr(shape, "text") and shape.text
     )
+    redacted_notes = redacted_deck.slides[0].notes_slide.notes_text_frame.text
+    redacted_text = "\n".join([redacted_text, redacted_notes])
     assert "880412-08-5561" not in redacted_text
     assert "[MYKAD_1]" in redacted_text
+    assert "[MYKAD_2]" in redacted_text
 
 
 def test_pdf_attachment_redaction_returns_redacted_copy(client: TestClient) -> None:
@@ -420,6 +485,36 @@ def test_pdf_attachment_redaction_returns_redacted_copy(client: TestClient) -> N
         redacted_text = "\n".join(page.extract_text() or "" for page in pdf_doc.pages)
     assert "880412-08-5561" not in redacted_text
     assert "[MYKAD_1]" in redacted_text
+
+
+def test_xlsx_attachment_redaction_returns_redacted_copy(client: TestClient) -> None:
+    xlsx = xlsx_bytes_with_shared_strings("Employee IC 880412-08-5561 needs a reply.")
+
+    r = inspect(client, user_id="aiman.hr@acme.my",
+                prompt="see attached", attachments=[
+                    {
+                        "filename": "employee.xlsx",
+                        "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        "content_b64": base64.b64encode(xlsx).decode(),
+                    },
+                ])
+
+    body = r.json()
+    assert body["decision"] == "redact"
+    assert "MYKAD" in body["data_classes"]
+    assert len(body["redacted_attachments"]) == 1
+
+    redacted = body["redacted_attachments"][0]
+    assert redacted["filename"] == "employee.redacted.xlsx"
+    assert redacted["mime"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    redacted_doc = extract(
+        redacted["filename"],
+        redacted["mime"],
+        redacted["content_b64"],
+    )
+    assert "880412-08-5561" not in redacted_doc.text
+    assert "[MYKAD_1]" in redacted_doc.text
 
 
 # --------------------------------------------------------------------------

@@ -41,15 +41,19 @@ popup, and verified against the local backend.
 
 ## M5 file extraction checks
 
-M5 now extracts text from TXT, CSV, PDF, DOCX and PPTX in tests, rejects invalid
-base64, rejects unsupported types, and enforces a 5 MB attachment size limit.
-When a TXT, CSV, PDF, DOCX or PPTX attachment causes a `redact` verdict,
+M5 now extracts text from TXT, CSV, PDF, DOCX, PPTX and XLSX in tests, rejects
+invalid base64, rejects unsupported types, and enforces a 5 MB attachment size
+limit. DOCX coverage includes body text, tables, headers and footers. PPTX
+coverage includes slide text and speaker notes. XLSX coverage includes shared
+strings and worksheet inline strings.
+
+When a TXT, CSV, PDF, DOCX, PPTX or XLSX attachment causes a `redact` verdict,
 `/v1/inspect` now returns a redacted attachment copy in `redacted_attachments`.
 
-Browser-side replacement is wired for TXT/CSV/PDF/DOCX/PPTX attachments. The
-extension intercepts the file input `change` event at `document_start`, checks
-the file with the backend before upload, and injects the returned redacted file
-copy when the verdict is `redact`.
+Browser-side replacement is wired for TXT/CSV/PDF/DOCX/PPTX/XLSX attachments.
+The extension intercepts the file input `change` event at `document_start`,
+checks the file with the backend before upload, and injects the returned
+redacted file copy when the verdict is `redact`.
 
 ## Live Chrome acceptance
 
@@ -74,10 +78,14 @@ One UX polish landed after the acceptance run: successful sent-state banners
 three seconds. Blocking banners such as `deny` and `waiting for approval` remain
 visible.
 
-Current file-redaction replacement support covers TXT, CSV, PDF, DOCX and
-PPTX. The generated PDF redaction copy is intentionally a new text-only PDF
-containing the tokenised text, so the original PDF objects are not carried
+Current file-redaction replacement support covers TXT, CSV, PDF, DOCX, PPTX
+and XLSX. The generated PDF redaction copy is intentionally a new text-only
+PDF containing the tokenised text, so the original PDF objects are not carried
 forward into the replacement file.
+
+Known remaining file limitations: DOCX comments, tracked changes and embedded
+objects are not parsed; PPTX comments are not parsed; image files and scanned
+PDF OCR are not implemented.
 
 ## Push recommendation
 

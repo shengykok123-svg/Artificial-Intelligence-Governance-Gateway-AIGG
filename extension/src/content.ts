@@ -147,11 +147,13 @@ function init(site: SiteKey): void {
       type === "application/pdf" ||
       type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
       type === "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
+      type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
       name.endsWith(".txt") ||
       name.endsWith(".csv") ||
       name.endsWith(".pdf") ||
       name.endsWith(".docx") ||
-      name.endsWith(".pptx")
+      name.endsWith(".pptx") ||
+      name.endsWith(".xlsx")
     );
   }
 

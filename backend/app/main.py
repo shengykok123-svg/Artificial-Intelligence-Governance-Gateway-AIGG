@@ -23,6 +23,7 @@ from pptx import Presentation
 from app.detect.base import Classification, Detector, DocumentClassifier, Document, Span
 from app.errors import Forbidden
 from app.extract.files import UnsupportedFile
+from app.extract.xlsx import XlsxTextTarget, iter_xlsx_text_targets, redact_xlsx_bytes
 from app.policy.engine import PolicyContext, Verdict
 from app.repo import Repos, get_repos
 from app.repo.base import AuditRecord
@@ -115,6 +116,7 @@ def get_tokeniser(vault: Any) -> Any:
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 PDF_MIME = "application/pdf"
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def _can_redact_text_attachment(att: Attachment) -> bool:
@@ -142,6 +144,11 @@ def _can_redact_pdf_attachment(att: Attachment) -> bool:
     return normalised_mime == PDF_MIME or att.filename.lower().endswith(".pdf")
 
 
+def _can_redact_xlsx_attachment(att: Attachment) -> bool:
+    normalised_mime = att.mime.lower().split(";")[0].strip()
+    return normalised_mime == XLSX_MIME or att.filename.lower().endswith(".xlsx")
+
+
 def _redacted_filename(filename: str) -> str:
     if "." not in filename:
         return f"{filename}.redacted.txt"
@@ -165,13 +172,36 @@ def _decode_attachment_bytes(att: Attachment) -> bytes:
 
 
 def _iter_docx_text_targets(docx: Any) -> list[Any]:
-    targets: list[Any] = [p for p in docx.paragraphs if p.text]
-    for table in docx.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                if cell.text:
-                    targets.append(cell)
+    targets: list[Any] = []
+    for container in _iter_docx_story_containers(docx):
+        targets.extend(p for p in container.paragraphs if p.text)
+        for table in container.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text:
+                        targets.append(cell)
     return targets
+
+
+def _iter_docx_story_containers(docx: Any) -> list[Any]:
+    containers: list[Any] = [docx]
+    seen = {id(docx._element)}
+    for section in docx.sections:
+        for attr in (
+            "header",
+            "first_page_header",
+            "even_page_header",
+            "footer",
+            "first_page_footer",
+            "even_page_footer",
+        ):
+            container = getattr(section, attr)
+            marker = id(container._element)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            containers.append(container)
+    return containers
 
 
 def _redacted_docx_attachment(att: Attachment, docx: Any) -> RedactedAttachment:
@@ -193,6 +223,8 @@ def _iter_pptx_text_targets(deck: Any) -> list[Any]:
             text_frame = shape.text_frame
             if text_frame.text:
                 targets.append(text_frame)
+        if slide.has_notes_slide and slide.notes_slide.notes_text_frame.text:
+            targets.append(slide.notes_slide.notes_text_frame)
     return targets
 
 
@@ -288,6 +320,15 @@ def _redacted_pdf_attachment(att: Attachment, redacted_text: str) -> RedactedAtt
         filename=_redacted_filename(att.filename),
         mime=att.mime or PDF_MIME,
         content_b64=base64.b64encode(_pdf_bytes_from_text(redacted_text)).decode("ascii"),
+    )
+
+
+def _redacted_xlsx_attachment(att: Attachment, replacements: dict[XlsxTextTarget, str]) -> RedactedAttachment:
+    redacted_bytes = redact_xlsx_bytes(_decode_attachment_bytes(att), replacements)
+    return RedactedAttachment(
+        filename=_redacted_filename(att.filename),
+        mime=att.mime or XLSX_MIME,
+        content_b64=base64.b64encode(redacted_bytes).decode("ascii"),
     )
 
 
@@ -411,6 +452,7 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         docx_redaction_inputs: list[tuple[Attachment, Any, list[tuple[Any, int]]]] = []
         pptx_redaction_inputs: list[tuple[Attachment, Any, list[tuple[Any, int]]]] = []
         pdf_redaction_inputs: list[tuple[Attachment, int]] = []
+        xlsx_redaction_inputs: list[tuple[Attachment, list[tuple[XlsxTextTarget, int]]]] = []
         for att, doc, spans in attachment_spans:
             if not spans:
                 continue
@@ -450,6 +492,19 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
             if _can_redact_pdf_attachment(att):
                 pdf_redaction_inputs.append((att, len(tokenise_inputs)))
                 tokenise_inputs.append((doc.text, spans))
+                continue
+
+            if _can_redact_xlsx_attachment(att):
+                targets: list[tuple[XlsxTextTarget, int]] = []
+                for target in iter_xlsx_text_targets(_decode_attachment_bytes(att)):
+                    target_doc = Document(text=target.text, source_filename=att.filename, mime=att.mime)
+                    target_spans = rules_detector.detect(target_doc) + embed_detector.detect(target_doc)
+                    if not target_spans:
+                        continue
+                    targets.append((target, len(tokenise_inputs)))
+                    tokenise_inputs.append((target.text, target_spans))
+                if targets:
+                    xlsx_redaction_inputs.append((att, targets))
 
         redacted_items, map_id = tokeniser.tokenise_many(tokenise_inputs)
         redacted_prompt = redacted_items[0]
@@ -465,6 +520,9 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
             redacted_attachments.append(_redacted_pptx_attachment(att, deck))
         for att, redacted_index in pdf_redaction_inputs:
             redacted_attachments.append(_redacted_pdf_attachment(att, redacted_items[redacted_index]))
+        for att, targets in xlsx_redaction_inputs:
+            replacements = {target: redacted_items[redacted_index] for target, redacted_index in targets}
+            redacted_attachments.append(_redacted_xlsx_attachment(att, replacements))
 
         # SD-1: the audit row holds the REDACTED text; the original lives
         # only in the vault.

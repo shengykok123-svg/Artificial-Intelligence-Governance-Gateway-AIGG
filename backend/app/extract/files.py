@@ -10,12 +10,14 @@ import base64
 import binascii
 import io
 from collections.abc import Callable
+from typing import Any
 
 import pdfplumber
 from docx import Document as DocxDocument
 from pptx import Presentation
 
 from app.detect.base import Document
+from app.extract.xlsx import extract_xlsx_text
 
 MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 
@@ -62,6 +64,12 @@ def _extractor_for(filename: str, mime: str) -> Callable[[bytes], str]:
         or ext == "pptx"
     ):
         return _extract_pptx
+    if (
+        normalised_mime
+        == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        or ext == "xlsx"
+    ):
+        return _extract_xlsx
 
     raise UnsupportedFile(f"{mime} (filename={filename!r})")
 
@@ -87,13 +95,36 @@ def _extract_docx(raw: bytes) -> str:
     except Exception as exc:
         raise UnsupportedFile("DOCX text could not be extracted") from exc
 
-    parts = [p.text for p in doc.paragraphs if p.text]
-    for table in doc.tables:
-        for row in table.rows:
-            cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
-            if cells:
-                parts.append("\t".join(cells))
+    parts: list[str] = []
+    for container in _iter_docx_story_containers(doc):
+        parts.extend(p.text for p in container.paragraphs if p.text)
+        for table in container.tables:
+            for row in table.rows:
+                cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                if cells:
+                    parts.append("\t".join(cells))
     return "\n".join(parts)
+
+
+def _iter_docx_story_containers(doc: Any) -> list[Any]:
+    containers: list[Any] = [doc]
+    seen = {id(doc._element)}
+    for section in doc.sections:
+        for attr in (
+            "header",
+            "first_page_header",
+            "even_page_header",
+            "footer",
+            "first_page_footer",
+            "even_page_footer",
+        ):
+            container = getattr(section, attr)
+            marker = id(container._element)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            containers.append(container)
+    return containers
 
 
 def _extract_pptx(raw: bytes) -> str:
@@ -107,7 +138,16 @@ def _extract_pptx(raw: bytes) -> str:
         for shape in slide.shapes:
             if hasattr(shape, "text") and shape.text:
                 parts.append(shape.text)
+        if slide.has_notes_slide and slide.notes_slide.notes_text_frame.text:
+            parts.append(slide.notes_slide.notes_text_frame.text)
     return "\n".join(parts)
+
+
+def _extract_xlsx(raw: bytes) -> str:
+    try:
+        return extract_xlsx_text(raw)
+    except Exception as exc:
+        raise UnsupportedFile("XLSX text could not be extracted") from exc
 
 
 __all__ = ["MAX_ATTACHMENT_BYTES", "UnsupportedFile", "extract"]
