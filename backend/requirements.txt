@@ -21,6 +21,7 @@ sentence-transformers
 torch
 transformers
 datasets
+sentencepiece
 # dev
 pytest
 httpx
