@@ -8,12 +8,13 @@ from __future__ import annotations
 import base64
 import io
 
+import pdfplumber
 import pytest
 from docx import Document as DocxDocument
 from fastapi.testclient import TestClient
 from pptx import Presentation
 
-from app.main import API_KEY, _check_demo_guard, app
+from app.main import API_KEY, _check_demo_guard, _pdf_bytes_from_text, app
 from app.repo import reset_memory_repos
 
 HEADERS = {"X-Api-Key": API_KEY}
@@ -390,6 +391,33 @@ def test_pptx_attachment_redaction_returns_redacted_copy(client: TestClient) -> 
         for shape in slide.shapes
         if hasattr(shape, "text") and shape.text
     )
+    assert "880412-08-5561" not in redacted_text
+    assert "[MYKAD_1]" in redacted_text
+
+
+def test_pdf_attachment_redaction_returns_redacted_copy(client: TestClient) -> None:
+    pdf = _pdf_bytes_from_text("Employee IC 880412-08-5561 needs a reply.")
+
+    r = inspect(client, user_id="aiman.hr@acme.my",
+                prompt="see attached", attachments=[
+                    {
+                        "filename": "employee.pdf",
+                        "mime": "application/pdf",
+                        "content_b64": base64.b64encode(pdf).decode(),
+                    },
+                ])
+
+    body = r.json()
+    assert body["decision"] == "redact"
+    assert "MYKAD" in body["data_classes"]
+    assert len(body["redacted_attachments"]) == 1
+
+    redacted = body["redacted_attachments"][0]
+    assert redacted["filename"] == "employee.redacted.pdf"
+    assert redacted["mime"] == "application/pdf"
+
+    with pdfplumber.open(io.BytesIO(base64.b64decode(redacted["content_b64"]))) as pdf_doc:
+        redacted_text = "\n".join(page.extract_text() or "" for page in pdf_doc.pages)
     assert "880412-08-5561" not in redacted_text
     assert "[MYKAD_1]" in redacted_text
 

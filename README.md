@@ -58,10 +58,8 @@ bash backend/scripts/backbone_smoke.sh   # all 5 backbone flows, REPO_BACKEND=me
 - **Extension:** `tsc --noEmit` and `vite build` clean; loadable unpacked
   build in `extension/dist`. Live ChatGPT acceptance passed for MyKad redact,
   API key deny, salary hold, and approval-send.
-- **File redaction:** TXT/CSV/DOCX/PPTX attachments can be checked before
-  upload and replaced in-browser with backend-returned redacted copies. PDF is
-  extracted for policy decisions, but redacted replacement copies are not built
-  for it yet.
+- **File redaction:** TXT/CSV/PDF/DOCX/PPTX attachments can be checked before
+  upload and replaced in-browser with backend-returned redacted copies.
 
 ## Layout — do not deviate
 

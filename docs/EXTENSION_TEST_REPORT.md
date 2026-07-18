@@ -41,16 +41,15 @@ popup, and verified against the local backend.
 
 ## M5 file extraction checks
 
-M5 now extracts text from TXT, CSV, DOCX and PPTX in tests, supports PDF text
-extraction through `pdfplumber`, rejects invalid base64, rejects unsupported
-types, and enforces a 5 MB attachment size limit. When a TXT, CSV, DOCX or
-PPTX attachment causes a `redact` verdict, `/v1/inspect` now returns a redacted
-attachment copy in `redacted_attachments`.
+M5 now extracts text from TXT, CSV, PDF, DOCX and PPTX in tests, rejects invalid
+base64, rejects unsupported types, and enforces a 5 MB attachment size limit.
+When a TXT, CSV, PDF, DOCX or PPTX attachment causes a `redact` verdict,
+`/v1/inspect` now returns a redacted attachment copy in `redacted_attachments`.
 
-Browser-side replacement is wired for TXT/CSV/DOCX/PPTX attachments. The extension
-intercepts the file input `change` event at `document_start`, checks the file
-with the backend before upload, and injects the returned redacted file copy
-when the verdict is `redact`.
+Browser-side replacement is wired for TXT/CSV/PDF/DOCX/PPTX attachments. The
+extension intercepts the file input `change` event at `document_start`, checks
+the file with the backend before upload, and injects the returned redacted file
+copy when the verdict is `redact`.
 
 ## Live Chrome acceptance
 
@@ -68,15 +67,17 @@ Evidence was captured by manual screenshots during the live ChatGPT run.
 | TXT attachment redaction replacement | Manual screenshot + backend logs `75dc6972-7b26-4546-9e49-1cf4acae64a7`, `928302a6-f14b-4ee0-9f28-c837966e00b8` | Pass. `mykad.txt` was inspected and replaced with `mykad.redacted.txt`; ChatGPT read `Employee IC [MYKAD_1] needs a reply.` and the replaced file passed the follow-up send-time inspection as `allow`. |
 | DOCX attachment redaction replacement | Manual screenshot + backend logs `4e29f889-4d4e-4d23-902c-0e0ae2f96957`, `d9498500-8b6c-4df1-9ceb-cf7188308dc8` | Pass. `mykad.docx` was inspected and replaced with `mykad.redacted.docx`; ChatGPT read `Employee IC [MYKAD_1] needs a reply.` and the replaced file passed the follow-up send-time inspection as `allow`. |
 | PPTX attachment redaction replacement | Manual screenshot + backend logs `23dbeffc-75ce-4d89-b474-ad9f45d5a82d`, `ae863792-f240-4702-b587-b5bd06b31bf6` | Pass. `mykad.pptx` was inspected and replaced with `mykad.redacted.pptx`; ChatGPT read `Employee IC [MYKAD_1] needs a reply.` and the replaced file passed the follow-up send-time inspection as `allow`. |
+| PDF attachment redaction replacement | Manual screenshot + backend logs `58a9ab25-b8e6-4d3f-bc06-f49f13a7d7bf`, `954de026-a486-4ef3-b197-3159c161ae9e` | Pass. `mykad.pdf` was inspected and replaced with `mykad.redacted.pdf`; ChatGPT read `Employee IC [MYKAD_1] needs a reply.` and the replaced file passed the follow-up send-time inspection as `allow`. |
 
 One UX polish landed after the acceptance run: successful sent-state banners
 (`redacted before sending` and `approved -- sending now`) now disappear after
 three seconds. Blocking banners such as `deny` and `waiting for approval` remain
 visible.
 
-Current file-redaction replacement support is intentionally limited to TXT,
-CSV, DOCX and PPTX. PDF is still extracted for policy decisions, but redacted
-copies are not generated or injected for it yet.
+Current file-redaction replacement support covers TXT, CSV, PDF, DOCX and
+PPTX. The generated PDF redaction copy is intentionally a new text-only PDF
+containing the tokenised text, so the original PDF objects are not carried
+forward into the replacement file.
 
 ## Push recommendation
 

@@ -55,10 +55,8 @@ M2, M5, M7 and M8 are real. M3 remains mocked by design:
 
 - M2 detects structured sensitive data such as MyKad, salary and secrets.
 - M5 extracts text from TXT, CSV, PDF, DOCX and PPTX attachments.
-- TXT/CSV/DOCX/PPTX attachments can be replaced in-browser with backend-returned
-  redacted copies before upload.
-- PDF attachments are extracted for allow/redact/hold/deny decisions, but
-  redacted replacement copies are not generated for PDF yet.
+- TXT/CSV/PDF/DOCX/PPTX attachments can be replaced in-browser with
+  backend-returned redacted copies before upload.
 - M7 tokenises redacted spans into encrypted reversible vault mappings.
 - M8 classifies department/confidential semantic signals with local embeddings.
 - M3 is still `mock_decide`.
@@ -119,6 +117,7 @@ Use a fresh or refreshed ChatGPT tab after reloading the unpacked extension.
 | Salary hold | `Please review this salary: Gaji bulanan RM 8,500` | Prompt is held until approval |
 | Salary approval | Approve the latest pending hold | Extension sends the held prompt |
 | TXT attachment redaction | Upload `mykad.txt` containing `880412-08-5561` | File is replaced with `mykad.redacted.txt` before upload |
+| PDF attachment redaction | Upload `mykad.pdf` containing `880412-08-5561` | File is replaced with `mykad.redacted.pdf` before upload |
 | DOCX attachment redaction | Upload `mykad.docx` containing `880412-08-5561` | File is replaced with `mykad.redacted.docx` before upload |
 | PPTX attachment redaction | Upload `mykad.pptx` containing `880412-08-5561` | File is replaced with `mykad.redacted.pptx` before upload |
 

@@ -7,6 +7,7 @@ import binascii
 import io
 import os
 import sys
+import textwrap
 from collections import Counter
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -113,6 +114,7 @@ def get_tokeniser(vault: Any) -> Any:
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+PDF_MIME = "application/pdf"
 
 
 def _can_redact_text_attachment(att: Attachment) -> bool:
@@ -133,6 +135,11 @@ def _can_redact_docx_attachment(att: Attachment) -> bool:
 def _can_redact_pptx_attachment(att: Attachment) -> bool:
     normalised_mime = att.mime.lower().split(";")[0].strip()
     return normalised_mime == PPTX_MIME or att.filename.lower().endswith(".pptx")
+
+
+def _can_redact_pdf_attachment(att: Attachment) -> bool:
+    normalised_mime = att.mime.lower().split(";")[0].strip()
+    return normalised_mime == PDF_MIME or att.filename.lower().endswith(".pdf")
 
 
 def _redacted_filename(filename: str) -> str:
@@ -196,6 +203,91 @@ def _redacted_pptx_attachment(att: Attachment, deck: Any) -> RedactedAttachment:
         filename=_redacted_filename(att.filename),
         mime=att.mime or PPTX_MIME,
         content_b64=base64.b64encode(buf.getvalue()).decode("ascii"),
+    )
+
+
+def _pdf_literal_string(text: str) -> bytes:
+    raw = text.encode("latin-1", errors="replace")
+    escaped = bytearray()
+    for byte in raw:
+        if byte in {0x28, 0x29, 0x5C}:  # (, ), backslash
+            escaped.append(0x5C)
+            escaped.append(byte)
+        elif byte == 0x0D:
+            escaped.extend(b"\\r")
+        elif byte == 0x0A:
+            escaped.extend(b"\\n")
+        elif byte == 0x09:
+            escaped.extend(b"\\t")
+        else:
+            escaped.append(byte)
+    return b"(" + bytes(escaped) + b")"
+
+
+def _pdf_bytes_from_text(text: str) -> bytes:
+    wrapped: list[str] = []
+    for raw_line in text.splitlines() or [""]:
+        wrapped.extend(textwrap.wrap(raw_line, width=86) or [""])
+
+    lines_per_page = 42
+    pages = [wrapped[i:i + lines_per_page] for i in range(0, len(wrapped), lines_per_page)] or [[""]]
+
+    objects: list[bytes] = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    page_ids: list[int] = []
+
+    for page_lines in pages:
+        page_id = len(objects) + 1
+        content_id = page_id + 1
+        page_ids.append(page_id)
+
+        content_lines = [b"BT", b"/F1 11 Tf", b"72 740 Td", b"14 TL"]
+        for idx, line in enumerate(page_lines):
+            if idx:
+                content_lines.append(b"T*")
+            content_lines.append(_pdf_literal_string(line) + b" Tj")
+        content_lines.append(b"ET")
+        content = b"\n".join(content_lines)
+
+        objects.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            f"/Resources << /Font << /F1 3 0 R >> >> /Contents {content_id} 0 R >>".encode("ascii")
+        )
+        objects.append(
+            b"<< /Length " + str(len(content)).encode("ascii") + b" >>\nstream\n" + content + b"\nendstream"
+        )
+
+    kids = b" ".join(f"{page_id} 0 R".encode("ascii") for page_id in page_ids)
+    objects[1] = b"<< /Type /Pages /Count " + str(len(page_ids)).encode("ascii") + b" /Kids [" + kids + b"] >>"
+
+    pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets = [0]
+    for obj_id, obj in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{obj_id} 0 obj\n".encode("ascii"))
+        pdf.extend(obj)
+        pdf.extend(b"\nendobj\n")
+
+    xref_offset = len(pdf)
+    pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    pdf.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    pdf.extend(
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+        f"startxref\n{xref_offset}\n%%EOF\n".encode("ascii")
+    )
+    return bytes(pdf)
+
+
+def _redacted_pdf_attachment(att: Attachment, redacted_text: str) -> RedactedAttachment:
+    return RedactedAttachment(
+        filename=_redacted_filename(att.filename),
+        mime=att.mime or PDF_MIME,
+        content_b64=base64.b64encode(_pdf_bytes_from_text(redacted_text)).decode("ascii"),
     )
 
 
@@ -318,6 +410,7 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         attachment_redaction_inputs: list[tuple[Attachment, int]] = []
         docx_redaction_inputs: list[tuple[Attachment, Any, list[tuple[Any, int]]]] = []
         pptx_redaction_inputs: list[tuple[Attachment, Any, list[tuple[Any, int]]]] = []
+        pdf_redaction_inputs: list[tuple[Attachment, int]] = []
         for att, doc, spans in attachment_spans:
             if not spans:
                 continue
@@ -352,6 +445,11 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
                     tokenise_inputs.append((target.text, target_spans))
                 if targets:
                     pptx_redaction_inputs.append((att, deck, targets))
+                continue
+
+            if _can_redact_pdf_attachment(att):
+                pdf_redaction_inputs.append((att, len(tokenise_inputs)))
+                tokenise_inputs.append((doc.text, spans))
 
         redacted_items, map_id = tokeniser.tokenise_many(tokenise_inputs)
         redacted_prompt = redacted_items[0]
@@ -365,6 +463,8 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
             for target, redacted_index in targets:
                 target.text = redacted_items[redacted_index]
             redacted_attachments.append(_redacted_pptx_attachment(att, deck))
+        for att, redacted_index in pdf_redaction_inputs:
+            redacted_attachments.append(_redacted_pdf_attachment(att, redacted_items[redacted_index]))
 
         # SD-1: the audit row holds the REDACTED text; the original lives
         # only in the vault.

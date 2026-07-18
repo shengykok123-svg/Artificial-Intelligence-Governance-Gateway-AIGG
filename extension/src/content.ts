@@ -144,10 +144,12 @@ function init(site: SiteKey): void {
     return (
       type === "text/plain" ||
       type === "text/csv" ||
+      type === "application/pdf" ||
       type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
       type === "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
       name.endsWith(".txt") ||
       name.endsWith(".csv") ||
+      name.endsWith(".pdf") ||
       name.endsWith(".docx") ||
       name.endsWith(".pptx")
     );
