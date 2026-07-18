@@ -4,12 +4,16 @@ M9 is an optional semantic detector for the AI Governance Gateway. It is
 compatible with the frozen `Detector` and `DocumentClassifier` contracts and
 does not change the `/v1/inspect` request or response schema.
 
-It predicts sentence labels `finance`, `hr`, `legal`, `engineering`, or
-`other`. A confident non-`other` sentence becomes a `DEPT_CONFIDENTIAL` span;
-the existing policy engine then decides whether to allow, redact, hold, or deny
-the full prompt. The document-level classification is the highest-confidence
-non-`other` sentence. This starter data is synthetic and validates wiring only,
-not real-world accuracy.
+The committed scaffold currently predicts sentence labels `finance`, `hr`,
+`legal`, `engineering`, or `other`. It is wiring-only and must be migrated
+before real training: topic labels alone cannot distinguish a public financial
+report from an internal financial forecast. The target production schema is
+`finance_confidential`, `hr_confidential`, `legal_confidential`,
+`engineering_confidential`, and `other`.
+
+Read [the annotation guide](docs/M9_ANNOTATION_GUIDE.md) before collecting or
+labelling data. It defines how a predicted `*_confidential` label maps to the
+existing `DEPT_CONFIDENTIAL` span and `content_department` contract.
 
 ## Prepare data
 
@@ -19,9 +23,10 @@ Run from `backend`:
 python scripts\split_m9_dataset.py
 ```
 
-Replace `data/m9/sample.jsonl` with expert-labelled enterprise sentences before
-claiming performance. Keep source documents separate across train, validation,
-and test; sentence-level random splits alone can leak paraphrases.
+Replace `data/m9/sample.jsonl` only after the target label migration has been
+implemented. Follow the annotation guide: keep source documents separate
+across train, validation, and test; sentence-level random splits alone can leak
+paraphrases.
 
 ## Train and select M9
 
@@ -52,4 +57,3 @@ uvicorn app.main:app --reload
 Keep `SEMANTIC_DETECTOR=m8` until artifacts exist. M9 is deliberately opt-in:
 a missing or broken selected model fails loudly instead of silently falling back
 to an empty mock detector.
-

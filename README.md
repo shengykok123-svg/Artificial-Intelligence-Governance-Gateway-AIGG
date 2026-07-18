@@ -37,7 +37,7 @@ are not built yet; the backbone runs against mocks for them
 | ✅ | **M6** Employer dashboard | P1 | Built |
 | ☐ | **M7** Tokenisation vault | P2 | Mocked — `MockTokeniser` |
 | ☐ | **M8** Embedding similarity | P1 | Mocked — always returns no spans, `(None, 0.0)` |
-| 🧪 | **M9** Fine-tuned DeBERTa-v3-small | P3 | Opt-in scaffold; awaiting real labelled data and training |
+| 🧪 | **M9** Fine-tuned DeBERTa-v3-small | P3 | Opt-in scaffold; target confidential-department schema documented, code/data migration still required |
 
 `GET /v1/health` reports which modules are currently mocked — check it before
 trusting a verdict. While M2/M3/M5/M7 are mocked, only these strings produce
@@ -175,3 +175,4 @@ running.
 - `dashboard/README.md` — how to run it, what `VITE_USE_MSW` does, and which
   screens are read-only in this MVP
 - `backend/README_M9.md` — M9 data format, training, and opt-in runtime setup
+- `backend/docs/M9_ANNOTATION_GUIDE.md` — team annotation rules and end-to-end M9 data/training flow

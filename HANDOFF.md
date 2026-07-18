@@ -75,25 +75,36 @@ Similarly, only `backend/app/repo/` may import `app/models.py`, open a database
 session, or write SQL. Keep policy data in repositories and do not hardcode
 runtime policy in detector code.
 
-## M9: DeBERTa-v3-small department detector
+## M9: DeBERTa-v3-small confidential-department detector
 
 M9 is an opt-in semantic detector built around `microsoft/deberta-v3-small`.
 It is intentionally separate from the earlier standalone six-label prototype.
 
 ### M9 model task
 
-The M9 model labels each **sentence** as one of:
+The committed M9 scaffold currently has an earlier wiring-only topic schema:
 
 ```text
 finance | hr | legal | engineering | other
 ```
 
+It must be migrated before real training because topic alone does not establish
+confidentiality. The proposed target schema is:
+
+```text
+finance_confidential | hr_confidential | legal_confidential |
+engineering_confidential | other
+```
+
+The complete annotation rules and training flow are in
+[`backend/docs/M9_ANNOTATION_GUIDE.md`](backend/docs/M9_ANNOTATION_GUIDE.md).
+
 At runtime:
 
 - `classify(doc)` returns the highest-confidence confidential department, or
-  `(None, 0.0)` if no non-`other` sentence crosses the threshold.
+  `(None, 0.0)` if no `*_confidential` sentence crosses the threshold.
 - `detect(doc)` emits a `DEPT_CONFIDENTIAL` `Span` for every confident
-  non-`other` sentence.
+  `*_confidential` sentence.
 - Existing M3 policy decides what `DEPT_CONFIDENTIAL` means for a selected AI
   tool tier. M9 must not directly decide allow/redact/hold/deny.
 
@@ -108,20 +119,21 @@ backend/scripts/split_m9_dataset.py Dataset split command
 backend/tests/test_detect_deberta.py Contract and integration-seam tests
 backend/tests/test_m9_data.py       Dataset validation/split tests
 backend/README_M9.md                Focused M9 usage guide
+backend/docs/M9_ANNOTATION_GUIDE.md Labelling rules and end-to-end data flow
 ```
 
 ### M9 data requirements
 
 The included data is synthetic and only proves that the pipeline has the right
-shape. Do not claim accuracy from it. Replace it with expert-labelled enterprise
-sentences, including public/benign `other` examples and near misses. Keep all
-sentences derived from one source document in the same train/validation/test
-split to prevent leakage.
+shape. Do not claim accuracy from it. Follow the annotation guide and migrate
+to `*_confidential` labels before training. Include public/benign `other`
+examples and near misses. Keep all sentences derived from one source document
+in the same train/validation/test split to prevent leakage.
 
 One JSONL record is:
 
 ```json
-{"text":"The board forecast is not public.","label":"finance"}
+{"text":"The board forecast is not public.","label":"finance_confidential"}
 ```
 
 ## Local commands (Windows)
@@ -168,11 +180,11 @@ fails loudly when artifacts are absent; it never silently falls back to a mock.
 2. Do not add an AI workspace or OpenAI-compatible reverse proxy.
 3. Do not change frozen detector or repository contracts without an explicit
    team decision.
-4. Replace M9 synthetic data with labelled data before training.
+4. Implement the target M9 label migration, then replace synthetic data with
+   reviewed labelled data before training.
 5. Run the M9 targeted tests after every detector change.
 6. Calibrate `M9_CONFIDENCE_THRESHOLD` against held-out data; do not choose it
    based only on a few hand-written prompts.
 7. Validate latency on the intended demo machine before enabling M9 in a demo.
 8. Do not commit `.env`, model artifacts, credentials, real enterprise text,
    or training data without explicit approval.
-
