@@ -176,3 +176,4 @@ running.
   screens are read-only in this MVP
 - `backend/README_M9.md` — M9 data format, training, and opt-in runtime setup
 - `backend/docs/M9_ANNOTATION_GUIDE.md` — team annotation rules and end-to-end M9 data/training flow
+- `backend/docs/M9_ANNOTATION_GUIDE_ZH.md` — 中文版 M9 标注规则与训练流程

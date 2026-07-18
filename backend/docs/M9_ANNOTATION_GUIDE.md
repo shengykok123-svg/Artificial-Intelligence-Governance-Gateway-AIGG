@@ -1,5 +1,7 @@
 # M9 Data Annotation Guide and Training Flow
 
+> 中文版：[M9_ANNOTATION_GUIDE_ZH.md](M9_ANNOTATION_GUIDE_ZH.md)
+
 ## Purpose
 
 M9 helps the gateway identify **unreleased or internal department-specific

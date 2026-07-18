@@ -12,7 +12,8 @@ report from an internal financial forecast. The target production schema is
 `engineering_confidential`, and `other`.
 
 Read [the annotation guide](docs/M9_ANNOTATION_GUIDE.md) before collecting or
-labelling data. It defines how a predicted `*_confidential` label maps to the
+labelling data; a [Chinese version](docs/M9_ANNOTATION_GUIDE_ZH.md) is also
+available. It defines how a predicted `*_confidential` label maps to the
 existing `DEPT_CONFIDENTIAL` span and `content_department` contract.
 
 ## Prepare data
