@@ -2,7 +2,9 @@
 
 M9 is an optional semantic detector for the AI Governance Gateway. It is
 compatible with the frozen `Detector` and `DocumentClassifier` contracts and
-does not change the `/v1/inspect` request or response schema.
+does not change the `/v1/inspect` request schema. The response additionally
+includes `content_department` and `department_confidence` as explainability
+metadata; M3 still makes its decision from `data_classes`.
 
 M9 uses one shared DeBERTa encoder with two output heads: a department head
 (`finance`, `hr`, `legal`, `engineering`, `other`) and a sensitivity head

@@ -262,6 +262,8 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         data_classes=list(data_classes),
         redacted_prompt=redacted_prompt,
         reason=verdict.reason,
+        content_department=content_department,
+        department_confidence=department_confidence,
     )
 
 

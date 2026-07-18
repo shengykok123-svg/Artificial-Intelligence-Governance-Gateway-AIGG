@@ -47,6 +47,9 @@ export interface InspectResponse {
   data_classes: string[];
   redacted_prompt: string | null; // populated only when decision == "redact"
   reason: string;
+  // Additive M9 explainability metadata; it does not alter the policy verdict.
+  content_department: string | null;
+  department_confidence: number;
 }
 
 // -- IF-3  Service worker -> API   GET /v1/inspect/{log_id} -----------------

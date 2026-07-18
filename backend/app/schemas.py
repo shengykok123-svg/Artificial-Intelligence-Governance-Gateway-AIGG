@@ -27,6 +27,9 @@ class InspectResponse(BaseModel):
     data_classes: list[str]
     redacted_prompt: str | None   # populated only when decision == "redact"
     reason: str                   # one human-readable sentence
+    # M9 explainability metadata. These do not affect the policy verdict.
+    content_department: str | None
+    department_confidence: float
 
 
 __all__ = ["Attachment", "InspectRequest", "InspectResponse"]
