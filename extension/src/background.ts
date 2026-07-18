@@ -183,7 +183,24 @@ async function handleInspect(
 }
 
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
-  if (message.type !== "INSPECT") return false;
-  handleInspect(message, sender.tab?.id).then(sendResponse);
-  return true; // keep the channel open for the async response
+  if (message.type === "INSPECT") {
+    handleInspect(message, sender.tab?.id).then(sendResponse);
+    return true; // keep the channel open for the async response
+  }
+
+  if (message.type === "CHECK_HOLD_STATUS") {
+    void (async () => {
+      const config = await getConfig();
+      try {
+        const status = await fetchStatus(config, message.log_id);
+        sendResponse(status);
+      } catch (err) {
+        console.warn("[aigg] hold status check failed:", err);
+        sendResponse({ decision: "hold", status: "pending" });
+      }
+    })();
+    return true; // keep the channel open for the async response
+  }
+
+  return false;
 });

@@ -1,163 +1,145 @@
-# M4 — Chrome extension
+# M4 Chrome Extension
 
-Manifest V3 + Vite + `@crxjs/vite-plugin` + TypeScript. Intercepts the send
-path on `chatgpt.com` and `gemini.google.com`, routes the prompt through the
-gateway API (IF-2/IF-3), and acts on the verdict before the site ever sees
-the send.
+Manifest V3 + Vite + `@crxjs/vite-plugin` + TypeScript. The extension
+intercepts sends on `chatgpt.com` and `gemini.google.com`, routes prompt text
+and captured attachments through the gateway API, then applies the returned
+verdict before the target site receives the send.
 
-## Build and load
+## Build And Load
 
-```bash
-cd extension
+Backend must be running first. From the repo root, run `scripts/setup-dev.ps1`
+once to create a local `.env` with `MOCK_MODULES=M3,M5` and
+`VAULT_FERNET_KEY`, then start the API:
+
+```powershell
+cd "C:\path\to\HackAttack 3.0\backend"
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Build the extension:
+
+```powershell
+cd "C:\path\to\HackAttack 3.0\extension"
 npm install
-npm run build        # -> extension/dist, a loadable unpacked build
-npm run dev           # HMR dev server, for iterating on content.ts/background.ts
+npm run typecheck
+npm run build
 ```
 
-Chrome -> `chrome://extensions` -> enable **Developer mode** -> **Load
-unpacked** -> select `extension/dist`.
+Load it in Chrome:
 
-Backend must be running first:
+1. Open `chrome://extensions`.
+2. Enable **Developer mode**.
+3. Remove any old `AI Governance Gateway` entry.
+4. Click **Load unpacked**.
+5. Select `extension\dist`.
+6. Open the popup and confirm it can reach `http://localhost:8000`.
 
-```bash
-cd backend && REPO_BACKEND=memory uvicorn app.main:app --reload
+Popup settings for the local demo:
+
+```text
+Base URL: http://localhost:8000
+User ID: wei.eng@acme.my
+API key: dev-key-change-me
+MOCK_MODE: off
 ```
 
-Open the popup once after loading to confirm `GET /v1/health` resolves — if
-the backend is mocking any module, the popup says so.
+Expected popup health in the current frame:
 
-## Every DOM selector, and where it came from
+```text
+Backend is mocking: M3, M5
+```
 
-All selectors live in **`src/selectors.ts`**, nowhere else, as an ordered
-list of candidates per site (first match wins). None are hashed class names.
+## Current Frame
 
-| Site | Element | Candidates (in order) | Anchor |
-|---|---|---|---|
-| chatgpt.com | composer | `#prompt-textarea` | Stable element id on ChatGPT's contenteditable composer, unchanged across redesigns for a long time. |
-| | | `[data-testid="prompt-textarea"]` | Fallback: same element by test id, in case the id above is dropped. |
-| | | `form [contenteditable="true"]` | Last-resort structural fallback: the first contenteditable region inside the composer form. |
-| chatgpt.com | send button | `[data-testid="send-button"]` | ChatGPT's send control has carried this test id for a long time; primary anchor. |
-| | | `button[aria-label="Send prompt"]` | ARIA fallback if the test id changes. |
-| | | `button[aria-label="Send message"]` | Second ARIA label ChatGPT has used for the same control. |
-| chatgpt.com | file input | `input[type="file"]` | There is one file input feeding the composer's attachment flow; type selector is stable by construction (an `<input type="file">` cannot be restyled away). |
-| gemini.google.com | composer | `rich-textarea div[contenteditable="true"]` | Gemini's composer is a `<rich-textarea>` custom element wrapping a contenteditable div; the custom element tag itself is a stable structural anchor. |
-| | | `div[aria-label="Enter a prompt here"]` | ARIA label Gemini has shipped on the same input. |
-| | | `[role="textbox"][contenteditable="true"]` | Structural ARIA-role fallback. |
-| gemini.google.com | send button | `button[aria-label="Send message"]` | Primary ARIA anchor. |
-| | | `button[aria-label="Submit"]` | Alternate label Gemini has used. |
-| | | `[data-testid="send-button"]` | Test-id fallback in case Gemini adopts one. |
-| gemini.google.com | file input | `input[type="file"]` | Same rationale as ChatGPT. |
+M2, M7 and M8 are real. M3 and M5 remain mocked by design:
 
-**These candidates are built from publicly documented, historically stable
-anchors, not verified against a live, logged-in session in this environment**
-(no connected browser was available while building this). Before recording
-the demo: open each site, inspect the composer/send button/file input, and
-confirm the first candidate in each list still matches. If a site has
-changed, add the new selector to the FRONT of that array in
-`src/selectors.ts` — nothing else needs to change, by design.
+- M2 detects structured sensitive data such as MyKad, salary and secrets.
+- M7 tokenises redacted spans into encrypted reversible vault mappings.
+- M8 classifies department/confidential semantic signals with local embeddings.
+- M3 is still `mock_decide`.
+- M5 is still the mocked file extractor.
 
-If every candidate for an element fails to match, every lookup in
-`selectors.ts` returns `null` and `content.ts` does nothing: no
-`preventDefault`, no banner, the site's native send behaves exactly as if
-the extension were not installed. There is no separate error path to keep
-in sync — a missing composer and a missing send button degrade the same way.
+`GET /v1/health` is the source of truth. Do not claim an all-real-module run
+until it returns an empty `mocked` list.
 
-## Wiring (IF-1 / IF-2 / IF-3)
+## Selectors
 
-- **`src/content.ts`** — capture-phase `click`/`keydown` listeners on
-  `document` (not bound to a specific node, since both sites are SPAs that
-  replace the composer/button on re-render). Intercepts a send, reads the
-  composer text and any captured attachments, sends IF-1
-  (`chrome.runtime.sendMessage`), and acts on the outcome. Never calls
-  `fetch` — that is `background.ts`'s job alone.
-- **`src/background.ts`** — the only place that calls `fetch`. Reads
-  `baseUrl` / `userId` / `apiKey` / `mockMode` from `chrome.storage.local`,
-  `POST`s IF-2, and for a `hold` verdict polls IF-3 every 3s for up to 5
-  minutes *without* holding the original message channel open — it resolves
-  the IF-1 response immediately (`hold`, pending) and later pushes a
-  separate `HOLD_RESOLVED` message to the originating tab once the poll
-  settles. This keeps the service worker's per-message lifetime short, which
-  matters under MV3's lifecycle.
-- **`src/types.ts`** — the TypeScript mirror of IF-1/IF-2/IF-3 and
-  `backend/app/schemas.py`. Nothing else defines these shapes.
-- **`src/mainworld.ts`** — a second content script injected with
-  `"world": "MAIN"` (runs as the page's own JS, not the extension's isolated
-  copy). It is the *only* code allowed to write the composer. `content.ts`
-  runs isolated: it shares the DOM with the page but not the page's JS, so a
-  DOM write from there is invisible to ChatGPT's/Gemini's own editor state
-  (ProseMirror et al. keep an internal document model and re-render the DOM
-  from it) — a write from the isolated world can leave the composer *looking*
-  redacted while the internal model, which is what actually gets submitted,
-  never saw it. `content.ts` asks `mainworld.ts` to do the write over
-  `window.postMessage` (the standard bridge between the two worlds, since
-  `window` message events are the one thing they share besides the DOM), then
-  independently re-reads the DOM and requires it to hold the redacted text
-  stable for 120ms before ever replaying. If the write fails or the text
-  doesn't stick, the send is blocked entirely — redaction fails **closed**,
-  never silently ships the original.
+All selectors live in `src/selectors.ts` as ordered candidate lists. If ChatGPT
+or Gemini changes its composer or send button DOM, update that file and rerun
+live acceptance.
 
-## user_id (the IF-1 -> IF-2 gap)
+| Site | Element | Candidates |
+|---|---|---|
+| chatgpt.com | composer | `#prompt-textarea`, `[data-testid="prompt-textarea"]`, `form [contenteditable="true"]` |
+| chatgpt.com | send button | `[data-testid="send-button"]`, `button[aria-label="Send prompt"]`, `button[aria-label="Send message"]` |
+| chatgpt.com | file input | `input[type="file"]` |
+| gemini.google.com | composer | `rich-textarea div[contenteditable="true"]`, `div[aria-label="Enter a prompt here"]`, `[role="textbox"][contenteditable="true"]` |
+| gemini.google.com | send button | `button[aria-label="Send message"]`, `button[aria-label="Submit"]`, `[data-testid="send-button"]` |
+| gemini.google.com | file input | `input[type="file"]` |
 
-IF-1 carries no `user_id`; IF-2 requires one. `background.ts` defaults it to
-a seeded user (`wei.eng@acme.my`) on install, so a fresh unpacked build
-returns real verdicts instead of 403ing on the first prompt. Change it in
-the popup — never role or department: those are resolved server-side from
-the users table (SD-2), and the extension never sends either.
+If a selector is not found, the extension does nothing and lets the page's
+native send path behave normally.
 
-## Verdicts, against the mock plane
+## Wiring
 
-While M2/M3/M5/M7 are mocked, only these three strings produce a non-`allow`
-verdict (see `GET /v1/health` for the current mocked list):
+- `src/content.ts`: capture-phase click/keydown listeners, composer reads,
+  banner UI, hold state, and replaying allowed/redacted/approved sends.
+- `src/background.ts`: the only file that calls `fetch`; it owns API base URL,
+  API key, user ID, `POST /v1/inspect`, and `GET /v1/inspect/{log_id}`.
+- `src/mainworld.ts`: runs in the page's MAIN world and is the only code
+  allowed to write the composer during redaction.
+- `src/types.ts`: TypeScript mirror of IF-1/IF-2/IF-3 wire shapes.
 
-| Trigger string | Verdict |
-|---|---|
-| `880412-08-5561` | redact |
-| `sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d` | deny |
-| `RM 8,500` | hold |
-| anything else | allow |
+Redaction writes are verified before replaying the send. If the composer cannot
+be safely rewritten, the extension fails closed and blocks the original prompt.
 
-## Failure modes (deliberate, see `content.ts` / `background.ts`)
+## Hold Approval Loop
+
+For a hold verdict, `content.ts` stores the active `log_id` and asks
+`background.ts` for status every 3 seconds. `background.ts` performs the
+backend status request. This avoids relying only on a Manifest V3 service
+worker timer, which Chrome can suspend.
+
+When the backend status becomes `approved`, the extension shows
+`approved -- sending now`, replays the original prompt, and clears the success
+banner after a short delay.
+
+## Live Acceptance Cases
+
+Use a fresh or refreshed ChatGPT tab after reloading the unpacked extension.
+
+| Case | Prompt | Expected |
+|---|---|---|
+| MyKad redact | `My IC is 880412-08-5561` | ChatGPT receives `My IC is [MYKAD_1]` |
+| API key deny | `Use this API key: sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d` | Prompt is blocked and remains in composer |
+| Salary hold | `Please review this salary: Gaji bulanan RM 8,500` | Prompt is held until approval |
+| Salary approval | Approve the latest pending hold | Extension sends the held prompt |
+
+Find and approve a pending hold:
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/logs?status=pending&decision=hold&limit=5" -Headers @{ "X-Api-Key" = "dev-key-change-me" } | ConvertTo-Json -Depth 6
+```
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/logs/<log_id>/decision" `
+  -Method Post `
+  -Headers @{ "X-Api-Key" = "dev-key-change-me"; "Content-Type" = "application/json" } `
+  -Body '{"approve":true,"remark":"Approved for acceptance test"}'
+```
+
+## Failure Modes
 
 | Condition | Behaviour |
 |---|---|
-| selector not found | do nothing, let the prompt through untouched |
-| API unreachable / timeout | fail **open**: replay the original send, log a console warning, badge the popup. Known limitation, not a feature — see below. |
-| `403` unknown user | banner "extension not configured", then let it through |
-| `415` unsupported file | fail **closed**: block, show why. We cannot vouch for a file we never inspected. |
+| selector not found | Do nothing; native page send continues |
+| API unreachable / timeout | Fail open and replay original send |
+| unknown user | Show unconfigured banner, then let it through |
+| unsupported file | Fail closed and block |
+| redaction write cannot be verified | Fail closed and block |
 
 ## MOCK_MODE
 
-`src/mock.ts`, toggled in the popup, **default off**. Cycles
-allow -> redact -> hold -> deny on every send with no backend running,
-auto-approving a `hold` after 3s so the offline demo still shows the full
-loop. This is for UI iteration only — it is not the integration proof. The
-real API, over real HTTP, is.
-
-## Demo script: hold -> approve -> unblock
-
-M6 doesn't exist yet, so approve by hand and watch the composer unblock
-within ~3s of polling:
-
-```bash
-curl -X POST http://localhost:8000/v1/logs/<log_id>/decision \
-     -H "X-Api-Key: $API_KEY" -H "Content-Type: application/json" \
-     -d '{"approve": true, "remark": "ok"}'
-```
-
-Trigger a hold by sending `RM 8,500` as the prompt; `<log_id>` is in the
-`InspectResponse` and in the popup's status line.
-
-## Known limitations / open items
-
-- **Fail-open on a dead backend is a real weakness**, not a demo shortcut.
-  It is right for this MVP (a bricked composer does not survive a demo, and
-  fail-closed here means the tool itself becomes the outage), but it belongs
-  in the proposal as a named limitation, with fail-closed + a local decision
-  cache as future work.
-- `Forbidden` (used for the 403 mapping) currently lives in
-  `backend/app/vault/tokeniser.py`, added by M1 as a seam. Move it before
-  M7's owner rewrites that file out from under it.
-- `backend/scripts/backbone_smoke.sh` has only run against
-  `REPO_BACKEND=memory`, never `postgres`.
-- Selectors are built from public knowledge, not a live-verified DOM — see
-  the table above.
+`src/mock.ts`, toggled in the popup, defaults off. It cycles
+allow -> redact -> hold -> deny without a backend and auto-approves a hold
+after 3 seconds. This is for UI iteration only, not integration proof.

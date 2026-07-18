@@ -9,7 +9,13 @@
 
 import { findComposer, findFileInput, findSendButton, siteKeyFor, type SiteKey } from "./selectors";
 import { removeBanner, showBanner } from "./banner";
-import type { AttachmentPayload, BackgroundMessage, InspectMessage, InspectOutcome } from "./types";
+import type {
+  AttachmentPayload,
+  BackgroundMessage,
+  InspectMessage,
+  InspectOutcome,
+  InspectStatusResponse,
+} from "./types";
 
 const site = siteKeyFor(location.hostname);
 if (site) init(site);
@@ -18,6 +24,7 @@ function init(site: SiteKey): void {
   let isReplaying = false;
   let capturedAttachments: AttachmentPayload[] = [];
   let activeLogId: string | null = null;
+  let holdPollTimer: number | null = null;
 
   document.addEventListener("change", onFileInputChange, true);
   document.addEventListener("click", onClickCapture, true);
@@ -116,12 +123,14 @@ function init(site: SiteKey): void {
           `redacted before sending (${result.data_classes.join(", ") || "sensitive data"}).`,
         );
         replaySend(composer);
+        removeBannerSoon("redacted before sending");
         return;
       }
 
       case "hold":
         activeLogId = result.log_id;
         showBanner(composer, "hold", "held for compliance review -- waiting for approval.");
+        startHoldPolling(result.log_id);
         return;
 
       case "deny":
@@ -154,18 +163,56 @@ function init(site: SiteKey): void {
   function onBackgroundMessage(message: BackgroundMessage): void {
     if (message.type !== "HOLD_RESOLVED" || message.log_id !== activeLogId) return;
     activeLogId = null;
+    stopHoldPolling();
 
     const composer = findComposer(site);
     if (message.status === "approved") {
       if (composer) {
         showBanner(composer, "hold", "approved -- sending now.");
         replaySend(composer); // replays the ORIGINAL prompt: hold never touched composer contents
+        removeBannerSoon("approved -- sending now.");
       }
     } else if (message.status === "denied") {
       if (composer) showBanner(composer, "denied", "denied by reviewer. Not sent.");
     } else {
       if (composer) showBanner(composer, "timeout", "still pending after 5 minutes. Not sent -- try again shortly.");
     }
+  }
+
+  function startHoldPolling(logId: string): void {
+    stopHoldPolling();
+    holdPollTimer = window.setInterval(() => {
+      if (activeLogId !== logId) {
+        stopHoldPolling();
+        return;
+      }
+
+      void chrome.runtime
+        .sendMessage<{ type: "CHECK_HOLD_STATUS"; log_id: string }, InspectStatusResponse>({
+          type: "CHECK_HOLD_STATUS",
+          log_id: logId,
+        })
+        .then((status) => {
+          if (status.status === "pending") return;
+          onBackgroundMessage({ type: "HOLD_RESOLVED", log_id: logId, status: status.status });
+        })
+        .catch((err) => {
+          console.warn("[aigg] hold status message failed:", err);
+        });
+    }, 3_000);
+  }
+
+  function stopHoldPolling(): void {
+    if (holdPollTimer === null) return;
+    window.clearInterval(holdPollTimer);
+    holdPollTimer = null;
+  }
+
+  function removeBannerSoon(expectedText: string): void {
+    window.setTimeout(() => {
+      const banner = document.getElementById("aigg-banner");
+      if (banner?.textContent?.includes(expectedText)) removeBanner();
+    }, 3_000);
   }
 
   function replaySend(composer: HTMLElement): void {
