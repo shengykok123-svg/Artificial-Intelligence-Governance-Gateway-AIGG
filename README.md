@@ -15,27 +15,27 @@ passed for MyKad redact, API key deny, salary hold, and approval-send. See
 `docs/EXTENSION_TEST_REPORT.md` and `extension/README.md` for the current
 setup and evidence.
 
-The backbone — **M0, M1, M4, M6** — is built, tested, and wired end to end
-against **real HTTP**, not against each other's mocks. M2, M3, M5, M7 and M8
-are not built yet; the backbone runs against mocks for them
-(`backend/app/mocks.py`), selected explicitly via `MOCK_MODULES` in `.env`.
+The current frame — **M0, M1, M2, M4, M6, M7, M8** — is built, tested, and
+wired end to end against **real HTTP**. M3 and M5 remain mocked by design,
+selected explicitly via `MOCK_MODULES=M3,M5` in `.env`.
 
 | | Module | P | Status |
 |---|---|---|---|
 | ✅ | **M0** Database and persistence | P0 | Built, tested (both backends) |
 | ✅ | **M1** API skeleton + mock plane | P0 | Built, tested |
-| ☐ | **M2** Deterministic detection | P0 | Mocked — `MockRulesDetector` |
+| ✅ | **M2** Deterministic detection | P0 | Built — real structured-pattern detector |
 | ☐ | **M3** Decision engine | P0 | Mocked — `mock_decide` (ignores the rule table) |
-| ✅ | **M4** Chrome extension | P0 | Built |
+| ✅ | **M4** Chrome extension | P0 | Built; live acceptance passed on ChatGPT |
 | ☐ | **M5** File extractor | P1 | Mocked — `text/plain`/`text/csv` only, else 415 |
 | ✅ | **M6** Employer dashboard | P1 | Built |
-| ☐ | **M7** Tokenisation vault | P2 | Mocked — `MockTokeniser` |
-| ☐ | **M8** Embedding similarity | P1 | Mocked — always returns no spans, `(None, 0.0)` |
+| ✅ | **M7** Tokenisation vault | P2 | Built — Fernet-encrypted reversible token maps |
+| ✅ | **M8** Embedding similarity | P1 | Built — local `all-MiniLM-L6-v2` semantic classifier |
 | ☐ | **M9** Fine-tuned DistilBERT | P3 | Proposal only |
 
 `GET /v1/health` reports which modules are currently mocked — check it before
-trusting a verdict. While M2/M3/M5/M7 are mocked, only these strings produce
-a non-`allow` verdict; everything else correctly returns `allow`:
+trusting a verdict. In this frame it should report only `M3` and `M5` as
+mocked. With M2/M7/M8 real and M3/M5 mocked, these demo strings produce the
+acceptance verdicts:
 
 | Trigger string | Verdict |
 |---|---|
@@ -50,20 +50,21 @@ a non-`allow` verdict; everything else correctly returns `allow`:
 bash backend/scripts/backbone_smoke.sh   # all 5 backbone flows, REPO_BACKEND=memory, no Docker
 ```
 
-- **Backend:** 67 passed, 41 skipped (`REPO_BACKEND=memory pytest`) — the
+- **Backend:** 88 passed, 41 skipped (`REPO_BACKEND=memory pytest`) — the
   skips are the same tests re-run against Postgres, which skip cleanly
   without Docker running.
 - **Dashboard:** 10 vitest unit tests (the `by_day` pivot with a sparse day,
   the cross-department predicate including the exact-`0.6` boundary).
 - **Extension:** `tsc --noEmit` and `vite build` clean; loadable unpacked
-  build in `extension/dist`.
+  build in `extension/dist`. Live ChatGPT acceptance passed for MyKad redact,
+  API key deny, salary hold, and approval-send.
 
 ## Layout — do not deviate
 
 ```
 backend/app/main.py             M1  FastAPI app and routers                   BUILT
 backend/app/schemas.py          M1  ALL Pydantic wire models                  BUILT
-backend/app/mocks.py            M1  mocks for M2/M3/M5/M7/M8                  BUILT
+backend/app/mocks.py            M1  mocks for modules not active in this frame BUILT
 backend/app/errors.py           M1  Forbidden -- shared 403 (SD-2, detokenise) BUILT
 backend/app/db.py               M0  engine, session, create_all, reset        BUILT
 backend/app/repo/base.py        M0  repository protocols + DTOs   <- FROZEN*  BUILT
@@ -72,12 +73,12 @@ backend/app/repo/memory.py      M0  in-memory impl for tests and mocks        BU
 backend/app/models.py           M0  ORM tables               <- SCHEMA TBD    BUILT
 docker-compose.yml              M0  PostgreSQL 16 for local dev               BUILT
 backend/app/detect/base.py          shared dataclasses + Detector protocol    BUILT
-backend/app/detect/rules.py     M2  deterministic detection                   mocked
-backend/app/detect/embed.py     M8  embedding similarity                      mocked
+backend/app/detect/rules.py     M2  deterministic detection                   BUILT
+backend/app/detect/embed.py     M8  embedding similarity                      BUILT
 backend/app/extract/files.py    M5  file bytes -> Document                    mocked
 backend/app/policy/engine.py    M3  decision engine (decide())                mocked
 backend/app/policy/rules.yaml   M3  rule table                                seed data
-backend/app/vault/tokeniser.py  M7  reversible redaction                      mocked
+backend/app/vault/tokeniser.py  M7  reversible redaction                      BUILT
 extension/                      M4  MV3 + Vite + TypeScript                   BUILT
 dashboard/                      M6  React + Vite + TypeScript                 BUILT
 ```
