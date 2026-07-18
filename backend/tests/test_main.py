@@ -8,11 +8,13 @@ from __future__ import annotations
 import base64
 import io
 import zipfile
+from xml.sax.saxutils import escape
 
 import pdfplumber
 import pytest
 from docx import Document as DocxDocument
 from fastapi.testclient import TestClient
+from PIL import Image, ImageDraw, ImageFont
 from pptx import Presentation
 
 from app.extract.files import extract
@@ -73,6 +75,129 @@ def xlsx_bytes_with_shared_strings(*values: str) -> bytes:
 <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="{len(values)}" uniqueCount="{len(values)}">{shared_items}</sst>""",
         )
     return buf.getvalue()
+
+
+def image_bytes_with_text(text: str) -> bytes:
+    image = Image.new("RGB", (1200, 220), "white")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.truetype(r"C:\Windows\Fonts\arial.ttf", 52)
+    draw.text((32, 72), text, fill="black", font=font)
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def scanned_pdf_bytes_with_text(text: str) -> bytes:
+    image = Image.open(io.BytesIO(image_bytes_with_text(text)))
+    buf = io.BytesIO()
+    image.save(buf, format="PDF", resolution=150.0)
+    return buf.getvalue()
+
+
+def docx_bytes_with_comments_and_revisions(comment: str, inserted: str, deleted: str) -> bytes:
+    source = DocxDocument()
+    source.add_paragraph("Body text")
+    buf = io.BytesIO()
+    source.save(buf)
+
+    comment_reference_xml = '<w:p><w:r><w:commentReference w:id="0"/></w:r></w:p>'
+    revision_xml = (
+        comment_reference_xml
+        +
+        f'<w:p><w:ins w:id="1" w:author="test"><w:r><w:t>{escape(inserted)}</w:t></w:r></w:ins></w:p>'
+        f'<w:p><w:del w:id="2" w:author="test"><w:r><w:delText>{escape(deleted)}</w:delText></w:r></w:del></w:p>'
+    )
+    with zipfile.ZipFile(io.BytesIO(buf.getvalue())) as archive:
+        document_xml = archive.read("word/document.xml").decode("utf-8")
+        rels_xml = archive.read("word/_rels/document.xml.rels").decode("utf-8")
+        content_types_xml = archive.read("[Content_Types].xml").decode("utf-8")
+    if "<w:sectPr" in document_xml:
+        document_xml = document_xml.replace("<w:sectPr", revision_xml + "<w:sectPr", 1)
+    else:
+        document_xml = document_xml.replace("</w:body>", revision_xml + "</w:body>", 1)
+
+    comments_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:comment w:id="0" w:author="test" w:date="2026-07-19T00:00:00Z">
+<w:p><w:r><w:t>{escape(comment)}</w:t></w:r></w:p>
+</w:comment>
+</w:comments>"""
+    if "relationships/comments" not in rels_xml:
+        rels_xml = rels_xml.replace(
+            "</Relationships>",
+            '<Relationship Id="rId999" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/></Relationships>',
+            1,
+        )
+    if "word/comments.xml" not in content_types_xml:
+        content_types_xml = content_types_xml.replace(
+            "</Types>",
+            '<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/></Types>',
+            1,
+        )
+
+    return replace_zip_parts(
+        buf.getvalue(),
+        {
+            "[Content_Types].xml": content_types_xml.encode("utf-8"),
+            "word/document.xml": document_xml.encode("utf-8"),
+            "word/_rels/document.xml.rels": rels_xml.encode("utf-8"),
+            "word/comments.xml": comments_xml.encode("utf-8"),
+        },
+    )
+
+
+def pptx_bytes_with_comment(comment: str) -> bytes:
+    deck = Presentation()
+    slide = deck.slides.add_slide(deck.slide_layouts[5])
+    slide.shapes.title.text = "Public title"
+    buf = io.BytesIO()
+    deck.save(buf)
+
+    with zipfile.ZipFile(io.BytesIO(buf.getvalue())) as archive:
+        rels_xml = archive.read("ppt/slides/_rels/slide1.xml.rels").decode("utf-8")
+        content_types_xml = archive.read("[Content_Types].xml").decode("utf-8")
+
+    comments_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:cmLst xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+<p:cm authorId="0" dt="2026-07-19T00:00:00Z" idx="1">
+<p:text>{escape(comment)}</p:text>
+</p:cm>
+</p:cmLst>"""
+    if "relationships/comments" not in rels_xml:
+        rels_xml = rels_xml.replace(
+            "</Relationships>",
+            '<Relationship Id="rId999" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments/comment1.xml"/></Relationships>',
+            1,
+        )
+    if "ppt/comments/comment1.xml" not in content_types_xml:
+        content_types_xml = content_types_xml.replace(
+            "</Types>",
+            '<Override PartName="/ppt/comments/comment1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.comments+xml"/></Types>',
+            1,
+        )
+
+    return replace_zip_parts(
+        buf.getvalue(),
+        {
+            "[Content_Types].xml": content_types_xml.encode("utf-8"),
+            "ppt/slides/_rels/slide1.xml.rels": rels_xml.encode("utf-8"),
+            "ppt/comments/comment1.xml": comments_xml.encode("utf-8"),
+        },
+    )
+
+
+def replace_zip_parts(raw: bytes, replacements: dict[str, bytes]) -> bytes:
+    output = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(raw)) as source, zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as dest:
+        written = set()
+        for info in source.infolist():
+            content = replacements.get(info.filename, source.read(info.filename))
+            dest.writestr(info, content)
+            written.add(info.filename)
+        for filename, content in replacements.items():
+            if filename not in written:
+                dest.writestr(filename, content)
+    return output.getvalue()
 
 
 @pytest.fixture(autouse=True)
@@ -378,6 +503,31 @@ def test_text_attachment_redaction_returns_redacted_copy(client: TestClient) -> 
     assert row["map_id"] is not None
 
 
+def test_image_attachment_redaction_returns_redacted_copy(client: TestClient) -> None:
+    image = image_bytes_with_text("Employee IC 880412-08-5561")
+
+    r = inspect(client, user_id="aiman.hr@acme.my",
+                prompt="see attached", attachments=[
+                    {
+                        "filename": "scan.png",
+                        "mime": "image/png",
+                        "content_b64": base64.b64encode(image).decode(),
+                    },
+                ])
+
+    body = r.json()
+    assert body["decision"] == "redact"
+    assert "MYKAD" in body["data_classes"]
+    assert len(body["redacted_attachments"]) == 1
+
+    redacted = body["redacted_attachments"][0]
+    assert redacted["filename"] == "scan.redacted.png"
+    assert redacted["mime"] == "image/png"
+
+    redacted_doc = extract(redacted["filename"], redacted["mime"], redacted["content_b64"])
+    assert "880412-08-5561" not in redacted_doc.text
+
+
 def test_docx_attachment_redaction_returns_redacted_copy(client: TestClient) -> None:
     docx = DocxDocument()
     docx.add_paragraph("Employee IC 880412-08-5561 needs a reply.")
@@ -420,6 +570,36 @@ def test_docx_attachment_redaction_returns_redacted_copy(client: TestClient) -> 
     assert "[MYKAD_4]" in redacted_text
 
 
+def test_docx_attachment_redacts_comments_and_tracked_changes(client: TestClient) -> None:
+    docx = docx_bytes_with_comments_and_revisions(
+        "Comment IC 880412-08-5561",
+        "Inserted IC 880412-08-5561",
+        "Deleted IC 880412-08-5561",
+    )
+
+    r = inspect(client, user_id="aiman.hr@acme.my",
+                prompt="see attached", attachments=[
+                    {
+                        "filename": "review.docx",
+                        "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        "content_b64": base64.b64encode(docx).decode(),
+                    },
+                ])
+
+    body = r.json()
+    assert body["decision"] == "redact"
+    assert "MYKAD" in body["data_classes"]
+    assert len(body["redacted_attachments"]) == 1
+
+    redacted = body["redacted_attachments"][0]
+    redacted_doc = extract(redacted["filename"], redacted["mime"], redacted["content_b64"])
+
+    assert "880412-08-5561" not in redacted_doc.text
+    assert "[MYKAD_1]" in redacted_doc.text
+    assert "[MYKAD_2]" in redacted_doc.text
+    assert "[MYKAD_3]" in redacted_doc.text
+
+
 def test_pptx_attachment_redaction_returns_redacted_copy(client: TestClient) -> None:
     deck = Presentation()
     slide = deck.slides.add_slide(deck.slide_layouts[5])
@@ -460,6 +640,30 @@ def test_pptx_attachment_redaction_returns_redacted_copy(client: TestClient) -> 
     assert "[MYKAD_2]" in redacted_text
 
 
+def test_pptx_attachment_redacts_comments(client: TestClient) -> None:
+    pptx = pptx_bytes_with_comment("Comment IC 880412-08-5561")
+
+    r = inspect(client, user_id="aiman.hr@acme.my",
+                prompt="see attached", attachments=[
+                    {
+                        "filename": "comments.pptx",
+                        "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        "content_b64": base64.b64encode(pptx).decode(),
+                    },
+                ])
+
+    body = r.json()
+    assert body["decision"] == "redact"
+    assert "MYKAD" in body["data_classes"]
+    assert len(body["redacted_attachments"]) == 1
+
+    redacted = body["redacted_attachments"][0]
+    redacted_doc = extract(redacted["filename"], redacted["mime"], redacted["content_b64"])
+
+    assert "880412-08-5561" not in redacted_doc.text
+    assert "[MYKAD_1]" in redacted_doc.text
+
+
 def test_pdf_attachment_redaction_returns_redacted_copy(client: TestClient) -> None:
     pdf = _pdf_bytes_from_text("Employee IC 880412-08-5561 needs a reply.")
 
@@ -479,6 +683,33 @@ def test_pdf_attachment_redaction_returns_redacted_copy(client: TestClient) -> N
 
     redacted = body["redacted_attachments"][0]
     assert redacted["filename"] == "employee.redacted.pdf"
+    assert redacted["mime"] == "application/pdf"
+
+    with pdfplumber.open(io.BytesIO(base64.b64decode(redacted["content_b64"]))) as pdf_doc:
+        redacted_text = "\n".join(page.extract_text() or "" for page in pdf_doc.pages)
+    assert "880412-08-5561" not in redacted_text
+    assert "[MYKAD_1]" in redacted_text
+
+
+def test_scanned_pdf_attachment_redaction_returns_redacted_copy(client: TestClient) -> None:
+    pdf = scanned_pdf_bytes_with_text("Employee IC 880412-08-5561")
+
+    r = inspect(client, user_id="aiman.hr@acme.my",
+                prompt="see attached", attachments=[
+                    {
+                        "filename": "scan.pdf",
+                        "mime": "application/pdf",
+                        "content_b64": base64.b64encode(pdf).decode(),
+                    },
+                ])
+
+    body = r.json()
+    assert body["decision"] == "redact"
+    assert "MYKAD" in body["data_classes"]
+    assert len(body["redacted_attachments"]) == 1
+
+    redacted = body["redacted_attachments"][0]
+    assert redacted["filename"] == "scan.redacted.pdf"
     assert redacted["mime"] == "application/pdf"
 
     with pdfplumber.open(io.BytesIO(base64.b64decode(redacted["content_b64"]))) as pdf_doc:

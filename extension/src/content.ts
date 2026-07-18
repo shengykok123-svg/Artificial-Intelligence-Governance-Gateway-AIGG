@@ -144,12 +144,17 @@ function init(site: SiteKey): void {
     return (
       type === "text/plain" ||
       type === "text/csv" ||
+      type === "image/png" ||
+      type === "image/jpeg" ||
       type === "application/pdf" ||
       type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
       type === "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
       type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
       name.endsWith(".txt") ||
       name.endsWith(".csv") ||
+      name.endsWith(".png") ||
+      name.endsWith(".jpg") ||
+      name.endsWith(".jpeg") ||
       name.endsWith(".pdf") ||
       name.endsWith(".docx") ||
       name.endsWith(".pptx") ||

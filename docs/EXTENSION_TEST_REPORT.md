@@ -24,9 +24,9 @@ popup, and verified against the local backend.
 | --- | --- |
 | `npm run typecheck` | Pass |
 | `npm run build` | Pass; loadable `extension/dist` generated |
-| Backend suite in `.venv` | 100 passed, 41 skipped |
+| Backend suite in `.venv` | 113 passed, 41 skipped |
 | Real M2 + M7 + M8 integration suite | 39 passed |
-| Real M5 extraction suite | 8 passed |
+| Real M5 extraction/redaction coverage | Included in backend suite |
 
 ## Live HTTP smoke checks
 
@@ -41,19 +41,22 @@ popup, and verified against the local backend.
 
 ## M5 file extraction checks
 
-M5 now extracts text from TXT, CSV, PDF, DOCX, PPTX and XLSX in tests, rejects
-invalid base64, rejects unsupported types, and enforces a 5 MB attachment size
-limit. DOCX coverage includes body text, tables, headers and footers. PPTX
-coverage includes slide text and speaker notes. XLSX coverage includes shared
-strings and worksheet inline strings.
+M5 now extracts text from TXT, CSV, PDF, DOCX, PPTX, XLSX and PNG/JPEG image
+attachments in tests, rejects invalid base64, rejects unsupported types, and
+enforces a 5 MB attachment size limit. DOCX coverage includes body text, tables,
+headers, footers, comments and tracked-change text. PPTX coverage includes
+slide text, speaker notes and comments. XLSX coverage includes shared strings
+and worksheet inline strings. PDF extraction falls back to OCR when normal text
+extraction returns no text.
 
-When a TXT, CSV, PDF, DOCX, PPTX or XLSX attachment causes a `redact` verdict,
-`/v1/inspect` now returns a redacted attachment copy in `redacted_attachments`.
+When a TXT, CSV, PDF, DOCX, PPTX, XLSX or PNG/JPEG image attachment causes a
+`redact` verdict, `/v1/inspect` now returns a redacted attachment copy in
+`redacted_attachments`.
 
-Browser-side replacement is wired for TXT/CSV/PDF/DOCX/PPTX/XLSX attachments.
-The extension intercepts the file input `change` event at `document_start`,
-checks the file with the backend before upload, and injects the returned
-redacted file copy when the verdict is `redact`.
+Browser-side replacement is wired for TXT/CSV/PDF/DOCX/PPTX/XLSX/PNG/JPEG
+attachments. The extension intercepts the file input `change` event at
+`document_start`, checks the file with the backend before upload, and injects
+the returned redacted file copy when the verdict is `redact`.
 
 ## Live Chrome acceptance
 
@@ -78,14 +81,15 @@ One UX polish landed after the acceptance run: successful sent-state banners
 three seconds. Blocking banners such as `deny` and `waiting for approval` remain
 visible.
 
-Current file-redaction replacement support covers TXT, CSV, PDF, DOCX, PPTX
-and XLSX. The generated PDF redaction copy is intentionally a new text-only
-PDF containing the tokenised text, so the original PDF objects are not carried
-forward into the replacement file.
+Current file-redaction replacement support covers TXT, CSV, PDF, DOCX, PPTX,
+XLSX and PNG/JPEG images. The generated PDF redaction copy is intentionally a
+new text-only PDF containing the tokenised text, so the original PDF objects
+are not carried forward into the replacement file. Image redaction produces a
+PNG copy with OCR-detected sensitive word boxes blacked out.
 
-Known remaining file limitations: DOCX comments, tracked changes and embedded
-objects are not parsed; PPTX comments are not parsed; image files and scanned
-PDF OCR are not implemented.
+Known remaining file limitations: DOCX/PPTX embedded objects are not parsed,
+and OCR quality depends on the installed local Tesseract binary and image
+quality.
 
 ## Push recommendation
 

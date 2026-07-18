@@ -17,6 +17,9 @@ from docx import Document as DocxDocument
 from pptx import Presentation
 
 from app.detect.base import Document
+from app.extract.docx_ooxml import extract_docx_ooxml_text
+from app.extract.ocr import ocr_image_bytes, ocr_pdf_bytes
+from app.extract.pptx_ooxml import extract_pptx_ooxml_text
 from app.extract.xlsx import extract_xlsx_text
 
 MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
@@ -50,6 +53,8 @@ def _extractor_for(filename: str, mime: str) -> Callable[[bytes], str]:
 
     if normalised_mime in {"text/plain", "text/csv"} or ext in {"txt", "csv"}:
         return _extract_text
+    if normalised_mime in {"image/png", "image/jpeg"} or ext in {"png", "jpg", "jpeg"}:
+        return _extract_image
     if normalised_mime == "application/pdf" or ext == "pdf":
         return _extract_pdf
     if (
@@ -84,9 +89,17 @@ def _extract_text(raw: bytes) -> str:
 def _extract_pdf(raw: bytes) -> str:
     try:
         with pdfplumber.open(io.BytesIO(raw)) as pdf:
-            return "\n".join(page.extract_text() or "" for page in pdf.pages)
+            text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+        return text if text.strip() else ocr_pdf_bytes(raw)
     except Exception as exc:
         raise UnsupportedFile("PDF text could not be extracted") from exc
+
+
+def _extract_image(raw: bytes) -> str:
+    try:
+        return ocr_image_bytes(raw).text
+    except Exception as exc:
+        raise UnsupportedFile("image text could not be extracted") from exc
 
 
 def _extract_docx(raw: bytes) -> str:
@@ -103,6 +116,9 @@ def _extract_docx(raw: bytes) -> str:
                 cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
                 if cells:
                     parts.append("\t".join(cells))
+    ooxml_text = extract_docx_ooxml_text(raw)
+    if ooxml_text:
+        parts.append(ooxml_text)
     return "\n".join(parts)
 
 
@@ -140,6 +156,9 @@ def _extract_pptx(raw: bytes) -> str:
                 parts.append(shape.text)
         if slide.has_notes_slide and slide.notes_slide.notes_text_frame.text:
             parts.append(slide.notes_slide.notes_text_frame.text)
+    ooxml_text = extract_pptx_ooxml_text(raw)
+    if ooxml_text:
+        parts.append(ooxml_text)
     return "\n".join(parts)
 
 

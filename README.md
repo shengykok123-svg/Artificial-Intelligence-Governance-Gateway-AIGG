@@ -26,7 +26,7 @@ explicitly via `MOCK_MODULES=M3` in `.env`.
 | ✅ | **M2** Deterministic detection | P0 | Built — real structured-pattern detector |
 | ☐ | **M3** Decision engine | P0 | Mocked — `mock_decide` (ignores the rule table) |
 | ✅ | **M4** Chrome extension | P0 | Built; live acceptance passed on ChatGPT |
-| ✅ | **M5** File extractor | P1 | Built — TXT/CSV/PDF/DOCX/PPTX/XLSX text extraction |
+| ✅ | **M5** File extractor | P1 | Built — TXT/CSV/PDF/DOCX/PPTX/XLSX/image OCR extraction |
 | ✅ | **M6** Employer dashboard | P1 | Built |
 | ✅ | **M7** Tokenisation vault | P2 | Built — Fernet-encrypted reversible token maps |
 | ✅ | **M8** Embedding similarity | P1 | Built — local `all-MiniLM-L6-v2` semantic classifier |
@@ -50,7 +50,7 @@ verdicts:
 bash backend/scripts/backbone_smoke.sh   # all 5 backbone flows, REPO_BACKEND=memory, no Docker
 ```
 
-- **Backend:** 100 passed, 41 skipped (`REPO_BACKEND=memory pytest`) — the
+- **Backend:** run `REPO_BACKEND=memory pytest` before review; the
   skips are the same tests re-run against Postgres, which skip cleanly
   without Docker running.
 - **Dashboard:** 10 vitest unit tests (the `by_day` pivot with a sparse day,
@@ -58,8 +58,9 @@ bash backend/scripts/backbone_smoke.sh   # all 5 backbone flows, REPO_BACKEND=me
 - **Extension:** `tsc --noEmit` and `vite build` clean; loadable unpacked
   build in `extension/dist`. Live ChatGPT acceptance passed for MyKad redact,
   API key deny, salary hold, and approval-send.
-- **File redaction:** TXT/CSV/PDF/DOCX/PPTX/XLSX attachments can be checked before
-  upload and replaced in-browser with backend-returned redacted copies.
+- **File redaction:** TXT/CSV/PDF/DOCX/PPTX/XLSX/PNG/JPEG attachments can be
+  checked before upload and replaced in-browser with backend-returned redacted
+  copies. OCR requires a local Tesseract binary.
 
 ## Layout — do not deviate
 

@@ -23,6 +23,9 @@ from pptx import Presentation
 from app.detect.base import Classification, Detector, DocumentClassifier, Document, Span
 from app.errors import Forbidden
 from app.extract.files import UnsupportedFile
+from app.extract.docx_ooxml import DocxXmlTextTarget, iter_docx_ooxml_text_targets, redact_docx_ooxml_bytes
+from app.extract.ocr import OcrResult, ocr_image_bytes, redact_image_bytes
+from app.extract.pptx_ooxml import PptxXmlTextTarget, iter_pptx_ooxml_text_targets, redact_pptx_ooxml_bytes
 from app.extract.xlsx import XlsxTextTarget, iter_xlsx_text_targets, redact_xlsx_bytes
 from app.policy.engine import PolicyContext, Verdict
 from app.repo import Repos, get_repos
@@ -117,6 +120,7 @@ DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.docu
 PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 PDF_MIME = "application/pdf"
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+IMAGE_MIMES = {"image/png", "image/jpeg"}
 
 
 def _can_redact_text_attachment(att: Attachment) -> bool:
@@ -144,6 +148,11 @@ def _can_redact_pdf_attachment(att: Attachment) -> bool:
     return normalised_mime == PDF_MIME or att.filename.lower().endswith(".pdf")
 
 
+def _can_redact_image_attachment(att: Attachment) -> bool:
+    normalised_mime = att.mime.lower().split(";")[0].strip()
+    return normalised_mime in IMAGE_MIMES or att.filename.lower().endswith((".png", ".jpg", ".jpeg"))
+
+
 def _can_redact_xlsx_attachment(att: Attachment) -> bool:
     normalised_mime = att.mime.lower().split(";")[0].strip()
     return normalised_mime == XLSX_MIME or att.filename.lower().endswith(".xlsx")
@@ -154,6 +163,11 @@ def _redacted_filename(filename: str) -> str:
         return f"{filename}.redacted.txt"
     stem, ext = filename.rsplit(".", 1)
     return f"{stem}.redacted.{ext}"
+
+
+def _redacted_image_filename(filename: str) -> str:
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    return f"{stem}.redacted.png"
 
 
 def _redacted_attachment(att: Attachment, redacted_text: str) -> RedactedAttachment:
@@ -204,13 +218,20 @@ def _iter_docx_story_containers(docx: Any) -> list[Any]:
     return containers
 
 
-def _redacted_docx_attachment(att: Attachment, docx: Any) -> RedactedAttachment:
+def _redacted_docx_attachment(
+    att: Attachment,
+    docx: Any,
+    xml_replacements: dict[DocxXmlTextTarget, str] | None = None,
+) -> RedactedAttachment:
     buf = io.BytesIO()
     docx.save(buf)
+    content = buf.getvalue()
+    if xml_replacements:
+        content = redact_docx_ooxml_bytes(content, xml_replacements)
     return RedactedAttachment(
         filename=_redacted_filename(att.filename),
         mime=att.mime or DOCX_MIME,
-        content_b64=base64.b64encode(buf.getvalue()).decode("ascii"),
+        content_b64=base64.b64encode(content).decode("ascii"),
     )
 
 
@@ -228,13 +249,20 @@ def _iter_pptx_text_targets(deck: Any) -> list[Any]:
     return targets
 
 
-def _redacted_pptx_attachment(att: Attachment, deck: Any) -> RedactedAttachment:
+def _redacted_pptx_attachment(
+    att: Attachment,
+    deck: Any,
+    xml_replacements: dict[PptxXmlTextTarget, str] | None = None,
+) -> RedactedAttachment:
     buf = io.BytesIO()
     deck.save(buf)
+    content = buf.getvalue()
+    if xml_replacements:
+        content = redact_pptx_ooxml_bytes(content, xml_replacements)
     return RedactedAttachment(
         filename=_redacted_filename(att.filename),
         mime=att.mime or PPTX_MIME,
-        content_b64=base64.b64encode(buf.getvalue()).decode("ascii"),
+        content_b64=base64.b64encode(content).decode("ascii"),
     )
 
 
@@ -320,6 +348,19 @@ def _redacted_pdf_attachment(att: Attachment, redacted_text: str) -> RedactedAtt
         filename=_redacted_filename(att.filename),
         mime=att.mime or PDF_MIME,
         content_b64=base64.b64encode(_pdf_bytes_from_text(redacted_text)).decode("ascii"),
+    )
+
+
+def _redacted_image_attachment(att: Attachment, result: OcrResult, spans: list[Span]) -> RedactedAttachment:
+    redacted_bytes = redact_image_bytes(
+        _decode_attachment_bytes(att),
+        result,
+        [(span.start, span.end) for span in spans],
+    )
+    return RedactedAttachment(
+        filename=_redacted_image_filename(att.filename),
+        mime="image/png",
+        content_b64=base64.b64encode(redacted_bytes).decode("ascii"),
     )
 
 
@@ -449,9 +490,14 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         tokeniser = get_tokeniser(repos.vault)
         tokenise_inputs: list[tuple[str, list[Span]]] = [(req.prompt, verdict.spans_to_redact)]
         attachment_redaction_inputs: list[tuple[Attachment, int]] = []
-        docx_redaction_inputs: list[tuple[Attachment, Any, list[tuple[Any, int]]]] = []
-        pptx_redaction_inputs: list[tuple[Attachment, Any, list[tuple[Any, int]]]] = []
+        docx_redaction_inputs: list[
+            tuple[Attachment, Any, list[tuple[Any, int]], list[tuple[DocxXmlTextTarget, int]]]
+        ] = []
+        pptx_redaction_inputs: list[
+            tuple[Attachment, Any, list[tuple[Any, int]], list[tuple[PptxXmlTextTarget, int]]]
+        ] = []
         pdf_redaction_inputs: list[tuple[Attachment, int]] = []
+        image_redaction_inputs: list[tuple[Attachment, OcrResult, list[Span]]] = []
         xlsx_redaction_inputs: list[tuple[Attachment, list[tuple[XlsxTextTarget, int]]]] = []
         for att, doc, spans in attachment_spans:
             if not spans:
@@ -462,7 +508,8 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
                 continue
 
             if _can_redact_docx_attachment(att):
-                docx = DocxDocument(io.BytesIO(_decode_attachment_bytes(att)))
+                raw = _decode_attachment_bytes(att)
+                docx = DocxDocument(io.BytesIO(raw))
                 targets: list[tuple[Any, int]] = []
                 for target in _iter_docx_text_targets(docx):
                     target_doc = Document(text=target.text, source_filename=att.filename, mime=att.mime)
@@ -471,12 +518,21 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
                         continue
                     targets.append((target, len(tokenise_inputs)))
                     tokenise_inputs.append((target.text, target_spans))
-                if targets:
-                    docx_redaction_inputs.append((att, docx, targets))
+                xml_targets: list[tuple[DocxXmlTextTarget, int]] = []
+                for target in iter_docx_ooxml_text_targets(raw):
+                    target_doc = Document(text=target.text, source_filename=att.filename, mime=att.mime)
+                    target_spans = rules_detector.detect(target_doc) + embed_detector.detect(target_doc)
+                    if not target_spans:
+                        continue
+                    xml_targets.append((target, len(tokenise_inputs)))
+                    tokenise_inputs.append((target.text, target_spans))
+                if targets or xml_targets:
+                    docx_redaction_inputs.append((att, docx, targets, xml_targets))
                 continue
 
             if _can_redact_pptx_attachment(att):
-                deck = Presentation(io.BytesIO(_decode_attachment_bytes(att)))
+                raw = _decode_attachment_bytes(att)
+                deck = Presentation(io.BytesIO(raw))
                 targets: list[tuple[Any, int]] = []
                 for target in _iter_pptx_text_targets(deck):
                     target_doc = Document(text=target.text, source_filename=att.filename, mime=att.mime)
@@ -485,13 +541,30 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
                         continue
                     targets.append((target, len(tokenise_inputs)))
                     tokenise_inputs.append((target.text, target_spans))
-                if targets:
-                    pptx_redaction_inputs.append((att, deck, targets))
+                xml_targets: list[tuple[PptxXmlTextTarget, int]] = []
+                for target in iter_pptx_ooxml_text_targets(raw):
+                    target_doc = Document(text=target.text, source_filename=att.filename, mime=att.mime)
+                    target_spans = rules_detector.detect(target_doc) + embed_detector.detect(target_doc)
+                    if not target_spans:
+                        continue
+                    xml_targets.append((target, len(tokenise_inputs)))
+                    tokenise_inputs.append((target.text, target_spans))
+                if targets or xml_targets:
+                    pptx_redaction_inputs.append((att, deck, targets, xml_targets))
                 continue
 
             if _can_redact_pdf_attachment(att):
                 pdf_redaction_inputs.append((att, len(tokenise_inputs)))
                 tokenise_inputs.append((doc.text, spans))
+                continue
+
+            if _can_redact_image_attachment(att):
+                result = ocr_image_bytes(_decode_attachment_bytes(att))
+                target_doc = Document(text=result.text, source_filename=att.filename, mime=att.mime)
+                target_spans = rules_detector.detect(target_doc) + embed_detector.detect(target_doc)
+                if target_spans:
+                    image_redaction_inputs.append((att, result, target_spans))
+                    tokenise_inputs.append((result.text, target_spans))
                 continue
 
             if _can_redact_xlsx_attachment(att):
@@ -510,16 +583,20 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         redacted_prompt = redacted_items[0]
         for att, redacted_index in attachment_redaction_inputs:
             redacted_attachments.append(_redacted_attachment(att, redacted_items[redacted_index]))
-        for att, docx, targets in docx_redaction_inputs:
+        for att, docx, targets, xml_targets in docx_redaction_inputs:
             for target, redacted_index in targets:
                 target.text = redacted_items[redacted_index]
-            redacted_attachments.append(_redacted_docx_attachment(att, docx))
-        for att, deck, targets in pptx_redaction_inputs:
+            xml_replacements = {target: redacted_items[redacted_index] for target, redacted_index in xml_targets}
+            redacted_attachments.append(_redacted_docx_attachment(att, docx, xml_replacements))
+        for att, deck, targets, xml_targets in pptx_redaction_inputs:
             for target, redacted_index in targets:
                 target.text = redacted_items[redacted_index]
-            redacted_attachments.append(_redacted_pptx_attachment(att, deck))
+            xml_replacements = {target: redacted_items[redacted_index] for target, redacted_index in xml_targets}
+            redacted_attachments.append(_redacted_pptx_attachment(att, deck, xml_replacements))
         for att, redacted_index in pdf_redaction_inputs:
             redacted_attachments.append(_redacted_pdf_attachment(att, redacted_items[redacted_index]))
+        for att, result, target_spans in image_redaction_inputs:
+            redacted_attachments.append(_redacted_image_attachment(att, result, target_spans))
         for att, targets in xlsx_redaction_inputs:
             replacements = {target: redacted_items[redacted_index] for target, redacted_index in targets}
             redacted_attachments.append(_redacted_xlsx_attachment(att, replacements))

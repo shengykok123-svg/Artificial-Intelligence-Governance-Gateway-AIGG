@@ -13,6 +13,8 @@ pdfplumber
 python-docx
 python-pptx
 pandas
+pillow
+pypdfium2
 # M7
 cryptography
 # M8  (P2 - only if M1-M7 are done and the video is recorded)
