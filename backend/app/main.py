@@ -29,7 +29,7 @@ load_dotenv()
 ENV = os.getenv("ENV", "dev")
 API_KEY = os.getenv("API_KEY", "dev-key-change-me")
 MOCK_MODULES: set[str] = {
-    m.strip() for m in os.getenv("MOCK_MODULES", "M2,M3,M5,M7,M8").split(",")
+    m.strip() for m in os.getenv("MOCK_MODULES", "M3").split(",")
     if m.strip()
 }
 SEMANTIC_DETECTOR = os.getenv("SEMANTIC_DETECTOR", "m8").strip().lower()
@@ -94,9 +94,6 @@ def get_embed_detector() -> Detector | DocumentClassifier:
 
 
 def get_extractor() -> Callable[[str, str, str], Document]:
-    if "M5" in MOCK_MODULES:
-        from app.mocks import mock_extract
-        return mock_extract
     from app.extract.files import extract
     return extract
 

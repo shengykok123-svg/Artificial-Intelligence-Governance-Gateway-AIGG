@@ -1,6 +1,8 @@
 """M1 pipeline tests: one per verdict, the hold->approve->unblock loop, the
-error mappings, SD-1, and the ENV=demo guard. All against the mock plane
-(MOCK_MODULES=M2,M3,M5,M7,M8) and REPO_BACKEND=memory -- no Docker.
+error mappings, SD-1, and the ENV=demo guard. Against the mock plane
+(MOCK_MODULES=M3), the real M2/M5/M7/M8 modules, and REPO_BACKEND=memory --
+no Docker. Requires VAULT_FERNET_KEY (M7's real Tokeniser needs one; see
+scripts/setup-dev.ps1).
 """
 
 from __future__ import annotations
@@ -258,12 +260,15 @@ def test_wrong_or_missing_api_key_is_403(client: TestClient) -> None:
 
 
 # --------------------------------------------------------------------------
-# Text extraction round-trip through the mock plane.
+# Text extraction round-trip through the real M5 extractor.
 # --------------------------------------------------------------------------
 
 
 def test_supported_attachment_contributes_to_verdict(client: TestClient) -> None:
-    content = base64.b64encode(b"RM 8,500 buried in a csv cell").decode()
+    # The comma inside the salary value must survive real CSV parsing, so it
+    # is quoted like any well-formed CSV cell containing a delimiter.
+    csv_bytes = b'note\n"RM 8,500 buried in a csv cell"\n'
+    content = base64.b64encode(csv_bytes).decode()
     r = inspect(client, user_id="aiman.hr@acme.my",
                prompt="see attached", attachments=[
                    {"filename": "note.csv", "mime": "text/csv",

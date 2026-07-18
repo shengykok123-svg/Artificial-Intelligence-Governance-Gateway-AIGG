@@ -7,13 +7,11 @@ import base64
 import pytest
 
 from app.detect.base import Classification, Document, Span
-from app.extract.files import UnsupportedFile
 from app.mocks import (
     MockEmbedDetector,
     MockRulesDetector,
     MockTokeniser,
     mock_decide,
-    mock_extract,
 )
 from app.policy.engine import PolicyContext
 from app.repo.memory import InMemoryVaultRepo
@@ -38,17 +36,6 @@ def test_embed_detector_is_honestly_empty() -> None:
     doc = Document(text="anything", source_filename=None, mime="text/plain")
     assert MockEmbedDetector().detect(doc) == []
     assert MockEmbedDetector().classify(doc) == (None, 0.0)
-
-
-def test_extract_text_plain_roundtrips() -> None:
-    b64 = base64.b64encode("hello world".encode()).decode()
-    doc = mock_extract("a.txt", "text/plain", b64)
-    assert doc.text == "hello world"
-
-
-def test_extract_rejects_unsupported_mime() -> None:
-    with pytest.raises(UnsupportedFile):
-        mock_extract("a.pdf", "application/pdf", "AA==")
 
 
 def test_decide_strictest_wins_and_ignores_rules() -> None:
