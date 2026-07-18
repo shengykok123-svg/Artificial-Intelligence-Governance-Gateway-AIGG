@@ -66,7 +66,11 @@ class DebertaM9MultiTaskModel(PreTrainedModel):
             **kwargs,
             return_dict=True,
         )
-        pooled = self.dropout(encoded.last_hidden_state[:, 0])
+        # Trainer/Accelerate may run the encoder under GPU autocast (float16)
+        # while newly initialised classification heads remain float32. Cast the
+        # pooled representation to the head dtype so both ordinary fp32 and
+        # mixed-precision Colab runs are valid.
+        pooled = self.dropout(encoded.last_hidden_state[:, 0]).to(self.department_classifier.weight.dtype)
         department_logits = self.department_classifier(pooled)
         sensitivity_logits = self.sensitivity_classifier(pooled)
         loss = None
