@@ -19,6 +19,10 @@ function el<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
 }
 
+function setM9TesterLink(baseUrl: string): void {
+  el<HTMLAnchorElement>("m9TesterLink").href = `${baseUrl.replace(/\/+$/, "")}/m9-tester/`;
+}
+
 async function load(): Promise<void> {
   const stored = (await chrome.storage.local.get([
     "baseUrl",
@@ -32,6 +36,7 @@ async function load(): Promise<void> {
   el<HTMLInputElement>("userId").value = stored.userId ?? DEFAULTS.userId;
   el<HTMLInputElement>("apiKey").value = stored.apiKey ?? DEFAULTS.apiKey;
   el<HTMLInputElement>("mockMode").checked = stored.mockMode ?? DEFAULTS.mockMode;
+  setM9TesterLink(stored.baseUrl ?? DEFAULTS.baseUrl);
 
   renderStatus(stored.lastVerdict);
   void checkHealth(stored.baseUrl ?? DEFAULTS.baseUrl, stored.apiKey ?? DEFAULTS.apiKey);
@@ -72,6 +77,7 @@ el<HTMLButtonElement>("save").addEventListener("click", () => {
     const apiKey = el<HTMLInputElement>("apiKey").value.trim() || DEFAULTS.apiKey;
     const mockMode = el<HTMLInputElement>("mockMode").checked;
     await chrome.storage.local.set({ baseUrl, userId, apiKey, mockMode });
+    setM9TesterLink(baseUrl);
     void checkHealth(baseUrl, apiKey);
   })();
 });
