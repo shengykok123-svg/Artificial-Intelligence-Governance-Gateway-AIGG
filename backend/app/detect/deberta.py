@@ -1,22 +1,37 @@
-"""Optional M9 DeBERTa semantic detector.
+"""Optional M9 two-head DeBERTa semantic detector.
 
-It keeps the frozen detector contracts untouched: documents receive a single
-department classification while individual confident sentences become real
-``DEPT_CONFIDENTIAL`` spans for the existing policy engine and vault.
+The frozen contracts stay untouched. A sentence becomes a `DEPT_CONFIDENTIAL`
+span only when the sensitivity head says confidential and the department head
+identifies its responsible department.
 """
 from __future__ import annotations
 
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from app.detect.base import Document, Span
 
-MODEL_NAME = "microsoft/deberta-v3-small"
 DEPARTMENT_LABELS = frozenset({"finance", "hr", "legal", "engineering", "other"})
+SENSITIVITY_LABELS = frozenset({"confidential", "non_confidential"})
 _SENTENCE_BREAK = re.compile(r"(?:\r?\n)+|(?<=[.!?])\s+")
-SentencePredictor = Callable[[str], tuple[str, float]]
+
+
+@dataclass(frozen=True)
+class SentencePrediction:
+    department: str
+    department_confidence: float
+    is_confidential: bool
+    sensitivity_confidence: float
+
+    @property
+    def joint_confidence(self) -> float:
+        return min(self.department_confidence, self.sensitivity_confidence)
+
+
+SentencePredictor = Callable[[str], SentencePrediction]
 
 
 def _read_threshold(value: str | None) -> float:
@@ -27,11 +42,7 @@ def _read_threshold(value: str | None) -> float:
 
 
 class DebertaDetector:
-    """Classify document sentences with a saved fine-tuned DeBERTa model.
-
-    ``predictor`` exists only as a dependency-injection seam for fast unit
-    tests; production creates this class without it and loads artifacts once.
-    """
+    """Run one shared-encoder, two-head saved M9 model over document sentences."""
 
     def __init__(
         self,
@@ -43,9 +54,7 @@ class DebertaDetector:
         torch_module: Any | None = None,
         device: Any | None = None,
     ) -> None:
-        self.threshold = threshold if threshold is not None else _read_threshold(
-            os.getenv("M9_CONFIDENCE_THRESHOLD")
-        )
+        self.threshold = threshold if threshold is not None else _read_threshold(os.getenv("M9_CONFIDENCE_THRESHOLD"))
         if not 0.0 < self.threshold < 1.0:
             raise ValueError("M9 confidence threshold must be between 0 and 1.")
         self.model_path = model_path or Path(
@@ -56,40 +65,35 @@ class DebertaDetector:
         self._model = model
         self._torch = torch_module
         self._device = device
-        self._id_to_label: dict[int, str] = {}
-
+        self._department_labels: tuple[str, ...] = ()
+        self._sensitivity_labels: tuple[str, ...] = ()
         if predictor is None:
             self._load_model()
 
     def _load_model(self) -> None:
         if not self.model_path.exists():
             raise FileNotFoundError(
-                f"M9 model artifacts are missing at {self.model_path}. "
-                "Run 'python -m ml.m9_train' from backend first."
+                f"M9 model artifacts are missing at {self.model_path}. Run 'python -m ml.m9_train' from backend first."
             )
         try:
             import torch
-            from transformers import AutoModelForSequenceClassification, AutoTokenizer
+            from transformers import AutoTokenizer
+            from ml.m9_model import DebertaM9MultiTaskModel
         except ImportError as exc:
             raise RuntimeError("M9 requires torch and transformers. Install backend/requirements.txt.") from exc
-
         self._torch = torch
         self._device = self._device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._tokenizer = self._tokenizer or AutoTokenizer.from_pretrained(self.model_path)
-        self._model = self._model or AutoModelForSequenceClassification.from_pretrained(self.model_path)
+        self._model = self._model or DebertaM9MultiTaskModel.from_pretrained(self.model_path)
         self._model.to(self._device)
         self._model.eval()
-        self._id_to_label = {
-            int(index): str(label).lower() for index, label in self._model.config.id2label.items()
-        }
-        if set(self._id_to_label.values()) != DEPARTMENT_LABELS:
-            raise ValueError(
-                "M9 model label mapping must exactly contain finance, hr, legal, engineering and other."
-            )
+        self._department_labels = tuple(str(label).lower() for label in self._model.config.m9_department_labels)
+        self._sensitivity_labels = tuple(str(label).lower() for label in self._model.config.m9_sensitivity_labels)
+        if set(self._department_labels) != DEPARTMENT_LABELS or set(self._sensitivity_labels) != SENSITIVITY_LABELS:
+            raise ValueError("M9 model labels must contain the expected department and sensitivity labels.")
 
     @staticmethod
     def _sentences(text: str) -> Iterator[tuple[int, int, str]]:
-        """Yield non-empty, trimmed sentences and their original offsets."""
         start = 0
         for separator in _SENTENCE_BREAK.finditer(text):
             yield from DebertaDetector._trimmed_sentence(text, start, separator.start())
@@ -99,48 +103,64 @@ class DebertaDetector:
     @staticmethod
     def _trimmed_sentence(text: str, start: int, end: int) -> Iterator[tuple[int, int, str]]:
         fragment = text[start:end]
-        left_trimmed = len(fragment) - len(fragment.lstrip())
-        right_trimmed = len(fragment.rstrip())
-        sentence_start, sentence_end = start + left_trimmed, start + right_trimmed
+        sentence_start = start + len(fragment) - len(fragment.lstrip())
+        sentence_end = start + len(fragment.rstrip())
         if sentence_start < sentence_end:
             yield sentence_start, sentence_end, text[sentence_start:sentence_end]
 
-    def _predict(self, sentence: str) -> tuple[str, float]:
+    def _predict(self, sentence: str) -> SentencePrediction:
         if self._predictor is not None:
-            label, confidence = self._predictor(sentence)
+            prediction = self._predictor(sentence)
         else:
             assert self._torch is not None and self._tokenizer is not None and self._model is not None
             encoded = self._tokenizer(sentence, return_tensors="pt", truncation=True, max_length=256)
             encoded = {key: value.to(self._device) for key, value in encoded.items()}
             with self._torch.inference_mode():
-                probabilities = self._torch.softmax(self._model(**encoded).logits[0], dim=-1)
-            confidence, label_id = self._torch.max(probabilities, dim=-1)
-            label = self._id_to_label[int(label_id.item())]
-            confidence = float(confidence.item())
-        normalized = label.lower().strip()
-        if normalized not in DEPARTMENT_LABELS:
-            raise ValueError(f"M9 predictor returned unsupported label {label!r}.")
-        return normalized, float(confidence)
+                output = self._model(**encoded)
+                department_probabilities = self._torch.softmax(output.department_logits[0], dim=-1)
+                sensitivity_probabilities = self._torch.softmax(output.sensitivity_logits[0], dim=-1)
+            department_confidence, department_id = self._torch.max(department_probabilities, dim=-1)
+            sensitivity_confidence, sensitivity_id = self._torch.max(sensitivity_probabilities, dim=-1)
+            prediction = SentencePrediction(
+                department=self._department_labels[int(department_id.item())],
+                department_confidence=float(department_confidence.item()),
+                is_confidential=self._sensitivity_labels[int(sensitivity_id.item())] == "confidential",
+                sensitivity_confidence=float(sensitivity_confidence.item()),
+            )
+        if prediction.department not in DEPARTMENT_LABELS:
+            raise ValueError(f"M9 predictor returned unsupported department {prediction.department!r}.")
+        if not 0.0 <= prediction.department_confidence <= 1.0 or not 0.0 <= prediction.sensitivity_confidence <= 1.0:
+            raise ValueError("M9 predictor confidences must be between 0 and 1.")
+        return prediction
+
+    def _is_confident_confidential(self, prediction: SentencePrediction) -> bool:
+        return (
+            prediction.is_confidential
+            and prediction.department != "other"
+            and prediction.joint_confidence >= self.threshold
+        )
 
     def classify(self, doc: Document) -> tuple[str | None, float]:
-        """Return the highest-confidence confidential department in a document."""
+        """Return highest-confidence department among confidential sentences only."""
         best_label: str | None = None
         best_confidence = 0.0
         for _start, _end, sentence in self._sentences(doc.text):
-            label, confidence = self._predict(sentence)
-            if label != "other" and confidence >= self.threshold and confidence > best_confidence:
-                best_label, best_confidence = label, confidence
+            prediction = self._predict(sentence)
+            if self._is_confident_confidential(prediction) and prediction.joint_confidence > best_confidence:
+                best_label, best_confidence = prediction.department, prediction.joint_confidence
         return best_label, best_confidence
 
     def detect(self, doc: Document) -> list[Span]:
-        """Convert confident sensitive sentences into offset-correct policy spans."""
+        """Convert confidential sentence predictions into offset-correct policy spans."""
         spans: list[Span] = []
         for start, end, sentence in self._sentences(doc.text):
-            label, confidence = self._predict(sentence)
-            if label != "other" and confidence >= self.threshold:
+            prediction = self._predict(sentence)
+            if self._is_confident_confidential(prediction):
                 spans.append(Span(
-                    start=start, end=end, data_class="DEPT_CONFIDENTIAL",
-                    detector="deberta", confidence=confidence,
+                    start=start,
+                    end=end,
+                    data_class="DEPT_CONFIDENTIAL",
+                    detector="deberta",
+                    confidence=prediction.joint_confidence,
                 ))
         return spans
-

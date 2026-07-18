@@ -37,7 +37,7 @@ are not built yet; the backbone runs against mocks for them
 | ✅ | **M6** Employer dashboard | P1 | Built |
 | ☐ | **M7** Tokenisation vault | P2 | Mocked — `MockTokeniser` |
 | ☐ | **M8** Embedding similarity | P1 | Mocked — always returns no spans, `(None, 0.0)` |
-| 🧪 | **M9** Fine-tuned DeBERTa-v3-small | P3 | Opt-in scaffold; target confidential-department schema documented, code/data migration still required |
+| 🧪 | **M9** Fine-tuned DeBERTa-v3-small | P3 | Opt-in two-head scaffold; synthetic data only, awaiting reviewed data and fine-tuning |
 
 `GET /v1/health` reports which modules are currently mocked — check it before
 trusting a verdict. While M2/M3/M5/M7 are mocked, only these strings produce

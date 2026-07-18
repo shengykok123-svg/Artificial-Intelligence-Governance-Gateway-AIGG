@@ -21,7 +21,6 @@ sentence-transformers
 torch
 transformers
 datasets
-scikit-learn
 # dev
 pytest
 httpx

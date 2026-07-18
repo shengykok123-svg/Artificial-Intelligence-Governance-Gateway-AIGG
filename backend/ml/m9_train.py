@@ -1,4 +1,4 @@
-"""Fine-tune DeBERTa-v3-small for M9 sentence-level department classification."""
+"""Fine-tune DeBERTa-v3-small with department and sensitivity output heads."""
 from __future__ import annotations
 
 import argparse
@@ -9,17 +9,10 @@ from typing import Any
 import numpy as np
 import torch
 from datasets import Dataset
-from sklearn.metrics import f1_score, precision_recall_fscore_support
-from transformers import (
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
-    DataCollatorWithPadding,
-    Trainer,
-    TrainingArguments,
-    set_seed,
-)
+from transformers import AutoTokenizer, DataCollatorWithPadding, Trainer, TrainingArguments, set_seed
 
-from ml.m9_data import DEPARTMENT_LABELS, ID_TO_LABEL, LABEL_TO_ID, read_jsonl
+from ml.m9_data import DEPARTMENT_TO_ID, SENSITIVITY_TO_ID, read_jsonl
+from ml.m9_model import DebertaM9MultiTaskModel
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 MODEL_NAME = "microsoft/deberta-v3-small"
@@ -35,25 +28,42 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def build_dataset(records: list[dict[str, str]], tokenizer: Any) -> Dataset:
-    """Turn validated M9 records into a tokenized single-label dataset."""
-    rows = [{"text": row["text"], "labels": LABEL_TO_ID[row["label"]]} for row in records]
+def build_dataset(records: list[dict[str, Any]], tokenizer: Any) -> Dataset:
+    rows = [
+        {
+            "text": row["text"],
+            "department_labels": DEPARTMENT_TO_ID[row["department"]],
+            "sensitivity_labels": SENSITIVITY_TO_ID["confidential" if row["is_confidential"] else "non_confidential"],
+        }
+        for row in records
+    ]
     dataset = Dataset.from_list(rows)
     return dataset.map(lambda batch: tokenizer(batch["text"], truncation=True, max_length=256), batched=True)
 
 
 def compute_metrics(prediction: Any) -> dict[str, float]:
-    labels = prediction.label_ids
-    predicted = np.argmax(prediction.predictions, axis=-1)
-    precision, recall, f1, _support = precision_recall_fscore_support(
-        labels, predicted, average="macro", zero_division=0
-    )
+    department_logits, sensitivity_logits = prediction.predictions
+    department_labels, sensitivity_labels = prediction.label_ids
+    department_predicted = np.argmax(department_logits, axis=-1)
+    sensitivity_predicted = np.argmax(sensitivity_logits, axis=-1)
+    joint_correct = (department_predicted == department_labels) & (sensitivity_predicted == sensitivity_labels)
     return {
-        "macro_precision": float(precision),
-        "macro_recall": float(recall),
-        "macro_f1": float(f1),
-        "accuracy": float((predicted == labels).mean()),
+        "department_macro_f1": _macro_f1(department_labels, department_predicted),
+        "sensitivity_macro_f1": _macro_f1(sensitivity_labels, sensitivity_predicted),
+        "joint_accuracy": float(joint_correct.mean()),
     }
+
+
+def _macro_f1(labels: np.ndarray, predicted: np.ndarray) -> float:
+    """Compute macro F1 without an additional runtime dependency."""
+    scores: list[float] = []
+    for label in np.unique(np.concatenate((labels, predicted))):
+        true_positive = np.sum((labels == label) & (predicted == label))
+        false_positive = np.sum((labels != label) & (predicted == label))
+        false_negative = np.sum((labels == label) & (predicted != label))
+        denominator = (2 * true_positive) + false_positive + false_negative
+        scores.append(float((2 * true_positive) / denominator) if denominator else 0.0)
+    return float(np.mean(scores)) if scores else 0.0
 
 
 def main() -> None:
@@ -64,12 +74,10 @@ def main() -> None:
     train_records = read_jsonl(data_dir / "train.jsonl")
     validation_records = read_jsonl(data_dir / "validation.jsonl")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    model = AutoModelForSequenceClassification.from_pretrained(
+    model = DebertaM9MultiTaskModel.from_base_model(
         MODEL_NAME,
-        num_labels=len(DEPARTMENT_LABELS),
-        id2label=ID_TO_LABEL,
-        label2id=LABEL_TO_ID,
-        problem_type="single_label_classification",
+        tuple(DEPARTMENT_TO_ID),
+        tuple(SENSITIVITY_TO_ID),
     )
     training_args = TrainingArguments(
         output_dir=str(BACKEND_ROOT / "artifacts" / "m9-checkpoints"),
@@ -81,11 +89,12 @@ def main() -> None:
         eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
-        metric_for_best_model="macro_f1",
+        metric_for_best_model="joint_accuracy",
         greater_is_better=True,
         report_to=[],
         seed=42,
         use_cpu=not torch.cuda.is_available(),
+        label_names=["department_labels", "sensitivity_labels"],
     )
     trainer = Trainer(
         model=model,
@@ -104,12 +113,9 @@ def main() -> None:
     tokenizer.save_pretrained(artifact_dir)
     metrics = trainer.evaluate()
     artifact_dir.parent.mkdir(parents=True, exist_ok=True)
-    (artifact_dir.parent / "m9_training_metrics.json").write_text(
-        json.dumps(metrics, indent=2), encoding="utf-8"
-    )
+    (artifact_dir.parent / "m9_training_metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     print(json.dumps(metrics, indent=2))
 
 
 if __name__ == "__main__":
     main()
-

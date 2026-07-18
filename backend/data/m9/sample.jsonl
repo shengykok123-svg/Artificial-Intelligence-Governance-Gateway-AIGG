@@ -1,31 +1,30 @@
-{"text":"The board pack shows a forty percent shortfall against the September revenue plan.","label":"finance"}
-{"text":"Reconcile the unpublished operating forecast before tomorrow's CFO review.","label":"finance"}
-{"text":"The acquisition valuation assumes a lower terminal growth rate than last month.","label":"finance"}
-{"text":"Please explain the variance between the internal cash model and approved budget.","label":"finance"}
-{"text":"Treasury has not released the projected covenant headroom to external advisers.","label":"finance"}
-{"text":"The preliminary margin outlook should remain inside the finance leadership group.","label":"finance"}
-{"text":"Summarise the employee grievance investigation for the people operations case file.","label":"hr"}
-{"text":"The manager's notes describe an ongoing performance-improvement plan.","label":"hr"}
-{"text":"Review the private leave accommodation request with the HR business partner.","label":"hr"}
-{"text":"Candidate interview feedback is restricted to the hiring panel.","label":"hr"}
-{"text":"The disciplinary outcome has not yet been communicated to the employee.","label":"hr"}
-{"text":"Compare the proposed bonus allocation with each employee's calibration record.","label":"hr"}
-{"text":"Counsel is reviewing the termination clause in the negotiated customer agreement.","label":"legal"}
-{"text":"The draft data-processing addendum contains obligations that have not been accepted.","label":"legal"}
-{"text":"Identify indemnity exposure in the reseller contract before signature.","label":"legal"}
-{"text":"Legal has marked the settlement discussion as privileged and confidential.","label":"legal"}
-{"text":"The hospital client's statement of work has an unusual liability cap.","label":"legal"}
-{"text":"List the renewal and notice terms from the supplier's proposed amendment.","label":"legal"}
-{"text":"The production authentication service includes a non-public token rotation design.","label":"engineering"}
-{"text":"Investigate the private deployment script that manages our edge clusters.","label":"engineering"}
-{"text":"The unreleased recommendation algorithm depends on a proprietary feature store.","label":"engineering"}
-{"text":"Explain the internal network topology used by the fraud detection platform.","label":"engineering"}
-{"text":"The architecture review contains source-level details of our identity gateway.","label":"engineering"}
-{"text":"Debug the service module that implements the company's scoring heuristic.","label":"engineering"}
-{"text":"Rewrite the public product launch announcement in a more direct tone.","label":"other"}
-{"text":"Create an agenda for an open customer webinar next month.","label":"other"}
-{"text":"Summarise the published sustainability report for a general audience.","label":"other"}
-{"text":"Suggest a title for a public blog post about workplace wellbeing.","label":"other"}
-{"text":"Explain the weather forecast for the office event tomorrow.","label":"other"}
-{"text":"Turn this approved customer testimonial into a short social media caption.","label":"other"}
-
+{"id":"fin-01","source_group":"synthetic-finance-confidential-a","text":"The board pack shows a forty percent shortfall against the September revenue plan.","department":"finance","is_confidential":true}
+{"id":"fin-02","source_group":"synthetic-finance-confidential-a","text":"Reconcile the unpublished operating forecast before tomorrow's CFO review.","department":"finance","is_confidential":true}
+{"id":"fin-03","source_group":"synthetic-finance-confidential-a","text":"Treasury has not released the projected covenant headroom to external advisers.","department":"finance","is_confidential":true}
+{"id":"fin-04","source_group":"synthetic-finance-public-a","text":"The company published annual revenue in its investor report.","department":"finance","is_confidential":false}
+{"id":"fin-05","source_group":"synthetic-finance-public-a","text":"The finance team explained public results during an earnings call.","department":"finance","is_confidential":false}
+{"id":"fin-06","source_group":"synthetic-finance-public-a","text":"This article gives general advice about household budgeting.","department":"finance","is_confidential":false}
+{"id":"hr-01","source_group":"synthetic-hr-confidential-a","text":"The manager's notes describe an ongoing performance-improvement plan.","department":"hr","is_confidential":true}
+{"id":"hr-02","source_group":"synthetic-hr-confidential-a","text":"Candidate interview feedback is restricted to the hiring panel.","department":"hr","is_confidential":true}
+{"id":"hr-03","source_group":"synthetic-hr-confidential-a","text":"The disciplinary outcome has not yet been communicated to the employee.","department":"hr","is_confidential":true}
+{"id":"hr-04","source_group":"synthetic-hr-public-a","text":"Our public careers page describes the interview process.","department":"hr","is_confidential":false}
+{"id":"hr-05","source_group":"synthetic-hr-public-a","text":"The published leave policy grants fourteen days of annual leave.","department":"hr","is_confidential":false}
+{"id":"hr-06","source_group":"synthetic-hr-public-a","text":"This guide explains how to prepare for a job interview.","department":"hr","is_confidential":false}
+{"id":"legal-01","source_group":"synthetic-legal-confidential-a","text":"Counsel is reviewing the termination clause in the negotiated customer agreement.","department":"legal","is_confidential":true}
+{"id":"legal-02","source_group":"synthetic-legal-confidential-a","text":"The draft data-processing addendum contains obligations that have not been accepted.","department":"legal","is_confidential":true}
+{"id":"legal-03","source_group":"synthetic-legal-confidential-a","text":"Legal has marked the settlement discussion as privileged and confidential.","department":"legal","is_confidential":true}
+{"id":"legal-04","source_group":"synthetic-legal-public-a","text":"The terms of service are available on the public website.","department":"legal","is_confidential":false}
+{"id":"legal-05","source_group":"synthetic-legal-public-a","text":"This article explains the general purpose of a contract.","department":"legal","is_confidential":false}
+{"id":"legal-06","source_group":"synthetic-legal-public-a","text":"The open-source project uses an MIT licence.","department":"legal","is_confidential":false}
+{"id":"eng-01","source_group":"synthetic-engineering-confidential-a","text":"The production authentication service includes a non-public token rotation design.","department":"engineering","is_confidential":true}
+{"id":"eng-02","source_group":"synthetic-engineering-confidential-a","text":"Investigate the private deployment script that manages our edge clusters.","department":"engineering","is_confidential":true}
+{"id":"eng-03","source_group":"synthetic-engineering-confidential-a","text":"The unreleased recommendation algorithm depends on a proprietary feature store.","department":"engineering","is_confidential":true}
+{"id":"eng-04","source_group":"synthetic-engineering-public-a","text":"The public API documentation describes how to authenticate a request.","department":"engineering","is_confidential":false}
+{"id":"eng-05","source_group":"synthetic-engineering-public-a","text":"This open-source repository explains how HTTPS encrypts traffic.","department":"engineering","is_confidential":false}
+{"id":"eng-06","source_group":"synthetic-engineering-public-a","text":"The published product roadmap lists features planned for next year.","department":"engineering","is_confidential":false}
+{"id":"other-01","source_group":"synthetic-general-a","text":"Rewrite the public product launch announcement in a more direct tone.","department":"other","is_confidential":false}
+{"id":"other-02","source_group":"synthetic-general-a","text":"Create an agenda for an open customer webinar next month.","department":"other","is_confidential":false}
+{"id":"other-03","source_group":"synthetic-general-a","text":"Summarise the published sustainability report for a general audience.","department":"other","is_confidential":false}
+{"id":"other-04","source_group":"synthetic-general-b","text":"Explain the weather forecast for the office event tomorrow.","department":"other","is_confidential":false}
+{"id":"other-05","source_group":"synthetic-general-b","text":"Suggest a title for a public blog post about workplace wellbeing.","department":"other","is_confidential":false}
+{"id":"other-06","source_group":"synthetic-general-b","text":"Turn this approved customer testimonial into a short social media caption.","department":"other","is_confidential":false}

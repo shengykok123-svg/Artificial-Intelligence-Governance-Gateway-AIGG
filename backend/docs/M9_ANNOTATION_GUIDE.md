@@ -9,21 +9,25 @@ content** in English text. It does not decide the final policy outcome. The
 existing M3 policy engine decides whether the gateway should allow, redact,
 hold, or deny a prompt after M9 reports a `DEPT_CONFIDENTIAL` span.
 
-This guide proposes the target labels and defines the human review process
+This guide defines the two-head target schema and the human review process
 for a small, high-quality ("gold") dataset. A gold dataset means every example
 has been reviewed and assigned using these rules; it is not an automatically
 labelled web scrape.
 
-## Important: target schema versus current scaffold
+## Two-head target schema
 
-The current M9 code scaffold accepts the earlier labels
-`finance | hr | legal | engineering | other`. That schema detects a topic, but
-cannot distinguish public finance text from an internal financial forecast.
+M9 uses one shared DeBERTa encoder with two independent output heads. It does
+not cascade one classifier into another: an incorrect department prediction
+must not control the sensitivity prediction.
 
-**Do not create a production dataset using the old four department labels.**
-The target schema below must be implemented in the M9 data validator, trainer,
-and detector before production training. Until that migration is completed, the
-included synthetic dataset is for wiring tests only.
+```text
+department:      finance | hr | legal | engineering | other
+is_confidential: true | false
+```
+
+The committed synthetic dataset and code support this schema, but are still
+for wiring tests only. Replace them with reviewed data before claiming model
+performance.
 
 ## Annotation unit and record format
 
@@ -33,42 +37,44 @@ replace real personal data, account numbers, secrets, and client names before
 committing anything to Git.
 
 ```json
-{"id":"fin-001","source_group":"synthetic-finance-01","text":"The unreleased Q4 forecast projects a RM 2 million shortfall.","label":"finance_confidential","rationale":"Unreleased internal financial forecast."}
+{"id":"fin-001","source_group":"synthetic-finance-01","text":"The unreleased Q4 forecast projects a RM 2 million shortfall.","department":"finance","is_confidential":true,"rationale":"Unreleased internal financial forecast."}
 ```
 
 - `id`: stable unique identifier.
 - `source_group`: the source document or generation batch. All records from one
   source group must remain in one train/validation/test split.
 - `text`: the redacted/de-identified text given to the model.
-- `label`: exactly one target label below.
+- `department`: exactly one department label below.
+- `is_confidential`: boolean sensitivity label.
 - `rationale`: short human explanation; retain it in the private annotation
   source, but it need not be passed to the model trainer.
 
-## Target labels
+## Department and sensitivity labels
 
-| Label | Apply when | Positive example | Do not apply when |
+| Department | Apply when | Confidential example | Non-confidential example |
 | --- | --- | --- | --- |
-| `finance_confidential` | Non-public budgets, forecasts, revenue/margin figures, pricing, fundraising, M&A valuation, or internal financial decisions. | "The draft acquisition budget caps the offer at RM 4.2 million." | A publicly released annual report or generic finance advice. |
-| `hr_confidential` | Identifiable employee/contractor information, salary, performance, hiring decision, disciplinary, medical, leave, or workforce plan not made public. | "Aisha's performance review recommends a below-expectations rating." | A public leave-policy page or general recruitment advice. |
-| `legal_confidential` | Unreleased contract terms, negotiations, legal advice, disputes, investigations, or privileged strategy. | "Counsel recommends settling before the draft claim is filed." | Public terms of service or a general explanation of contract law. |
-| `engineering_confidential` | Non-public source code, system architecture, credentials, security vulnerabilities, unreleased roadmap, or internal technical incident details. | "The production API key is stored in the legacy payment service." | Public API documentation or open-source code that is intentionally public. |
-| `other` | Public, generic, hypothetical, already-approved-for-public-release, or insufficiently specific text. This includes public material about finance, HR, legal, or engineering. | "The company published its annual revenue in the investor report." | Text that clearly contains one of the confidential categories above. |
+| `finance` | Budgets, forecasts, revenue/margin figures, pricing, fundraising, M&A valuation, or financial decisions. | "The draft acquisition budget caps the offer at RM 4.2 million." | "The company published annual revenue in its investor report." |
+| `hr` | Employees, hiring, compensation, performance, leave, discipline, or workforce planning. | "Aisha's performance review recommends a below-expectations rating." | "The public leave policy grants fourteen annual-leave days." |
+| `legal` | Contracts, negotiations, legal advice, disputes, investigations, or legal strategy. | "Counsel recommends settling before the draft claim is filed." | "The terms of service are available on the public website." |
+| `engineering` | Source code, system architecture, credentials, security, product roadmap, or technical incidents. | "The production API key is stored in the legacy payment service." | "The public API documentation describes authentication." |
+| `other` | Content with no meaningful department assignment for this MVP. | Never set `is_confidential=true` with `other`. | "Create an agenda for an open customer webinar." |
 
-`confidential` means the content is internal/unreleased under the team policy;
-it does **not** mean that a sentence merely mentions a department.
+Set `is_confidential=true` only when content is internal/unreleased under team
+policy. A sentence may be `department=finance, is_confidential=false`; merely
+mentioning a department does not make it confidential.
 
 ## Decision rules for annotators
 
 1. Read the full example and its source context, if available.
-2. First decide: is it non-public or internal content that the gateway should
-   flag? If no, label `other`.
-3. If yes, choose the department most directly responsible for the content.
+2. Choose the department most directly responsible for the content; use
+   `other` only when none applies.
+3. Independently decide whether it is non-public or internal content that the
+   gateway should flag. Set `is_confidential=true` only if yes.
 4. Use only one label. If two departments appear, choose the main risk in the
    exact sentence; split the text into two examples if they are independently
    meaningful.
 5. Do not infer secrecy from a company name, a finance word, or a technical
-   term alone. Use `other` when the text does not establish internal/unreleased
-   status.
+   term alone. It can keep its department label with `is_confidential=false`.
 6. If it is genuinely ambiguous, mark it `needs_review` in the private
    annotation sheet. Do not add it to the training JSONL until two reviewers
    resolve it.
@@ -77,14 +83,14 @@ it does **not** mean that a sentence merely mentions a department.
 
 | Text | Label | Why |
 | --- | --- | --- |
-| "The CFO will present the unreleased cash-flow forecast on Friday." | `finance_confidential` | Internal forecast. |
-| "The CFO presented annual results in a public earnings call." | `other` | Public disclosure. |
-| "Please update Jia Wei's salary adjustment in the payroll system." | `hr_confidential` | Identifiable compensation information. |
-| "Our public careers page describes the interview process." | `other` | Public generic HR content. |
-| "The counterparty rejected clause 7 in the unexecuted supplier agreement." | `legal_confidential` | Unreleased negotiation. |
-| "This open-source repository uses an MIT licence." | `other` | Public technical/legal content. |
-| "The staging database password is in the incident channel." | `engineering_confidential` | Credential/security information. |
-| "Use HTTPS to encrypt traffic." | `other` | Generic public guidance. |
+| "The CFO will present the unreleased cash-flow forecast on Friday." | `finance`, `true` | Internal forecast. |
+| "The CFO presented annual results in a public earnings call." | `finance`, `false` | Public disclosure. |
+| "Please update Jia Wei's salary adjustment in the payroll system." | `hr`, `true` | Identifiable compensation information. |
+| "Our public careers page describes the interview process." | `hr`, `false` | Public generic HR content. |
+| "The counterparty rejected clause 7 in the unexecuted supplier agreement." | `legal`, `true` | Unreleased negotiation. |
+| "This open-source repository uses an MIT licence." | `legal`, `false` | Public technical/legal content. |
+| "The staging database password is in the incident channel." | `engineering`, `true` | Credential/security information. |
+| "Use HTTPS to encrypt traffic." | `engineering`, `false` | Generic public guidance. |
 
 ## Data collection and review workflow
 
@@ -129,9 +135,10 @@ near-miss examples.
 5. **Calibrate.** Choose the runtime confidence threshold using validation data
    and the team's acceptable false-positive/false-negative trade-off. Do not
    assume the initial `0.65` threshold is correct.
-6. **Integrate.** Map a predicted `*_confidential` label to
-   `DEPT_CONFIDENTIAL` and strip the suffix for `content_department`. Return
-   sentence offsets through `detect()`; M3 remains the policy decision-maker.
+6. **Integrate.** When both heads are confident and `is_confidential=true`, map
+   the prediction to `DEPT_CONFIDENTIAL` and use the department for
+   `content_department`. Return sentence offsets through `detect()`; M3 remains
+   the policy decision-maker.
 7. **Acceptance test.** Test text prompts and extracted attachment text. PDF
    support additionally depends on M5 extraction; scanned PDFs require OCR and
    are out of scope until M5 adds it.
@@ -148,7 +155,7 @@ near-miss examples.
 
 ## Before training checklist
 
-- [ ] Target `*_confidential` schema has been migrated into the M9 code.
+- [ ] Department and sensitivity labels are both present for every record.
 - [ ] All text is English, sanitised, and approved for repository use.
 - [ ] Each record has a label, rationale, and source group in the private
       annotation source.

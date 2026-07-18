@@ -4,17 +4,17 @@ M9 is an optional semantic detector for the AI Governance Gateway. It is
 compatible with the frozen `Detector` and `DocumentClassifier` contracts and
 does not change the `/v1/inspect` request or response schema.
 
-The committed scaffold currently predicts sentence labels `finance`, `hr`,
-`legal`, `engineering`, or `other`. It is wiring-only and must be migrated
-before real training: topic labels alone cannot distinguish a public financial
-report from an internal financial forecast. The target production schema is
-`finance_confidential`, `hr_confidential`, `legal_confidential`,
-`engineering_confidential`, and `other`.
+M9 uses one shared DeBERTa encoder with two output heads: a department head
+(`finance`, `hr`, `legal`, `engineering`, `other`) and a sensitivity head
+(`confidential`, `non_confidential`). A public financial report can therefore
+remain `department=finance` while producing no confidential span. Only a
+confident confidential prediction from a non-`other` department becomes a
+`DEPT_CONFIDENTIAL` span.
 
 Read [the annotation guide](docs/M9_ANNOTATION_GUIDE.md) before collecting or
 labelling data; a [Chinese version](docs/M9_ANNOTATION_GUIDE_ZH.md) is also
-available. It defines how a predicted `*_confidential` label maps to the
-existing `DEPT_CONFIDENTIAL` span and `content_department` contract.
+available. It defines how confident department and sensitivity outputs map to
+the existing `DEPT_CONFIDENTIAL` span and `content_department` contract.
 
 ## Prepare data
 
@@ -24,10 +24,11 @@ Run from `backend`:
 python scripts\split_m9_dataset.py
 ```
 
-Replace `data/m9/sample.jsonl` only after the target label migration has been
-implemented. Follow the annotation guide: keep source documents separate
-across train, validation, and test; sentence-level random splits alone can leak
-paraphrases.
+The data schema is `text`, `department`, and boolean `is_confidential`;
+optional `id` and `source_group` fields are retained for traceability and safe
+splitting. The committed examples are synthetic wiring data only. Follow the
+annotation guide: keep source documents separate across train, validation, and
+test; sentence-level random splits alone can leak paraphrases.
 
 ## Train and select M9
 

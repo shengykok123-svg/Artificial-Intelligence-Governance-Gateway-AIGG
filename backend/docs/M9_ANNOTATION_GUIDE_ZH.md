@@ -6,67 +6,67 @@
 
 M9 的用途是识别英文文字中**未公开或内部的、与特定部门有关的敏感内容**。M9 不负责决定最终政策结果；当 M9 报告一个 `DEPT_CONFIDENTIAL` span 后，现有的 M3 policy engine 才决定该 prompt 应该 allow、redact、hold 或 deny。
 
-本文件提出目标标签，并定义建立小型高质量（gold）dataset 的人工审核流程。Gold dataset 的意思是：每个例子都由人根据本规则审核和标注，而不是从网上抓文字后自动猜标签。
+本文件定义 two-head target schema，并定义建立小型高质量（gold）dataset 的人工审核流程。Gold dataset 的意思是：每个例子都由人根据本规则审核和标注，而不是从网上抓文字后自动猜标签。
 
-## 重要：目标 schema 与目前 scaffold 的区别
+## Two-head target schema
 
-目前已提交的 M9 scaffold 使用旧的 topic schema：
+M9 使用一个共享的 DeBERTa encoder 和两个独立 output heads，不是让第一个 classifier 的结果控制第二个 classifier。这样 department prediction 错了，也不会直接导致 sensitivity prediction 一起错。
 
 ```text
-finance | hr | legal | engineering | other
+department:      finance | hr | legal | engineering | other
+is_confidential: true | false
 ```
 
-这个 schema 只能识别主题，不能区分“公开财报”和“内部财务预测”。
-
-**不要使用旧的四个部门标签来建立 production dataset。** 在开始真实训练前，需要先修改 M9 的 data validator、trainer 和 detector，使它支持下方的 target schema。在完成迁移前，repo 内的 synthetic data 只能用于验证 pipeline wiring，不能用来声明模型准确率。
+目前 repo 的 code 和 synthetic data 已支持这个 schema，但 synthetic data 仍只用于验证 pipeline wiring，不能用来声明模型准确率。
 
 ## 标注单位与资料格式
 
 每个例子应是一句完整英文句子，或一段可独立理解的短文字（通常一至三句）。提交到 Git 前，必须移除或替换真实个人资料、账号、secret 和客户名称。
 
 ```json
-{"id":"fin-001","source_group":"synthetic-finance-01","text":"The unreleased Q4 forecast projects a RM 2 million shortfall.","label":"finance_confidential","rationale":"Unreleased internal financial forecast."}
+{"id":"fin-001","source_group":"synthetic-finance-01","text":"The unreleased Q4 forecast projects a RM 2 million shortfall.","department":"finance","is_confidential":true,"rationale":"Unreleased internal financial forecast."}
 ```
 
 - `id`：稳定且唯一的记录 ID。
 - `source_group`：原始文件或生成 batch。来自同一个 source group 的所有记录只能放在一个 split。
 - `text`：经过脱敏、给模型读取的英文文字。
-- `label`：必须是下列其中一个 target label。
+- `department`：必须是下列其中一个 department label。
+- `is_confidential`：boolean sensitivity label。
 - `rationale`：人工标注理由。应保留在私人的 annotation source；trainer 不一定需要读取它。
 
-## 目标标签
+## Department 与 sensitivity labels
 
-| Label | 何时使用 | 正例 | 不应使用于 |
+| Department | 何时使用 | Confidential 例子 | Non-confidential 例子 |
 | --- | --- | --- | --- |
-| `finance_confidential` | 未公开的预算、预测、收入/利润数字、定价、融资、并购估值或内部财务决定。 | "The draft acquisition budget caps the offer at RM 4.2 million." | 已公开的年报或一般财务建议。 |
-| `hr_confidential` | 可识别员工/合约员工资料、薪资、绩效、招聘决定、纪律、医疗、请假或未公开的人力规划。 | "Aisha's performance review recommends a below-expectations rating." | 公开的请假政策或一般求职建议。 |
-| `legal_confidential` | 未公开合约条款、谈判、法律意见、纠纷、调查或 privileged strategy。 | "Counsel recommends settling before the draft claim is filed." | 公开的 terms of service 或一般合约法说明。 |
-| `engineering_confidential` | 未公开 source code、系统架构、credentials、安全漏洞、未发布 roadmap 或内部技术事故细节。 | "The production API key is stored in the legacy payment service." | 公开 API 文件或刻意公开的 open-source code。 |
-| `other` | 公开、一般性、假设性、已批准公开，或无法确认是内部资料的文字。即使文字在谈 finance、HR、legal 或 engineering，也可以是 `other`。 | "The company published its annual revenue in the investor report." | 明确包含以上敏感类别的内部文字。 |
+| `finance` | 预算、预测、收入/利润数字、定价、融资、并购估值或财务决定。 | "The draft acquisition budget caps the offer at RM 4.2 million." | "The company published annual revenue in its investor report." |
+| `hr` | 员工、招聘、薪资、绩效、请假、纪律或 workforce planning。 | "Aisha's performance review recommends a below-expectations rating." | "The public leave policy grants fourteen annual-leave days." |
+| `legal` | 合约、谈判、法律意见、纠纷、调查或 legal strategy。 | "Counsel recommends settling before the draft claim is filed." | "The terms of service are available on the public website." |
+| `engineering` | Source code、系统架构、credentials、安全、product roadmap 或技术事故。 | "The production API key is stored in the legacy payment service." | "The public API documentation describes authentication." |
+| `other` | 本 MVP 中没有明确 department 的内容。 | 不可设置 `is_confidential=true`。 | "Create an agenda for an open customer webinar." |
 
-这里的 `confidential` 是指依照团队 policy 的内部/未公开内容；**不是**只要一句话提到某个部门就自动算 confidential。
+`is_confidential=true` 指依照团队 policy 的内部/未公开内容；**不是**只要一句话提到某个部门就自动算 confidential。例如公开财报可以是 `department=finance, is_confidential=false`。
 
 ## 标注员决策规则
 
 1. 阅读完整例子；如果有 source context，也一起阅读。
-2. 先判断：这是非公开/内部、且 gateway 应 flag 的内容吗？如果不是，标 `other`。
-3. 如果是，选择最直接负责该内容的部门。
+2. 选择最直接负责该内容的 department；只有完全不属于这些部门才标 `other`。
+3. 独立判断它是否为非公开/内部、且 gateway 应 flag 的内容；只有是才设置 `is_confidential=true`。
 4. 每个记录只用一个标签。若一句话含两个部门风险，选择该句最主要的风险；若两段内容可独立理解，应拆成两个例子。
-5. 不要因为出现公司名称、finance word 或 technical term 就推定 confidential。文字没有足够依据时，标 `other`。
+5. 不要因为出现公司名称、finance word 或 technical term 就推定 confidential。它可以保留 department，但设 `is_confidential=false`。
 6. 真的无法判断时，在私人的 annotation sheet 标为 `needs_review`；两位 reviewer 解决前，不要写进 training JSONL。
 
 ### 边界例子
 
 | Text | Label | 原因 |
 | --- | --- | --- |
-| "The CFO will present the unreleased cash-flow forecast on Friday." | `finance_confidential` | 内部预测。 |
-| "The CFO presented annual results in a public earnings call." | `other` | 已公开披露。 |
-| "Please update Jia Wei's salary adjustment in the payroll system." | `hr_confidential` | 可识别的薪资资料。 |
-| "Our public careers page describes the interview process." | `other` | 公开、一般的 HR 内容。 |
-| "The counterparty rejected clause 7 in the unexecuted supplier agreement." | `legal_confidential` | 未签署合约的谈判内容。 |
-| "This open-source repository uses an MIT licence." | `other` | 公开技术/法律内容。 |
-| "The staging database password is in the incident channel." | `engineering_confidential` | credentials/security information。 |
-| "Use HTTPS to encrypt traffic." | `other` | 一般公开建议。 |
+| "The CFO will present the unreleased cash-flow forecast on Friday." | `finance`, `true` | 内部预测。 |
+| "The CFO presented annual results in a public earnings call." | `finance`, `false` | 已公开披露。 |
+| "Please update Jia Wei's salary adjustment in the payroll system." | `hr`, `true` | 可识别的薪资资料。 |
+| "Our public careers page describes the interview process." | `hr`, `false` | 公开、一般的 HR 内容。 |
+| "The counterparty rejected clause 7 in the unexecuted supplier agreement." | `legal`, `true` | 未签署合约的谈判内容。 |
+| "This open-source repository uses an MIT licence." | `legal`, `false` | 公开技术/法律内容。 |
+| "The staging database password is in the incident channel." | `engineering`, `true` | credentials/security information。 |
+| "Use HTTPS to encrypt traffic." | `engineering`, `false` | 一般公开建议。 |
 
 ## 资料收集与审核流程
 
@@ -97,7 +97,7 @@ finance | hr | legal | engineering | other
 3. **训练。** 在 train split 上 fine-tune `microsoft/deberta-v3-small`；使用 validation loss 及各 label 的 precision/recall/F1 选择 checkpoint。
 4. **评估。** 最终选定 model 后，只在 untouched test set 上运行一次。检查 confidential text 的 false negative，也检查 public material 的 false positive；两者对 governance gateway 都重要。
 5. **校准。** 以 validation data 和团队可接受的 false-positive/false-negative trade-off 选择 runtime confidence threshold。初始值 `0.65` 不是已验证的正确值。
-6. **整合。** 将预测的 `*_confidential` label 映射为 `DEPT_CONFIDENTIAL`，并去掉 suffix 后作为 `content_department`。`detect()` 必须返回 sentence offsets；M3 仍然是 policy decision-maker。
+6. **整合。** 两个 heads 都有足够信心、且 `is_confidential=true` 时，才映射为 `DEPT_CONFIDENTIAL`；department 则作为 `content_department`。`detect()` 必须返回 sentence offsets；M3 仍然是 policy decision-maker。
 7. **Acceptance test。** 测试文字 prompt 和已 extract 的 attachment text。PDF 是否可用还取决于 M5 extraction；scanned PDF 需要 OCR，在 M5 加入前不在范围内。
 
 ## 团队职责
@@ -112,7 +112,7 @@ finance | hr | legal | engineering | other
 
 ## 开始训练前 checklist
 
-- [ ] `*_confidential` target schema 已迁移到 M9 code。
+- [ ] 每个记录都同时有 department 与 sensitivity labels。
 - [ ] 所有文字都是 English、已脱敏，并获准用于 repo。
 - [ ] 每个记录在私人的 annotation source 中都有 label、rationale 和 source group。
 - [ ] 两位 reviewer 已解决不同意见。
