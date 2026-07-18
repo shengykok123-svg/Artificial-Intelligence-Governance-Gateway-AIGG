@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>M9 Gateway Tester</title>
+    <style>
+      :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: #0b1020; color: #e8edf9; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; }
+      main { max-width: 1200px; margin: 0 auto; padding: 28px; }
+      h1 { margin: 0; font-size: 1.5rem; }
+      .subtitle { color: #aab7d3; margin: 8px 0 22px; }
+      .settings { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 16px; }
+      label { display: grid; gap: 6px; color: #aab7d3; font-size: .82rem; }
+      input, textarea, button { font: inherit; }
+      input, textarea { width: 100%; border: 1px solid #31415f; border-radius: 8px; background: #131c31; color: #edf3ff; padding: 10px; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; min-height: 470px; }
+      .panel { display: flex; flex-direction: column; border: 1px solid #263552; border-radius: 12px; overflow: hidden; background: #11192c; }
+      .panel h2 { font-size: .95rem; margin: 0; padding: 12px 14px; border-bottom: 1px solid #263552; }
+      textarea { border: 0; border-radius: 0; flex: 1; resize: vertical; line-height: 1.55; }
+      pre { margin: 0; padding: 16px; overflow: auto; flex: 1; white-space: pre-wrap; line-height: 1.5; color: #bde2ff; }
+      .actions { display: flex; gap: 10px; padding: 12px; border-top: 1px solid #263552; }
+      button { border: 0; border-radius: 8px; padding: 10px 15px; cursor: pointer; background: #4f7cff; color: white; font-weight: 650; }
+      button:disabled { opacity: .6; cursor: wait; }
+      .secondary { background: #273652; }
+      .status { min-height: 20px; color: #aab7d3; font-size: .9rem; }
+      .error { color: #ff9b9b; }
+      @media (max-width: 760px) { .settings, .grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>M9 Gateway Tester</h1>
+      <p class="subtitle">Send a prompt to the local <code>/v1/inspect</code> API and view the exact JSON response.</p>
+
+      <section class="settings" aria-label="Request configuration">
+        <label>API key<input id="apiKey" value="dev-key-change-me" autocomplete="off" /></label>
+        <label>User ID<input id="userId" value="siti.finance@acme.my" autocomplete="off" /></label>
+        <label>Target host<input id="targetHost" value="chatgpt.com" autocomplete="off" /></label>
+        <label>Purpose<input id="purpose" value="GENERAL" autocomplete="off" /></label>
+      </section>
+
+      <section class="grid">
+        <div class="panel">
+          <h2>Prompt</h2>
+          <textarea id="prompt" spellcheck="true">The unreleased Q4 forecast for Atlas projects a material revenue shortfall.</textarea>
+          <div class="actions">
+            <button id="inspect">Run inspection</button>
+            <button id="clear" class="secondary">Clear</button>
+            <span id="status" class="status"></span>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>JSON response</h2>
+          <pre id="output">Run an inspection to see the API response.</pre>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const byId = (id) => document.getElementById(id);
+      const output = byId("output");
+      const status = byId("status");
+      const inspectButton = byId("inspect");
+
+      byId("clear").addEventListener("click", () => {
+        byId("prompt").value = "";
+        output.textContent = "Run an inspection to see the API response.";
+        status.textContent = "";
+      });
+
+      inspectButton.addEventListener("click", async () => {
+        const prompt = byId("prompt").value.trim();
+        if (!prompt) {
+          status.className = "status error";
+          status.textContent = "Enter a prompt first.";
+          return;
+        }
+        inspectButton.disabled = true;
+        status.className = "status";
+        status.textContent = "Inspecting…";
+        output.textContent = "Waiting for /v1/inspect…";
+        const body = {
+          user_id: byId("userId").value.trim(),
+          target_host: byId("targetHost").value.trim(),
+          purpose: byId("purpose").value.trim() || "GENERAL",
+          prompt,
+          attachments: [],
+        };
+        try {
+          const response = await fetch("/v1/inspect", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-API-Key": byId("apiKey").value.trim(),
+            },
+            body: JSON.stringify(body),
+          });
+          const payload = await response.json().catch(() => ({ detail: "Response was not JSON." }));
+          output.textContent = JSON.stringify(payload, null, 2);
+          status.className = response.ok ? "status" : "status error";
+          status.textContent = response.ok ? `HTTP ${response.status}` : `HTTP ${response.status} — inspect backend logs`;
+        } catch (error) {
+          output.textContent = JSON.stringify({ error: String(error) }, null, 2);
+          status.className = "status error";
+          status.textContent = "Network error — is the backend running?";
+        } finally {
+          inspectButton.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -7,11 +7,13 @@ import sys
 from collections import Counter
 from dataclasses import asdict
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable
 
 from dotenv import load_dotenv
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
 from app.detect.base import Classification, Detector, DocumentClassifier, Document, Span
@@ -127,6 +129,10 @@ def require_api_key(x_api_key: str | None = Header(None)) -> None:
 
 app = FastAPI(title="AI Governance Gateway",
               dependencies=[Depends(require_api_key)])
+
+# Local-only testing UI. It makes its own authenticated API call from the
+# browser, so the page contains no bypass around the API-key dependency.
+app.mount("/m9-tester", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="m9-tester")
 
 app.add_middleware(
     CORSMiddleware,
