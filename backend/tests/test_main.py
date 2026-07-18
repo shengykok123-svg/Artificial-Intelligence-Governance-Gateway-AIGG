@@ -1,13 +1,15 @@
 """M1 pipeline tests: one per verdict, the hold->approve->unblock loop, the
-error mappings, SD-1, and the ENV=demo guard. All against the mock plane
-(MOCK_MODULES=M2,M3,M5,M7,M8) and REPO_BACKEND=memory -- no Docker.
+error mappings, SD-1, and the ENV=demo guard. Tests run with the configured
+local module frame and REPO_BACKEND=memory -- no Docker.
 """
 
 from __future__ import annotations
 
 import base64
+import io
 
 import pytest
+from docx import Document as DocxDocument
 from fastapi.testclient import TestClient
 
 from app.main import API_KEY, _check_demo_guard, app
@@ -262,6 +264,26 @@ def test_supported_attachment_contributes_to_verdict(client: TestClient) -> None
                    {"filename": "note.csv", "mime": "text/csv",
                     "content_b64": content},
                ])
+    body = r.json()
+    assert body["decision"] == "hold"
+    assert "SALARY" in body["data_classes"]
+
+
+def test_docx_attachment_contributes_to_verdict(client: TestClient) -> None:
+    docx = DocxDocument()
+    docx.add_paragraph("Compensation note: Gaji bulanan RM 8,500.")
+    buf = io.BytesIO()
+    docx.save(buf)
+
+    r = inspect(client, user_id="aiman.hr@acme.my",
+                prompt="see attached", attachments=[
+                    {
+                        "filename": "salary.docx",
+                        "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        "content_b64": base64.b64encode(buf.getvalue()).decode(),
+                    },
+                ])
+
     body = r.json()
     assert body["decision"] == "hold"
     assert "SALARY" in body["data_classes"]

@@ -9,15 +9,15 @@ decision.
 
 ## Status
 
-**2026-07-18 update:** M2, M7 and M8 have now landed as real modules; M3 and
-M5 remain mocked by design for this frame. Chrome extension live acceptance
+**2026-07-18 update:** M2, M5, M7 and M8 have now landed as real modules; M3
+remains mocked by design for this frame. Chrome extension live acceptance
 passed for MyKad redact, API key deny, salary hold, and approval-send. See
 `docs/EXTENSION_TEST_REPORT.md` and `extension/README.md` for the current
 setup and evidence.
 
-The current frame — **M0, M1, M2, M4, M6, M7, M8** — is built, tested, and
-wired end to end against **real HTTP**. M3 and M5 remain mocked by design,
-selected explicitly via `MOCK_MODULES=M3,M5` in `.env`.
+The current frame — **M0, M1, M2, M4, M5, M6, M7, M8** — is built, tested, and
+wired end to end against **real HTTP**. M3 remains mocked by design, selected
+explicitly via `MOCK_MODULES=M3` in `.env`.
 
 | | Module | P | Status |
 |---|---|---|---|
@@ -26,16 +26,16 @@ selected explicitly via `MOCK_MODULES=M3,M5` in `.env`.
 | ✅ | **M2** Deterministic detection | P0 | Built — real structured-pattern detector |
 | ☐ | **M3** Decision engine | P0 | Mocked — `mock_decide` (ignores the rule table) |
 | ✅ | **M4** Chrome extension | P0 | Built; live acceptance passed on ChatGPT |
-| ☐ | **M5** File extractor | P1 | Mocked — `text/plain`/`text/csv` only, else 415 |
+| ✅ | **M5** File extractor | P1 | Built — TXT/CSV/PDF/DOCX/PPTX text extraction |
 | ✅ | **M6** Employer dashboard | P1 | Built |
 | ✅ | **M7** Tokenisation vault | P2 | Built — Fernet-encrypted reversible token maps |
 | ✅ | **M8** Embedding similarity | P1 | Built — local `all-MiniLM-L6-v2` semantic classifier |
 | ☐ | **M9** Fine-tuned DistilBERT | P3 | Proposal only |
 
 `GET /v1/health` reports which modules are currently mocked — check it before
-trusting a verdict. In this frame it should report only `M3` and `M5` as
-mocked. With M2/M7/M8 real and M3/M5 mocked, these demo strings produce the
-acceptance verdicts:
+trusting a verdict. In this frame it should report only `M3` as mocked. With
+M2/M5/M7/M8 real and M3 mocked, these demo strings produce the acceptance
+verdicts:
 
 | Trigger string | Verdict |
 |---|---|
@@ -75,7 +75,7 @@ docker-compose.yml              M0  PostgreSQL 16 for local dev               BU
 backend/app/detect/base.py          shared dataclasses + Detector protocol    BUILT
 backend/app/detect/rules.py     M2  deterministic detection                   BUILT
 backend/app/detect/embed.py     M8  embedding similarity                      BUILT
-backend/app/extract/files.py    M5  file bytes -> Document                    mocked
+backend/app/extract/files.py    M5  file bytes -> Document                    BUILT
 backend/app/policy/engine.py    M3  decision engine (decide())                mocked
 backend/app/policy/rules.yaml   M3  rule table                                seed data
 backend/app/vault/tokeniser.py  M7  reversible redaction                      BUILT

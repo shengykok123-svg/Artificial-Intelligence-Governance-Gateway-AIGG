@@ -8,7 +8,7 @@ verdict before the target site receives the send.
 ## Build And Load
 
 Backend must be running first. From the repo root, run `scripts/setup-dev.ps1`
-once to create a local `.env` with `MOCK_MODULES=M3,M5` and
+once to create a local `.env` with `MOCK_MODULES=M3` and
 `VAULT_FERNET_KEY`, then start the API:
 
 ```powershell
@@ -46,18 +46,18 @@ MOCK_MODE: off
 Expected popup health in the current frame:
 
 ```text
-Backend is mocking: M3, M5
+Backend is mocking: M3
 ```
 
 ## Current Frame
 
-M2, M7 and M8 are real. M3 and M5 remain mocked by design:
+M2, M5, M7 and M8 are real. M3 remains mocked by design:
 
 - M2 detects structured sensitive data such as MyKad, salary and secrets.
+- M5 extracts text from TXT, CSV, PDF, DOCX and PPTX attachments.
 - M7 tokenises redacted spans into encrypted reversible vault mappings.
 - M8 classifies department/confidential semantic signals with local embeddings.
 - M3 is still `mock_decide`.
-- M5 is still the mocked file extractor.
 
 `GET /v1/health` is the source of truth. Do not claim an all-real-module run
 until it returns an empty `mocked` list.

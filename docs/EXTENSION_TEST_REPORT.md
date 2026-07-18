@@ -12,10 +12,10 @@ popup, and verified against the local backend.
 ## Environment
 
 - Backend: local FastAPI server on `127.0.0.1:8000`
-- Real modules: M2 deterministic detection, M7 tokenisation, M8 embedding similarity
-- Remaining mocks: M3 policy engine, M5 file extractor
+- Real modules: M2 deterministic detection, M5 file extraction, M7 tokenisation, M8 embedding similarity
+- Remaining mocks: M3 policy engine
 - M8 model: `sentence-transformers/all-MiniLM-L6-v2`, cached locally and loaded offline
-- Backend launch uses `MOCK_MODULES=M3,M5`. A local `.env` supplies
+- Backend launch uses `MOCK_MODULES=M3`. A local `.env` supplies
   `VAULT_FERNET_KEY`; this file is intentionally ignored by git.
 
 ## Build checks
@@ -24,12 +24,13 @@ popup, and verified against the local backend.
 | --- | --- |
 | `npm run typecheck` | Pass |
 | `npm run build` | Pass; loadable `extension/dist` generated |
-| Backend suite in `.venv` | 88 passed, 41 skipped |
+| Backend suite in `.venv` | 97 passed, 41 skipped |
 | Real M2 + M7 + M8 integration suite | 39 passed |
+| Real M5 extraction suite | 8 passed |
 
 ## Live HTTP smoke checks
 
-`GET /v1/health` returned `mocked: ["M3", "M5"]`.
+`GET /v1/health` returned `mocked: ["M3"]` after M5 landed.
 
 | Case | Input | Expected | Actual |
 | --- | --- | --- | --- |
@@ -38,17 +39,26 @@ popup, and verified against the local backend.
 | Salary review | `Gaji bulanan RM 8,500` | hold | hold |
 | Semantic finance signal | `Quarterly revenue is below forecast.` | hold | hold; `DEPT_CONFIDENTIAL` |
 
+## M5 file extraction checks
+
+M5 now extracts text from TXT, CSV, DOCX and PPTX in tests, supports PDF text
+extraction through `pdfplumber`, rejects invalid base64, rejects unsupported
+types, and enforces a 5 MB attachment size limit. This is file inspection and
+policy enforcement, not regenerated redacted-file upload.
+
 ## Live Chrome acceptance
 
 Evidence was captured by manual screenshots during the live ChatGPT run.
 
 | Case | Screenshot evidence | Result |
 | --- | --- | --- |
-| Popup health | Manual screenshot | Pass. Popup connected to `http://localhost:8000`, `MOCK_MODE` was off, and health displayed `Backend is mocking: M3, M5`. |
+| Popup health | Manual screenshot | Pass. Popup connected to `http://localhost:8000`, `MOCK_MODE` was off, and health displayed the active mock list. |
 | MyKad redact | Manual screenshot | Pass. `880412-08-5561` was tokenised to `[MYKAD_1]` before ChatGPT received the prompt; banner showed `redacted before sending (MYKAD)`. |
 | API key deny | Manual screenshot | Pass. Prompt containing `sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d` was blocked and remained in the composer; no ChatGPT user bubble was sent. |
 | Salary hold | Manual screenshot | Pass. `Gaji bulanan RM 8,500` produced `held for compliance review -- waiting for approval` and was not sent immediately. |
 | Salary approval send | Manual screenshot + backend status | Pass. `POST /v1/logs/{log_id}/decision` changed status to `approved`; the extension detected the approval and replayed the original salary prompt to ChatGPT. |
+| TXT attachment deny | Manual screenshot + backend log `67aab510-01f1-433e-8c78-99a4afba4341` | Pass. `secret.txt` contained the fake OpenAI API key; M5 extracted it, M2 classified `SECRET`, and the extension blocked the send. |
+| DOCX attachment hold + approval send | Manual screenshot + backend log `1a0b1db1-119f-4add-a484-282225d490d0` | Pass. `salary.docx` contained `Gaji bulanan RM 8,500`; M5 extracted it, M2 classified `SALARY`, M3 mock held it, and approval replayed the attachment prompt to ChatGPT. |
 
 One UX polish landed after the acceptance run: successful sent-state banners
 (`redacted before sending` and `approved -- sending now`) now disappear after
@@ -57,7 +67,7 @@ visible.
 
 ## Push recommendation
 
-The M2, M7 and M8 module changes plus the extension live acceptance flow are
-ready for review. M3 and M5 remain mocked by design in this frame, so do not
-claim an all-real-module demo until those land and `GET /v1/health` reports an
+The M2, M5, M7 and M8 module changes plus the extension live acceptance flow
+are ready for review. M3 remains mocked by design in this frame, so do not
+claim an all-real-module demo until it lands and `GET /v1/health` reports an
 empty `mocked` list.
