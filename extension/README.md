@@ -55,9 +55,9 @@ M2, M5, M7 and M8 are real. M3 remains mocked by design:
 
 - M2 detects structured sensitive data such as MyKad, salary and secrets.
 - M5 extracts text from TXT, CSV, PDF, DOCX and PPTX attachments.
-- TXT/CSV attachments can be replaced in-browser with backend-returned
+- TXT/CSV/DOCX attachments can be replaced in-browser with backend-returned
   redacted copies before upload.
-- DOCX/PDF/PPTX attachments are extracted for allow/redact/hold/deny decisions,
+- PDF/PPTX attachments are extracted for allow/redact/hold/deny decisions,
   but redacted replacement copies are not generated for those formats yet.
 - M7 tokenises redacted spans into encrypted reversible vault mappings.
 - M8 classifies department/confidential semantic signals with local embeddings.
@@ -119,6 +119,7 @@ Use a fresh or refreshed ChatGPT tab after reloading the unpacked extension.
 | Salary hold | `Please review this salary: Gaji bulanan RM 8,500` | Prompt is held until approval |
 | Salary approval | Approve the latest pending hold | Extension sends the held prompt |
 | TXT attachment redaction | Upload `mykad.txt` containing `880412-08-5561` | File is replaced with `mykad.redacted.txt` before upload |
+| DOCX attachment redaction | Upload `mykad.docx` containing `880412-08-5561` | File is replaced with `mykad.redacted.docx` before upload |
 
 Find and approve a pending hold:
 

@@ -24,7 +24,7 @@ popup, and verified against the local backend.
 | --- | --- |
 | `npm run typecheck` | Pass |
 | `npm run build` | Pass; loadable `extension/dist` generated |
-| Backend suite in `.venv` | 98 passed, 41 skipped |
+| Backend suite in `.venv` | 99 passed, 41 skipped |
 | Real M2 + M7 + M8 integration suite | 39 passed |
 | Real M5 extraction suite | 8 passed |
 
@@ -43,11 +43,11 @@ popup, and verified against the local backend.
 
 M5 now extracts text from TXT, CSV, DOCX and PPTX in tests, supports PDF text
 extraction through `pdfplumber`, rejects invalid base64, rejects unsupported
-types, and enforces a 5 MB attachment size limit. When a TXT or CSV attachment
-causes a `redact` verdict, `/v1/inspect` now returns a redacted attachment copy
-in `redacted_attachments`.
+types, and enforces a 5 MB attachment size limit. When a TXT, CSV or DOCX
+attachment causes a `redact` verdict, `/v1/inspect` now returns a redacted
+attachment copy in `redacted_attachments`.
 
-Browser-side replacement is wired for TXT/CSV attachments. The extension
+Browser-side replacement is wired for TXT/CSV/DOCX attachments. The extension
 intercepts the file input `change` event at `document_start`, checks the file
 with the backend before upload, and injects the returned redacted file copy
 when the verdict is `redact`.
@@ -66,14 +66,15 @@ Evidence was captured by manual screenshots during the live ChatGPT run.
 | TXT attachment deny | Manual screenshot + backend log `67aab510-01f1-433e-8c78-99a4afba4341` | Pass. `secret.txt` contained the fake OpenAI API key; M5 extracted it, M2 classified `SECRET`, and the extension blocked the send. |
 | DOCX attachment hold + approval send | Manual screenshot + backend log `1a0b1db1-119f-4add-a484-282225d490d0` | Pass. `salary.docx` contained `Gaji bulanan RM 8,500`; M5 extracted it, M2 classified `SALARY`, M3 mock held it, and approval replayed the attachment prompt to ChatGPT. |
 | TXT attachment redaction replacement | Manual screenshot + backend logs `75dc6972-7b26-4546-9e49-1cf4acae64a7`, `928302a6-f14b-4ee0-9f28-c837966e00b8` | Pass. `mykad.txt` was inspected and replaced with `mykad.redacted.txt`; ChatGPT read `Employee IC [MYKAD_1] needs a reply.` and the replaced file passed the follow-up send-time inspection as `allow`. |
+| DOCX attachment redaction replacement | Manual screenshot + backend logs `4e29f889-4d4e-4d23-902c-0e0ae2f96957`, `d9498500-8b6c-4df1-9ceb-cf7188308dc8` | Pass. `mykad.docx` was inspected and replaced with `mykad.redacted.docx`; ChatGPT read `Employee IC [MYKAD_1] needs a reply.` and the replaced file passed the follow-up send-time inspection as `allow`. |
 
 One UX polish landed after the acceptance run: successful sent-state banners
 (`redacted before sending` and `approved -- sending now`) now disappear after
 three seconds. Blocking banners such as `deny` and `waiting for approval` remain
 visible.
 
-Current file-redaction replacement support is intentionally limited to TXT and
-CSV. DOCX, PDF and PPTX are still extracted for policy decisions, but redacted
+Current file-redaction replacement support is intentionally limited to TXT, CSV
+and DOCX. PDF and PPTX are still extracted for policy decisions, but redacted
 copies are not generated or injected for those formats yet.
 
 ## Push recommendation

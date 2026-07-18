@@ -141,7 +141,14 @@ function init(site: SiteKey): void {
   function canPreprocessFile(file: File): boolean {
     const type = file.type.toLowerCase().split(";")[0].trim();
     const name = file.name.toLowerCase();
-    return type === "text/plain" || type === "text/csv" || name.endsWith(".txt") || name.endsWith(".csv");
+    return (
+      type === "text/plain" ||
+      type === "text/csv" ||
+      type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+      name.endsWith(".txt") ||
+      name.endsWith(".csv") ||
+      name.endsWith(".docx")
+    );
   }
 
   function payloadToFile(payload: AttachmentPayload): File {

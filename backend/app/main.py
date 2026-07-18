@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import binascii
+import io
 import os
 import sys
 from collections import Counter
@@ -11,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from dotenv import load_dotenv
+from docx import Document as DocxDocument
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -107,7 +110,10 @@ def get_tokeniser(vault: Any) -> Any:
     return Tokeniser(vault)
 
 
-def _can_redact_attachment(att: Attachment) -> bool:
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _can_redact_text_attachment(att: Attachment) -> bool:
     normalised_mime = att.mime.lower().split(";")[0].strip()
     filename = att.filename.lower()
     return (
@@ -115,6 +121,11 @@ def _can_redact_attachment(att: Attachment) -> bool:
         or filename.endswith(".txt")
         or filename.endswith(".csv")
     )
+
+
+def _can_redact_docx_attachment(att: Attachment) -> bool:
+    normalised_mime = att.mime.lower().split(";")[0].strip()
+    return normalised_mime == DOCX_MIME or att.filename.lower().endswith(".docx")
 
 
 def _redacted_filename(filename: str) -> str:
@@ -129,6 +140,33 @@ def _redacted_attachment(att: Attachment, redacted_text: str) -> RedactedAttachm
         filename=_redacted_filename(att.filename),
         mime=att.mime,
         content_b64=base64.b64encode(redacted_text.encode("utf-8")).decode("ascii"),
+    )
+
+
+def _decode_attachment_bytes(att: Attachment) -> bytes:
+    try:
+        return base64.b64decode(att.content_b64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise UnsupportedFile(f"invalid base64 (filename={att.filename!r})") from exc
+
+
+def _iter_docx_text_targets(docx: Any) -> list[Any]:
+    targets: list[Any] = [p for p in docx.paragraphs if p.text]
+    for table in docx.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if cell.text:
+                    targets.append(cell)
+    return targets
+
+
+def _redacted_docx_attachment(att: Attachment, docx: Any) -> RedactedAttachment:
+    buf = io.BytesIO()
+    docx.save(buf)
+    return RedactedAttachment(
+        filename=_redacted_filename(att.filename),
+        mime=att.mime or DOCX_MIME,
+        content_b64=base64.b64encode(buf.getvalue()).decode("ascii"),
     )
 
 
@@ -249,16 +287,36 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         tokeniser = get_tokeniser(repos.vault)
         tokenise_inputs: list[tuple[str, list[Span]]] = [(req.prompt, verdict.spans_to_redact)]
         attachment_redaction_inputs: list[tuple[Attachment, int]] = []
+        docx_redaction_inputs: list[tuple[Attachment, Any, list[tuple[Any, int]]]] = []
         for att, doc, spans in attachment_spans:
-            if not spans or not _can_redact_attachment(att):
+            if not spans:
                 continue
-            attachment_redaction_inputs.append((att, len(tokenise_inputs)))
-            tokenise_inputs.append((doc.text, spans))
+            if _can_redact_text_attachment(att):
+                attachment_redaction_inputs.append((att, len(tokenise_inputs)))
+                tokenise_inputs.append((doc.text, spans))
+                continue
+
+            if _can_redact_docx_attachment(att):
+                docx = DocxDocument(io.BytesIO(_decode_attachment_bytes(att)))
+                targets: list[tuple[Any, int]] = []
+                for target in _iter_docx_text_targets(docx):
+                    target_doc = Document(text=target.text, source_filename=att.filename, mime=att.mime)
+                    target_spans = rules_detector.detect(target_doc) + embed_detector.detect(target_doc)
+                    if not target_spans:
+                        continue
+                    targets.append((target, len(tokenise_inputs)))
+                    tokenise_inputs.append((target.text, target_spans))
+                if targets:
+                    docx_redaction_inputs.append((att, docx, targets))
 
         redacted_items, map_id = tokeniser.tokenise_many(tokenise_inputs)
         redacted_prompt = redacted_items[0]
         for att, redacted_index in attachment_redaction_inputs:
             redacted_attachments.append(_redacted_attachment(att, redacted_items[redacted_index]))
+        for att, docx, targets in docx_redaction_inputs:
+            for target, redacted_index in targets:
+                target.text = redacted_items[redacted_index]
+            redacted_attachments.append(_redacted_docx_attachment(att, docx))
 
         # SD-1: the audit row holds the REDACTED text; the original lives
         # only in the vault.

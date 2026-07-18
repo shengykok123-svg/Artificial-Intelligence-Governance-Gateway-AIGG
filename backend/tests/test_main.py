@@ -321,6 +321,42 @@ def test_text_attachment_redaction_returns_redacted_copy(client: TestClient) -> 
     assert row["map_id"] is not None
 
 
+def test_docx_attachment_redaction_returns_redacted_copy(client: TestClient) -> None:
+    docx = DocxDocument()
+    docx.add_paragraph("Employee IC 880412-08-5561 needs a reply.")
+    table = docx.add_table(rows=1, cols=1)
+    table.cell(0, 0).text = "Backup IC 880412-08-5561"
+    buf = io.BytesIO()
+    docx.save(buf)
+
+    r = inspect(client, user_id="aiman.hr@acme.my",
+                prompt="see attached", attachments=[
+                    {
+                        "filename": "employee.docx",
+                        "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        "content_b64": base64.b64encode(buf.getvalue()).decode(),
+                    },
+                ])
+
+    body = r.json()
+    assert body["decision"] == "redact"
+    assert "MYKAD" in body["data_classes"]
+    assert len(body["redacted_attachments"]) == 1
+
+    redacted = body["redacted_attachments"][0]
+    assert redacted["filename"] == "employee.redacted.docx"
+    assert redacted["mime"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+    redacted_doc = DocxDocument(io.BytesIO(base64.b64decode(redacted["content_b64"])))
+    redacted_text = "\n".join(
+        [p.text for p in redacted_doc.paragraphs]
+        + [cell.text for table in redacted_doc.tables for row in table.rows for cell in row.cells]
+    )
+    assert "880412-08-5561" not in redacted_text
+    assert "[MYKAD_1]" in redacted_text
+    assert "[MYKAD_2]" in redacted_text
+
+
 # --------------------------------------------------------------------------
 # ENV=demo refuses to start with an active mock.
 # --------------------------------------------------------------------------
