@@ -50,7 +50,7 @@ verdicts:
 bash backend/scripts/backbone_smoke.sh   # all 5 backbone flows, REPO_BACKEND=memory, no Docker
 ```
 
-- **Backend:** 88 passed, 41 skipped (`REPO_BACKEND=memory pytest`) — the
+- **Backend:** 98 passed, 41 skipped (`REPO_BACKEND=memory pytest`) — the
   skips are the same tests re-run against Postgres, which skip cleanly
   without Docker running.
 - **Dashboard:** 10 vitest unit tests (the `by_day` pivot with a sparse day,
@@ -58,6 +58,9 @@ bash backend/scripts/backbone_smoke.sh   # all 5 backbone flows, REPO_BACKEND=me
 - **Extension:** `tsc --noEmit` and `vite build` clean; loadable unpacked
   build in `extension/dist`. Live ChatGPT acceptance passed for MyKad redact,
   API key deny, salary hold, and approval-send.
+- **File redaction:** backend `/v1/inspect` can return redacted TXT/CSV
+  attachment copies in `redacted_attachments`; browser-side replacement of
+  selected files is the next integration step.
 
 ## Layout — do not deviate
 

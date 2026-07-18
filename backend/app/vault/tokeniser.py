@@ -23,28 +23,36 @@ class Tokeniser:
         self._fernet = Fernet(configured_key)
 
     def tokenise(self, text: str, spans: list[Span]) -> tuple[str, str]:
-        normalised = self._normalise(text, spans)
+        redacted_items, map_id = self.tokenise_many([(text, spans)])
+        return redacted_items[0], map_id
+
+    def tokenise_many(self, items: list[tuple[str, list[Span]]]) -> tuple[list[str], str]:
         counters: dict[str, int] = {}
         entries: list[TokenEntry] = []
-        replacements: list[tuple[Span, str]] = []
+        redacted_items: list[str] = []
 
-        for span in normalised:
-            counters[span.data_class] = counters.get(span.data_class, 0) + 1
-            token = f"[{span.data_class}_{counters[span.data_class]}]"
-            original = text[span.start:span.end]
-            entries.append(TokenEntry(
-                token=token,
-                ciphertext=self._fernet.encrypt(original.encode("utf-8")),
-            ))
-            replacements.append((span, token))
+        for text, spans in items:
+            normalised = self._normalise(text, spans)
+            replacements: list[tuple[Span, str]] = []
 
-        redacted = text
-        for span, token in reversed(replacements):
-            redacted = redacted[:span.start] + token + redacted[span.end:]
+            for span in normalised:
+                counters[span.data_class] = counters.get(span.data_class, 0) + 1
+                token = f"[{span.data_class}_{counters[span.data_class]}]"
+                original = text[span.start:span.end]
+                entries.append(TokenEntry(
+                    token=token,
+                    ciphertext=self._fernet.encrypt(original.encode("utf-8")),
+                ))
+                replacements.append((span, token))
+
+            redacted = text
+            for span, token in reversed(replacements):
+                redacted = redacted[:span.start] + token + redacted[span.end:]
+            redacted_items.append(redacted)
 
         map_id = str(uuid.uuid4())
         self._vault.put_map(map_id, entries)
-        return redacted, map_id
+        return redacted_items, map_id
 
     def detokenise(self, map_id: str, text: str, requester_role: str) -> str:
         if requester_role != "admin":

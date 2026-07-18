@@ -150,29 +150,35 @@ class MockTokeniser:
         self._vault = vault
 
     def tokenise(self, text: str, spans: list[Span]) -> tuple[str, str]:
-        ordered = sorted(spans, key=lambda s: s.start)
+        redacted_items, map_id = self.tokenise_many([(text, spans)])
+        return redacted_items[0], map_id
 
+    def tokenise_many(self, items: list[tuple[str, list[Span]]]) -> tuple[list[str], str]:
         counters: dict[str, int] = {}
         entries: list[TokenEntry] = []
-        tokens: list[tuple[Span, str]] = []
-        for span in ordered:
-            counters[span.data_class] = counters.get(span.data_class, 0) + 1
-            token = f"[{span.data_class}_{counters[span.data_class]}]"
-            tokens.append((span, token))
-            original = text[span.start:span.end]
-            entries.append(TokenEntry(
-                token=token,
-                ciphertext=base64.b64encode(original.encode("utf-8")),
-            ))
+        redacted_items: list[str] = []
 
-        redacted = text
-        for span, token in sorted(tokens, key=lambda t: t[0].start,
-                                   reverse=True):
-            redacted = redacted[:span.start] + token + redacted[span.end:]
+        for text, spans in items:
+            tokens: list[tuple[Span, str]] = []
+            for span in sorted(spans, key=lambda s: s.start):
+                counters[span.data_class] = counters.get(span.data_class, 0) + 1
+                token = f"[{span.data_class}_{counters[span.data_class]}]"
+                tokens.append((span, token))
+                original = text[span.start:span.end]
+                entries.append(TokenEntry(
+                    token=token,
+                    ciphertext=base64.b64encode(original.encode("utf-8")),
+                ))
+
+            redacted = text
+            for span, token in sorted(tokens, key=lambda t: t[0].start,
+                                       reverse=True):
+                redacted = redacted[:span.start] + token + redacted[span.end:]
+            redacted_items.append(redacted)
 
         map_id = str(uuid.uuid4())
         self._vault.put_map(map_id, entries)
-        return redacted, map_id
+        return redacted_items, map_id
 
     def detokenise(self, map_id: str, text: str,
                    requester_role: str) -> str:

@@ -9,6 +9,8 @@ export interface AttachmentPayload {
   content_b64: string;
 }
 
+export type RedactedAttachmentPayload = AttachmentPayload;
+
 // -- IF-1  Content script -> Service worker --------------------------------
 
 export interface InspectMessage {
@@ -51,6 +53,7 @@ export interface InspectResponse {
   log_id: string;
   data_classes: string[];
   redacted_prompt: string | null; // populated only when decision == "redact"
+  redacted_attachments: RedactedAttachmentPayload[];
   reason: string;
 }
 

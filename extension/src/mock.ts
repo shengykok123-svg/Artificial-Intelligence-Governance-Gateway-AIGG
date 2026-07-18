@@ -27,6 +27,7 @@ export async function nextMockOutcome(prompt: string): Promise<InspectResponse> 
     log_id: `mock-${Date.now()}`,
     data_classes: step.data_classes,
     redacted_prompt: step.decision === "redact" ? `[MOCK_REDACTED] ${prompt}` : null,
+    redacted_attachments: [],
     reason: step.reason,
   };
 }

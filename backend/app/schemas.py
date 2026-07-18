@@ -13,6 +13,12 @@ class Attachment(BaseModel):
     content_b64: str
 
 
+class RedactedAttachment(BaseModel):
+    filename: str
+    mime: str
+    content_b64: str
+
+
 class InspectRequest(BaseModel):
     user_id: str
     target_host: str        # "chatgpt.com" | "gemini.google.com"
@@ -26,7 +32,8 @@ class InspectResponse(BaseModel):
     log_id: str
     data_classes: list[str]
     redacted_prompt: str | None   # populated only when decision == "redact"
+    redacted_attachments: list[RedactedAttachment] = []
     reason: str                   # one human-readable sentence
 
 
-__all__ = ["Attachment", "InspectRequest", "InspectResponse"]
+__all__ = ["Attachment", "InspectRequest", "InspectResponse", "RedactedAttachment"]

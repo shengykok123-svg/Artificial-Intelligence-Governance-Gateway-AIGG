@@ -54,6 +54,7 @@ def test_allow(client: TestClient) -> None:
     body = r.json()
     assert body["decision"] == "allow"
     assert body["redacted_prompt"] is None
+    assert body["redacted_attachments"] == []
     assert body["data_classes"] == []
 
     logs = client.get("/v1/logs", headers=HEADERS, params={"limit": 200}).json()
@@ -287,6 +288,37 @@ def test_docx_attachment_contributes_to_verdict(client: TestClient) -> None:
     body = r.json()
     assert body["decision"] == "hold"
     assert "SALARY" in body["data_classes"]
+    assert body["redacted_attachments"] == []
+
+
+def test_text_attachment_redaction_returns_redacted_copy(client: TestClient) -> None:
+    original = "Employee IC 880412-08-5561 needs a reply."
+    r = inspect(client, user_id="aiman.hr@acme.my",
+                prompt="see attached", attachments=[
+                    {
+                        "filename": "employee.txt",
+                        "mime": "text/plain",
+                        "content_b64": base64.b64encode(original.encode()).decode(),
+                    },
+                ])
+
+    body = r.json()
+    assert body["decision"] == "redact"
+    assert "MYKAD" in body["data_classes"]
+    assert body["redacted_prompt"] == "see attached"
+    assert len(body["redacted_attachments"]) == 1
+
+    redacted = body["redacted_attachments"][0]
+    assert redacted["filename"] == "employee.redacted.txt"
+    assert redacted["mime"] == "text/plain"
+
+    redacted_text = base64.b64decode(redacted["content_b64"]).decode()
+    assert "880412-08-5561" not in redacted_text
+    assert "[MYKAD_1]" in redacted_text
+
+    logs = client.get("/v1/logs", headers=HEADERS, params={"limit": 200}).json()
+    row = next(x for x in logs["items"] if x["log_id"] == body["log_id"])
+    assert row["map_id"] is not None
 
 
 # --------------------------------------------------------------------------

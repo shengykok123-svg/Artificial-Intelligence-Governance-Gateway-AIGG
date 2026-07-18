@@ -24,7 +24,7 @@ popup, and verified against the local backend.
 | --- | --- |
 | `npm run typecheck` | Pass |
 | `npm run build` | Pass; loadable `extension/dist` generated |
-| Backend suite in `.venv` | 97 passed, 41 skipped |
+| Backend suite in `.venv` | 98 passed, 41 skipped |
 | Real M2 + M7 + M8 integration suite | 39 passed |
 | Real M5 extraction suite | 8 passed |
 
@@ -43,8 +43,13 @@ popup, and verified against the local backend.
 
 M5 now extracts text from TXT, CSV, DOCX and PPTX in tests, supports PDF text
 extraction through `pdfplumber`, rejects invalid base64, rejects unsupported
-types, and enforces a 5 MB attachment size limit. This is file inspection and
-policy enforcement, not regenerated redacted-file upload.
+types, and enforces a 5 MB attachment size limit. When a TXT or CSV attachment
+causes a `redact` verdict, `/v1/inspect` now returns a redacted attachment copy
+in `redacted_attachments`.
+
+Browser-side replacement of the selected file is not wired yet. The safe next
+step is to intercept the file input `change` event before ChatGPT or Gemini
+processes the original file, then inject the redacted copy.
 
 ## Live Chrome acceptance
 

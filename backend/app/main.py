@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import sys
 from collections import Counter
@@ -20,7 +21,7 @@ from app.extract.files import UnsupportedFile
 from app.policy.engine import PolicyContext, Verdict
 from app.repo import Repos, get_repos
 from app.repo.base import AuditRecord
-from app.schemas import InspectRequest, InspectResponse
+from app.schemas import Attachment, InspectRequest, InspectResponse, RedactedAttachment
 
 load_dotenv()
 
@@ -106,6 +107,31 @@ def get_tokeniser(vault: Any) -> Any:
     return Tokeniser(vault)
 
 
+def _can_redact_attachment(att: Attachment) -> bool:
+    normalised_mime = att.mime.lower().split(";")[0].strip()
+    filename = att.filename.lower()
+    return (
+        normalised_mime in {"text/plain", "text/csv"}
+        or filename.endswith(".txt")
+        or filename.endswith(".csv")
+    )
+
+
+def _redacted_filename(filename: str) -> str:
+    if "." not in filename:
+        return f"{filename}.redacted.txt"
+    stem, ext = filename.rsplit(".", 1)
+    return f"{stem}.redacted.{ext}"
+
+
+def _redacted_attachment(att: Attachment, redacted_text: str) -> RedactedAttachment:
+    return RedactedAttachment(
+        filename=_redacted_filename(att.filename),
+        mime=att.mime,
+        content_b64=base64.b64encode(redacted_text.encode("utf-8")).decode("ascii"),
+    )
+
+
 # --------------------------------------------------------------------------
 # App
 # --------------------------------------------------------------------------
@@ -162,8 +188,11 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
     documents: list[Document] = [
         Document(text=req.prompt, source_filename=None, mime="text/plain")
     ]
+    attachment_docs: list[tuple[Attachment, Document]] = []
     for att in req.attachments:
-        documents.append(extract(att.filename, att.mime, att.content_b64))
+        doc = extract(att.filename, att.mime, att.content_b64)
+        documents.append(doc)
+        attachment_docs.append((att, doc))
 
     rules_detector = get_rules_detector()
     embed_detector = get_embed_detector()
@@ -177,8 +206,11 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
     prompt_spans = rules_detector.detect(prompt_doc) + embed_detector.detect(prompt_doc)
 
     all_spans: list[Span] = list(prompt_spans)
-    for doc in documents[1:]:
-        all_spans += rules_detector.detect(doc) + embed_detector.detect(doc)
+    attachment_spans: list[tuple[Attachment, Document, list[Span]]] = []
+    for att, doc in attachment_docs:
+        spans = rules_detector.detect(doc) + embed_detector.detect(doc)
+        all_spans += spans
+        attachment_spans.append((att, doc, spans))
 
     data_classes = sorted({span.data_class for span in all_spans})
     confidence = max((s.confidence for s in all_spans), default=0.0)
@@ -209,12 +241,25 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
     verdict = decide(classification, ctx, repos.rules.all())
 
     redacted_prompt: str | None = None
+    redacted_attachments: list[RedactedAttachment] = []
     map_id: str | None = None
     prompt_text_for_audit = req.prompt
 
     if verdict.decision == "redact":
         tokeniser = get_tokeniser(repos.vault)
-        redacted_prompt, map_id = tokeniser.tokenise(req.prompt, verdict.spans_to_redact)
+        tokenise_inputs: list[tuple[str, list[Span]]] = [(req.prompt, verdict.spans_to_redact)]
+        attachment_redaction_inputs: list[tuple[Attachment, int]] = []
+        for att, doc, spans in attachment_spans:
+            if not spans or not _can_redact_attachment(att):
+                continue
+            attachment_redaction_inputs.append((att, len(tokenise_inputs)))
+            tokenise_inputs.append((doc.text, spans))
+
+        redacted_items, map_id = tokeniser.tokenise_many(tokenise_inputs)
+        redacted_prompt = redacted_items[0]
+        for att, redacted_index in attachment_redaction_inputs:
+            redacted_attachments.append(_redacted_attachment(att, redacted_items[redacted_index]))
+
         # SD-1: the audit row holds the REDACTED text; the original lives
         # only in the vault.
         prompt_text_for_audit = redacted_prompt
@@ -246,6 +291,7 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         log_id=log_id,
         data_classes=list(data_classes),
         redacted_prompt=redacted_prompt,
+        redacted_attachments=redacted_attachments,
         reason=verdict.reason,
     )
 

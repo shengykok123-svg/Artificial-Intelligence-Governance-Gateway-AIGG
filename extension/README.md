@@ -55,6 +55,9 @@ M2, M5, M7 and M8 are real. M3 remains mocked by design:
 
 - M2 detects structured sensitive data such as MyKad, salary and secrets.
 - M5 extracts text from TXT, CSV, PDF, DOCX and PPTX attachments.
+- The backend can return redacted TXT/CSV attachment copies in
+  `redacted_attachments`; browser-side file replacement is still the next
+  integration step.
 - M7 tokenises redacted spans into encrypted reversible vault mappings.
 - M8 classifies department/confidential semantic signals with local embeddings.
 - M3 is still `mock_decide`.
