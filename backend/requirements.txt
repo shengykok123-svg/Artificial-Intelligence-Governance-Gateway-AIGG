@@ -17,6 +17,11 @@ pandas
 cryptography
 # M8  (P2 - only if M1-M7 are done and the video is recorded)
 sentence-transformers
+# M9: optional DeBERTa-v3-small department detector and training scripts
+torch
+transformers
+datasets
+scikit-learn
 # dev
 pytest
 httpx

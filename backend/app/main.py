@@ -30,6 +30,7 @@ MOCK_MODULES: set[str] = {
     m.strip() for m in os.getenv("MOCK_MODULES", "M2,M3,M5,M7,M8").split(",")
     if m.strip()
 }
+SEMANTIC_DETECTOR = os.getenv("SEMANTIC_DETECTOR", "m8").strip().lower()
 
 # The default admin identity behind the dashboard's hardcoded login. Neither
 # POST /v1/logs/{id}/decision nor POST /v1/tools/{host}/decision carries a
@@ -53,7 +54,8 @@ def _check_demo_guard(env: str, mock_modules: set[str]) -> None:
 _check_demo_guard(ENV, MOCK_MODULES)
 
 print(
-    f"[startup] ENV={ENV} MOCK_MODULES={sorted(MOCK_MODULES) or ['none']}",
+    f"[startup] ENV={ENV} semantic_detector={SEMANTIC_DETECTOR} "
+    f"MOCK_MODULES={sorted(MOCK_MODULES) or ['none']}",
     file=sys.stderr,
 )
 
@@ -75,6 +77,13 @@ def get_rules_detector() -> Detector:
 
 
 def get_embed_detector() -> Detector | DocumentClassifier:
+    if SEMANTIC_DETECTOR == "m9_deberta":
+        # M9 is opt-in. It has the same two methods as M8, so nothing in the
+        # inspect pipeline needs to know which semantic implementation runs.
+        from app.detect.deberta import DebertaDetector
+        return DebertaDetector()
+    if SEMANTIC_DETECTOR != "m8":
+        raise RuntimeError("SEMANTIC_DETECTOR must be 'm8' or 'm9_deberta'.")
     if "M8" in MOCK_MODULES:
         from app.mocks import MockEmbedDetector
         return MockEmbedDetector()
@@ -346,4 +355,8 @@ def decide_tool(
 
 @app.get("/v1/health")
 def health() -> dict:
-    return {"status": "ok", "mocked": sorted(MOCK_MODULES)}
+    return {
+        "status": "ok",
+        "semantic_detector": SEMANTIC_DETECTOR,
+        "mocked": sorted(MOCK_MODULES),
+    }

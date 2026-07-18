@@ -7,6 +7,18 @@ auditable log; an employer dashboard is where a held prompt gets approved or
 denied, and the extension unblocks the employee within seconds of that
 decision.
 
+## Scope snapshot
+
+This repository is a browser-boundary AI governance MVP. It inspects a prompt
+before the user submits it to an existing web AI tool; it does **not** host an
+AI chat experience or act as an OpenAI-compatible reverse proxy.
+
+In scope: Chrome MV3 capture, the FastAPI inspection/policy plane, optional
+semantic detection, reversible tokenisation, audit records, and the employer
+dashboard. Out of scope: an AI workspace, an OpenAI-compatible reverse proxy,
+and production identity/authentication. See [HANDOFF.md](HANDOFF.md) before
+changing interfaces or adding a module.
+
 ## Status
 
 The backbone — **M0, M1, M4, M6** — is built, tested, and wired end to end
@@ -25,7 +37,7 @@ are not built yet; the backbone runs against mocks for them
 | ✅ | **M6** Employer dashboard | P1 | Built |
 | ☐ | **M7** Tokenisation vault | P2 | Mocked — `MockTokeniser` |
 | ☐ | **M8** Embedding similarity | P1 | Mocked — always returns no spans, `(None, 0.0)` |
-| ☐ | **M9** Fine-tuned DistilBERT | P3 | Proposal only |
+| 🧪 | **M9** Fine-tuned DeBERTa-v3-small | P3 | Opt-in scaffold; awaiting real labelled data and training |
 
 `GET /v1/health` reports which modules are currently mocked — check it before
 trusting a verdict. While M2/M3/M5/M7 are mocked, only these strings produce
@@ -68,6 +80,9 @@ docker-compose.yml              M0  PostgreSQL 16 for local dev               BU
 backend/app/detect/base.py          shared dataclasses + Detector protocol    BUILT
 backend/app/detect/rules.py     M2  deterministic detection                   mocked
 backend/app/detect/embed.py     M8  embedding similarity                      mocked
+backend/app/detect/deberta.py   M9  optional department detector              scaffolded
+backend/ml/m9_train.py          M9  local training entry point                 scaffolded
+backend/data/m9/                M9  synthetic starter dataset                  scaffolded
 backend/app/extract/files.py    M5  file bytes -> Document                    mocked
 backend/app/policy/engine.py    M3  decision engine (decide())                mocked
 backend/app/policy/rules.yaml   M3  rule table                                seed data
@@ -159,3 +174,4 @@ running.
   the MAIN-world/isolated-world composer-write split
 - `dashboard/README.md` — how to run it, what `VITE_USE_MSW` does, and which
   screens are read-only in this MVP
+- `backend/README_M9.md` — M9 data format, training, and opt-in runtime setup
