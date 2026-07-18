@@ -18,6 +18,11 @@ export interface InspectMessage {
   targetHost: string;
 }
 
+export interface CheckHoldStatusMessage {
+  type: "CHECK_HOLD_STATUS";
+  log_id: string;
+}
+
 // Service worker -> content script, sent once a hold resolves (approved,
 // denied, or the 5-minute poll window ran out). Not part of IF-1/IF-2/IF-3
 // on the wire; a background-owned message so the long poll never has to hold
@@ -28,7 +33,7 @@ export interface HoldResolvedMessage {
   status: LogStatus; // "pending" here means the poll window timed out
 }
 
-export type ExtensionMessage = InspectMessage;
+export type ExtensionMessage = InspectMessage | CheckHoldStatusMessage;
 export type BackgroundMessage = HoldResolvedMessage;
 
 // -- IF-2  Service worker -> API   POST /v1/inspect -------------------------

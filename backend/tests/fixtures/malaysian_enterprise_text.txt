@@ -1,1 +1,3 @@
-M2 fixture: realistic Malaysian enterprise text with expected offsets asserted in the test.
+Please contact Encik Rahman at rahman@acme.my or 012-3456789.
+His MyKad is 880412-08-5561 and his Maybank account no. is 5142 8890 3312.
+The monthly salary is RM 8,500. Keep sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d private.

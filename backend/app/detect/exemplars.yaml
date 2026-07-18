@@ -1,1 +1,25 @@
-# M8  ~20 exemplar sentences per department. Embedded into a NumPy array at startup.
+departments:
+  finance:
+    - "Quarterly revenue was below the approved forecast."
+    - "Reconcile vendor payments against the bank statement."
+    - "Prepare the payroll budget for the next financial year."
+    - "The finance team needs an explanation for the cost variance."
+    - "Review the accounts receivable ageing report."
+  hr:
+    - "Draft the employee termination letter for management approval."
+    - "Summarise the staff grievance investigation findings."
+    - "Prepare the annual performance appraisal notes."
+    - "The recruitment panel is reviewing candidate interviews."
+    - "Update the employee leave and benefits policy."
+  legal:
+    - "Review the contract liability clause before signing."
+    - "Prepare a response for the regulatory compliance inquiry."
+    - "Legal counsel is assessing the commercial dispute."
+    - "Check whether the data processing agreement is valid."
+    - "Summarise the confidential litigation strategy."
+  engineering:
+    - "Investigate the production deployment incident."
+    - "Review the API architecture and authentication design."
+    - "The engineering team is debugging a service outage."
+    - "Prepare the technical postmortem for the system failure."
+    - "Discuss the internal source code migration plan."
