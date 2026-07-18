@@ -25,6 +25,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-batch-size", type=int, default=8)
     parser.add_argument("--learning-rate", type=float, default=2e-5)
     parser.add_argument("--weight-decay", type=float, default=0.01)
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=BACKEND_ROOT / "data" / "m9",
+        help="Directory containing train.jsonl and validation.jsonl (default: data/m9).",
+    )
     return parser.parse_args()
 
 
@@ -69,7 +75,7 @@ def _macro_f1(labels: np.ndarray, predicted: np.ndarray) -> float:
 def main() -> None:
     args = parse_args()
     set_seed(42)
-    data_dir = BACKEND_ROOT / "data" / "m9"
+    data_dir = args.data_dir if args.data_dir.is_absolute() else BACKEND_ROOT / args.data_dir
     artifact_dir = BACKEND_ROOT / "artifacts" / "deberta-m9-detector"
     train_records = read_jsonl(data_dir / "train.jsonl")
     validation_records = read_jsonl(data_dir / "validation.jsonl")
