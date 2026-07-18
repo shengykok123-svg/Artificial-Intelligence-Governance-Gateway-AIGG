@@ -145,9 +145,11 @@ function init(site: SiteKey): void {
       type === "text/plain" ||
       type === "text/csv" ||
       type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+      type === "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
       name.endsWith(".txt") ||
       name.endsWith(".csv") ||
-      name.endsWith(".docx")
+      name.endsWith(".docx") ||
+      name.endsWith(".pptx")
     );
   }
 

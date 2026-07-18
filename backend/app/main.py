@@ -17,6 +17,7 @@ from docx import Document as DocxDocument
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pptx import Presentation
 
 from app.detect.base import Classification, Detector, DocumentClassifier, Document, Span
 from app.errors import Forbidden
@@ -111,6 +112,7 @@ def get_tokeniser(vault: Any) -> Any:
 
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
 
 def _can_redact_text_attachment(att: Attachment) -> bool:
@@ -126,6 +128,11 @@ def _can_redact_text_attachment(att: Attachment) -> bool:
 def _can_redact_docx_attachment(att: Attachment) -> bool:
     normalised_mime = att.mime.lower().split(";")[0].strip()
     return normalised_mime == DOCX_MIME or att.filename.lower().endswith(".docx")
+
+
+def _can_redact_pptx_attachment(att: Attachment) -> bool:
+    normalised_mime = att.mime.lower().split(";")[0].strip()
+    return normalised_mime == PPTX_MIME or att.filename.lower().endswith(".pptx")
 
 
 def _redacted_filename(filename: str) -> str:
@@ -166,6 +173,28 @@ def _redacted_docx_attachment(att: Attachment, docx: Any) -> RedactedAttachment:
     return RedactedAttachment(
         filename=_redacted_filename(att.filename),
         mime=att.mime or DOCX_MIME,
+        content_b64=base64.b64encode(buf.getvalue()).decode("ascii"),
+    )
+
+
+def _iter_pptx_text_targets(deck: Any) -> list[Any]:
+    targets: list[Any] = []
+    for slide in deck.slides:
+        for shape in slide.shapes:
+            if not getattr(shape, "has_text_frame", False):
+                continue
+            text_frame = shape.text_frame
+            if text_frame.text:
+                targets.append(text_frame)
+    return targets
+
+
+def _redacted_pptx_attachment(att: Attachment, deck: Any) -> RedactedAttachment:
+    buf = io.BytesIO()
+    deck.save(buf)
+    return RedactedAttachment(
+        filename=_redacted_filename(att.filename),
+        mime=att.mime or PPTX_MIME,
         content_b64=base64.b64encode(buf.getvalue()).decode("ascii"),
     )
 
@@ -288,6 +317,7 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         tokenise_inputs: list[tuple[str, list[Span]]] = [(req.prompt, verdict.spans_to_redact)]
         attachment_redaction_inputs: list[tuple[Attachment, int]] = []
         docx_redaction_inputs: list[tuple[Attachment, Any, list[tuple[Any, int]]]] = []
+        pptx_redaction_inputs: list[tuple[Attachment, Any, list[tuple[Any, int]]]] = []
         for att, doc, spans in attachment_spans:
             if not spans:
                 continue
@@ -308,6 +338,20 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
                     tokenise_inputs.append((target.text, target_spans))
                 if targets:
                     docx_redaction_inputs.append((att, docx, targets))
+                continue
+
+            if _can_redact_pptx_attachment(att):
+                deck = Presentation(io.BytesIO(_decode_attachment_bytes(att)))
+                targets: list[tuple[Any, int]] = []
+                for target in _iter_pptx_text_targets(deck):
+                    target_doc = Document(text=target.text, source_filename=att.filename, mime=att.mime)
+                    target_spans = rules_detector.detect(target_doc) + embed_detector.detect(target_doc)
+                    if not target_spans:
+                        continue
+                    targets.append((target, len(tokenise_inputs)))
+                    tokenise_inputs.append((target.text, target_spans))
+                if targets:
+                    pptx_redaction_inputs.append((att, deck, targets))
 
         redacted_items, map_id = tokeniser.tokenise_many(tokenise_inputs)
         redacted_prompt = redacted_items[0]
@@ -317,6 +361,10 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
             for target, redacted_index in targets:
                 target.text = redacted_items[redacted_index]
             redacted_attachments.append(_redacted_docx_attachment(att, docx))
+        for att, deck, targets in pptx_redaction_inputs:
+            for target, redacted_index in targets:
+                target.text = redacted_items[redacted_index]
+            redacted_attachments.append(_redacted_pptx_attachment(att, deck))
 
         # SD-1: the audit row holds the REDACTED text; the original lives
         # only in the vault.

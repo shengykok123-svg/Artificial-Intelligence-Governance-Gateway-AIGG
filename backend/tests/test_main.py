@@ -11,6 +11,7 @@ import io
 import pytest
 from docx import Document as DocxDocument
 from fastapi.testclient import TestClient
+from pptx import Presentation
 
 from app.main import API_KEY, _check_demo_guard, app
 from app.repo import reset_memory_repos
@@ -355,6 +356,42 @@ def test_docx_attachment_redaction_returns_redacted_copy(client: TestClient) -> 
     assert "880412-08-5561" not in redacted_text
     assert "[MYKAD_1]" in redacted_text
     assert "[MYKAD_2]" in redacted_text
+
+
+def test_pptx_attachment_redaction_returns_redacted_copy(client: TestClient) -> None:
+    deck = Presentation()
+    slide = deck.slides.add_slide(deck.slide_layouts[5])
+    slide.shapes.title.text = "Employee IC 880412-08-5561 needs a reply."
+    buf = io.BytesIO()
+    deck.save(buf)
+
+    r = inspect(client, user_id="aiman.hr@acme.my",
+                prompt="see attached", attachments=[
+                    {
+                        "filename": "employee.pptx",
+                        "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        "content_b64": base64.b64encode(buf.getvalue()).decode(),
+                    },
+                ])
+
+    body = r.json()
+    assert body["decision"] == "redact"
+    assert "MYKAD" in body["data_classes"]
+    assert len(body["redacted_attachments"]) == 1
+
+    redacted = body["redacted_attachments"][0]
+    assert redacted["filename"] == "employee.redacted.pptx"
+    assert redacted["mime"] == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+
+    redacted_deck = Presentation(io.BytesIO(base64.b64decode(redacted["content_b64"])))
+    redacted_text = "\n".join(
+        shape.text
+        for slide in redacted_deck.slides
+        for shape in slide.shapes
+        if hasattr(shape, "text") and shape.text
+    )
+    assert "880412-08-5561" not in redacted_text
+    assert "[MYKAD_1]" in redacted_text
 
 
 # --------------------------------------------------------------------------
