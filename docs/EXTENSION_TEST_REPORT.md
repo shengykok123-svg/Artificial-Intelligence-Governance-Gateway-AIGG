@@ -47,9 +47,10 @@ types, and enforces a 5 MB attachment size limit. When a TXT or CSV attachment
 causes a `redact` verdict, `/v1/inspect` now returns a redacted attachment copy
 in `redacted_attachments`.
 
-Browser-side replacement of the selected file is not wired yet. The safe next
-step is to intercept the file input `change` event before ChatGPT or Gemini
-processes the original file, then inject the redacted copy.
+Browser-side replacement is wired for TXT/CSV attachments. The extension
+intercepts the file input `change` event at `document_start`, checks the file
+with the backend before upload, and injects the returned redacted file copy
+when the verdict is `redact`.
 
 ## Live Chrome acceptance
 
@@ -64,11 +65,16 @@ Evidence was captured by manual screenshots during the live ChatGPT run.
 | Salary approval send | Manual screenshot + backend status | Pass. `POST /v1/logs/{log_id}/decision` changed status to `approved`; the extension detected the approval and replayed the original salary prompt to ChatGPT. |
 | TXT attachment deny | Manual screenshot + backend log `67aab510-01f1-433e-8c78-99a4afba4341` | Pass. `secret.txt` contained the fake OpenAI API key; M5 extracted it, M2 classified `SECRET`, and the extension blocked the send. |
 | DOCX attachment hold + approval send | Manual screenshot + backend log `1a0b1db1-119f-4add-a484-282225d490d0` | Pass. `salary.docx` contained `Gaji bulanan RM 8,500`; M5 extracted it, M2 classified `SALARY`, M3 mock held it, and approval replayed the attachment prompt to ChatGPT. |
+| TXT attachment redaction replacement | Manual screenshot + backend logs `75dc6972-7b26-4546-9e49-1cf4acae64a7`, `928302a6-f14b-4ee0-9f28-c837966e00b8` | Pass. `mykad.txt` was inspected and replaced with `mykad.redacted.txt`; ChatGPT read `Employee IC [MYKAD_1] needs a reply.` and the replaced file passed the follow-up send-time inspection as `allow`. |
 
 One UX polish landed after the acceptance run: successful sent-state banners
 (`redacted before sending` and `approved -- sending now`) now disappear after
 three seconds. Blocking banners such as `deny` and `waiting for approval` remain
 visible.
+
+Current file-redaction replacement support is intentionally limited to TXT and
+CSV. DOCX, PDF and PPTX are still extracted for policy decisions, but redacted
+copies are not generated or injected for those formats yet.
 
 ## Push recommendation
 

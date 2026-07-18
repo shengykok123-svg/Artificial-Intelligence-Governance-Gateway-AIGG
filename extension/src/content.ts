@@ -22,11 +22,12 @@ if (site) init(site);
 
 function init(site: SiteKey): void {
   let isReplaying = false;
+  let isInjectingFiles = false;
   let capturedAttachments: AttachmentPayload[] = [];
   let activeLogId: string | null = null;
   let holdPollTimer: number | null = null;
 
-  document.addEventListener("change", onFileInputChange, true);
+  window.addEventListener("change", onFileInputChange, true);
   document.addEventListener("click", onClickCapture, true);
   document.addEventListener("keydown", onKeydownCapture, true);
   chrome.runtime.onMessage.addListener(onBackgroundMessage);
@@ -36,9 +37,122 @@ function init(site: SiteKey): void {
     if (!input || e.target !== input) return;
     const files = Array.from(input.files ?? []);
     if (files.length === 0) return;
-    void encodeFiles(files).then((encoded) => {
-      capturedAttachments = encoded;
-    });
+
+    if (isInjectingFiles) {
+      void encodeFiles(files).then((encoded) => {
+        capturedAttachments = encoded;
+      });
+      return;
+    }
+
+    if (!files.every(canPreprocessFile)) {
+      void encodeFiles(files).then((encoded) => {
+        capturedAttachments = encoded;
+      });
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    input.value = "";
+
+    void preprocessFilesBeforeUpload(input, files);
+  }
+
+  async function preprocessFilesBeforeUpload(input: HTMLInputElement, files: File[]): Promise<void> {
+    const composer = findComposer(site);
+    const encoded = await encodeFiles(files);
+
+    if (composer) showBanner(composer, "hold", "checking attachment before upload.");
+
+    let outcome: InspectOutcome;
+    try {
+      outcome = await chrome.runtime.sendMessage<InspectMessage, InspectOutcome>({
+        type: "INSPECT",
+        prompt: "",
+        files: encoded,
+        targetHost: location.hostname,
+      });
+    } catch (err) {
+      console.warn("[aigg] pre-upload inspection failed:", err);
+      if (composer) showBanner(composer, "deny", "attachment could not be checked -- not attached.");
+      return;
+    }
+
+    if (!outcome.ok) {
+      if (composer) showBanner(composer, "deny", `attachment could not be checked -- not attached. ${outcome.message}`);
+      return;
+    }
+
+    const result = outcome.result;
+    switch (result.decision) {
+      case "allow":
+        injectFiles(input, files);
+        capturedAttachments = encoded;
+        removeBanner();
+        return;
+
+      case "redact": {
+        if (result.redacted_attachments.length !== files.length) {
+          if (composer) showBanner(composer, "deny", "redacted attachment was not available. Nothing was attached.");
+          return;
+        }
+
+        const redactedFiles = result.redacted_attachments.map(payloadToFile);
+        injectFiles(input, redactedFiles);
+        capturedAttachments = result.redacted_attachments;
+        if (composer) {
+          showBanner(
+            composer,
+            "redact",
+            `redacted attachment before upload (${result.data_classes.join(", ") || "sensitive data"}).`,
+          );
+          removeBannerSoon("redacted attachment before upload");
+        }
+        return;
+      }
+
+      case "hold":
+        if (composer) showBanner(composer, "hold", "attachment held for compliance review -- not attached yet.");
+        capturedAttachments = [];
+        return;
+
+      case "deny":
+        if (composer) showBanner(composer, "deny", `blocked attachment: ${result.reason}`);
+        capturedAttachments = [];
+        return;
+    }
+  }
+
+  function injectFiles(input: HTMLInputElement, files: File[]): void {
+    const transfer = new DataTransfer();
+    for (const file of files) transfer.items.add(file);
+    isInjectingFiles = true;
+    try {
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    } finally {
+      isInjectingFiles = false;
+    }
+  }
+
+  function canPreprocessFile(file: File): boolean {
+    const type = file.type.toLowerCase().split(";")[0].trim();
+    const name = file.name.toLowerCase();
+    return type === "text/plain" || type === "text/csv" || name.endsWith(".txt") || name.endsWith(".csv");
+  }
+
+  function payloadToFile(payload: AttachmentPayload): File {
+    return new File([base64ToArrayBuffer(payload.content_b64)], payload.filename, { type: payload.mime });
+  }
+
+  function base64ToArrayBuffer(content: string): ArrayBuffer {
+    const binary = atob(content);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
   }
 
   function onClickCapture(e: MouseEvent): void {
