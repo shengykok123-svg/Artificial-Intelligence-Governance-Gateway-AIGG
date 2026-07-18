@@ -21,6 +21,23 @@ class InspectRequest(BaseModel):
     attachments: list[Attachment] = []
 
 
+class DetectionDebug(BaseModel):
+    """Safe per-match diagnostic metadata; never includes matched text."""
+
+    data_class: str
+    detector: str
+    confidence: float
+    source: Literal["prompt", "attachment"]
+
+
+class InspectDebug(BaseModel):
+    """Developer-facing inspection trace for the browser debug panel."""
+
+    policy_layer: str
+    semantic_detector: str
+    detections: list[DetectionDebug]
+
+
 class InspectResponse(BaseModel):
     decision: Literal["allow", "redact", "hold", "deny"]
     log_id: str
@@ -30,6 +47,7 @@ class InspectResponse(BaseModel):
     # M9 explainability metadata. These do not affect the policy verdict.
     content_department: str | None
     department_confidence: float
+    debug: InspectDebug
 
 
-__all__ = ["Attachment", "InspectRequest", "InspectResponse"]
+__all__ = ["Attachment", "DetectionDebug", "InspectDebug", "InspectRequest", "InspectResponse"]

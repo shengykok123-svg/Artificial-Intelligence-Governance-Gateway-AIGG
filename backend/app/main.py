@@ -22,7 +22,7 @@ from app.extract.files import UnsupportedFile
 from app.policy.engine import PolicyContext, Verdict
 from app.repo import Repos, get_repos
 from app.repo.base import AuditRecord
-from app.schemas import InspectRequest, InspectResponse
+from app.schemas import DetectionDebug, InspectDebug, InspectRequest, InspectResponse
 
 load_dotenv()
 
@@ -192,8 +192,19 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
     prompt_spans = rules_detector.detect(prompt_doc) + embed_detector.detect(prompt_doc)
 
     all_spans: list[Span] = list(prompt_spans)
+    debug_detections = [
+        DetectionDebug(data_class=span.data_class, detector=span.detector,
+                       confidence=span.confidence, source="prompt")
+        for span in prompt_spans
+    ]
     for doc in documents[1:]:
-        all_spans += rules_detector.detect(doc) + embed_detector.detect(doc)
+        attachment_spans = rules_detector.detect(doc) + embed_detector.detect(doc)
+        all_spans += attachment_spans
+        debug_detections.extend(
+            DetectionDebug(data_class=span.data_class, detector=span.detector,
+                           confidence=span.confidence, source="attachment")
+            for span in attachment_spans
+        )
 
     data_classes = sorted({span.data_class for span in all_spans})
     confidence = max((s.confidence for s in all_spans), default=0.0)
@@ -264,6 +275,11 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         reason=verdict.reason,
         content_department=content_department,
         department_confidence=department_confidence,
+        debug=InspectDebug(
+            policy_layer="M3",
+            semantic_detector=SEMANTIC_DETECTOR,
+            detections=debug_detections,
+        ),
     )
 
 

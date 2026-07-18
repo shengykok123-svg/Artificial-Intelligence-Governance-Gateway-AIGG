@@ -55,6 +55,11 @@ def test_allow(client: TestClient) -> None:
     assert body["data_classes"] == []
     assert body["content_department"] is None
     assert body["department_confidence"] == 0.0
+    assert body["debug"] == {
+        "policy_layer": "M3",
+        "semantic_detector": "m8",
+        "detections": [],
+    }
 
     logs = client.get("/v1/logs", headers=HEADERS, params={"limit": 200}).json()
     assert any(x["log_id"] == body["log_id"] for x in logs["items"])

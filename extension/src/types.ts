@@ -55,6 +55,16 @@ export interface InspectResponse {
   // Additive M9 explainability metadata; it does not alter the policy verdict.
   content_department: string | null;
   department_confidence: number;
+  debug: {
+    policy_layer: string;
+    semantic_detector: string;
+    detections: Array<{
+      data_class: string;
+      detector: string;
+      confidence: number;
+      source: "prompt" | "attachment";
+    }>;
+  };
 }
 
 // -- IF-3  Service worker -> API   GET /v1/inspect/{log_id} -----------------
