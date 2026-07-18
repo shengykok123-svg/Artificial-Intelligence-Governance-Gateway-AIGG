@@ -4,191 +4,164 @@ A Chrome extension plus a FastAPI policy plane that inspects prompts and file
 attachments before they reach ChatGPT, Gemini or Copilot, and returns one of
 four verdicts: **allow | redact | hold | deny**. Every event lands in an
 auditable log; an employer dashboard is where a held prompt gets approved or
-denied, and the extension unblocks the employee after approval.
+denied, and the extension unblocks the employee within seconds of that
+decision.
 
-## Current Status
+## Status
 
-This repository is currently a **local hackathon prototype**, not a
-consumer one-click Chrome Web Store install. The core browser acceptance flow
-has been verified locally with a backend on `http://localhost:8000`.
+**2026-07-18 update:** M2, M7 and M8 have now landed as real modules; M3 and
+M5 remain mocked by design for this frame. Chrome extension live acceptance
+passed for MyKad redact, API key deny, salary hold, and approval-send. See
+`docs/EXTENSION_TEST_REPORT.md` and `extension/README.md` for the current
+setup and evidence.
+
+The backbone — **M0, M1, M4, M6** — is built, tested, and wired end to end
+against **real HTTP**, not against each other's mocks. M2, M3, M5, M7 and M8
+are not built yet; the backbone runs against mocks for them
+(`backend/app/mocks.py`), selected explicitly via `MOCK_MODULES` in `.env`.
 
 | | Module | P | Status |
 |---|---|---|---|
-| OK | **M0** Database and persistence | P0 | Built, tested |
-| OK | **M1** API skeleton + mock plane | P0 | Built, tested |
-| OK | **M2** Deterministic detection | P0 | Real: MyKad, email, phone, bank account, salary, secret and person patterns |
-| MOCK | **M3** Decision engine | P0 | Mocked by design in this frame: `mock_decide` |
-| OK | **M4** Chrome extension | P0 | Built and live-tested on ChatGPT |
-| MOCK | **M5** File extractor | P1 | Mocked by design in this frame |
-| OK | **M6** Employer dashboard | P1 | Built |
-| OK | **M7** Tokenisation vault | P2 | Real: Fernet-encrypted reversible token maps |
-| OK | **M8** Embedding similarity | P1 | Real: local `sentence-transformers/all-MiniLM-L6-v2` embeddings |
-| TODO | **M9** Fine-tuned DistilBERT | P3 | Proposal only |
+| ✅ | **M0** Database and persistence | P0 | Built, tested (both backends) |
+| ✅ | **M1** API skeleton + mock plane | P0 | Built, tested |
+| ☐ | **M2** Deterministic detection | P0 | Mocked — `MockRulesDetector` |
+| ☐ | **M3** Decision engine | P0 | Mocked — `mock_decide` (ignores the rule table) |
+| ✅ | **M4** Chrome extension | P0 | Built |
+| ☐ | **M5** File extractor | P1 | Mocked — `text/plain`/`text/csv` only, else 415 |
+| ✅ | **M6** Employer dashboard | P1 | Built |
+| ☐ | **M7** Tokenisation vault | P2 | Mocked — `MockTokeniser` |
+| ☐ | **M8** Embedding similarity | P1 | Mocked — always returns no spans, `(None, 0.0)` |
+| ☐ | **M9** Fine-tuned DistilBERT | P3 | Proposal only |
 
-`GET /v1/health` is the source of truth. For the current frame it should
-return:
+`GET /v1/health` reports which modules are currently mocked — check it before
+trusting a verdict. While M2/M3/M5/M7 are mocked, only these strings produce
+a non-`allow` verdict; everything else correctly returns `allow`:
 
-```json
-{"status":"ok","mocked":["M3","M5"]}
+| Trigger string | Verdict |
+|---|---|
+| `880412-08-5561` | redact |
+| `sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d` | deny |
+| `RM 8,500` | hold |
+| anything else | allow |
+
+### Proof it works
+
+```bash
+bash backend/scripts/backbone_smoke.sh   # all 5 backbone flows, REPO_BACKEND=memory, no Docker
 ```
 
-Do not claim an all-real-module demo until M3 and M5 land and `mocked` is an
-empty list.
+- **Backend:** 67 passed, 41 skipped (`REPO_BACKEND=memory pytest`) — the
+  skips are the same tests re-run against Postgres, which skip cleanly
+  without Docker running.
+- **Dashboard:** 10 vitest unit tests (the `by_day` pivot with a sparse day,
+  the cross-department predicate including the exact-`0.6` boundary).
+- **Extension:** `tsc --noEmit` and `vite build` clean; loadable unpacked
+  build in `extension/dist`.
 
-## What Was Verified
+## Layout — do not deviate
 
-Backend HTTP smoke checks passed with `MOCK_MODULES=M3,M5`:
-
-| Case | Input | Expected | Verified |
-|---|---|---|---|
-| MyKad redaction | `My IC is 880412-08-5561` | redact | `My IC is [MYKAD_1]` |
-| API key prevention | `sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d` | deny | blocked |
-| Salary review | `Gaji bulanan RM 8,500` | hold | pending approval |
-| Semantic finance signal | `Quarterly revenue is below forecast.` | hold | `DEPT_CONFIDENTIAL` |
-
-Chrome extension live acceptance passed on ChatGPT:
-
-- Popup connects to `http://localhost:8000` and reports `Backend is mocking: M3, M5`.
-- MyKad prompt is redacted before send; ChatGPT receives `[MYKAD_1]`.
-- API key prompt is denied and remains in the composer.
-- Salary prompt is held and not sent immediately.
-- Backend approval changes the hold to `approved`; the extension detects it and sends the prompt.
-- Successful send-state banners disappear automatically after a short delay.
-
-See `docs/EXTENSION_TEST_REPORT.md` for the detailed acceptance record.
-
-## Local Setup
-
-### 1. Create local `.env`
-
-`.env` is ignored by git because it contains `VAULT_FERNET_KEY`. To generate it
-on Windows:
-
-```powershell
-.\scripts\setup-dev.ps1
+```
+backend/app/main.py             M1  FastAPI app and routers                   BUILT
+backend/app/schemas.py          M1  ALL Pydantic wire models                  BUILT
+backend/app/mocks.py            M1  mocks for M2/M3/M5/M7/M8                  BUILT
+backend/app/errors.py           M1  Forbidden -- shared 403 (SD-2, detokenise) BUILT
+backend/app/db.py               M0  engine, session, create_all, reset        BUILT
+backend/app/repo/base.py        M0  repository protocols + DTOs   <- FROZEN*  BUILT
+backend/app/repo/postgres.py    M0  SQLAlchemy implementation                 BUILT
+backend/app/repo/memory.py      M0  in-memory impl for tests and mocks        BUILT
+backend/app/models.py           M0  ORM tables               <- SCHEMA TBD    BUILT
+docker-compose.yml              M0  PostgreSQL 16 for local dev               BUILT
+backend/app/detect/base.py          shared dataclasses + Detector protocol    BUILT
+backend/app/detect/rules.py     M2  deterministic detection                   mocked
+backend/app/detect/embed.py     M8  embedding similarity                      mocked
+backend/app/extract/files.py    M5  file bytes -> Document                    mocked
+backend/app/policy/engine.py    M3  decision engine (decide())                mocked
+backend/app/policy/rules.yaml   M3  rule table                                seed data
+backend/app/vault/tokeniser.py  M7  reversible redaction                      mocked
+extension/                      M4  MV3 + Vite + TypeScript                   BUILT
+dashboard/                      M6  React + Vite + TypeScript                 BUILT
 ```
 
-If you prefer to do it manually, copy `.env.example` to `.env`, set
-`MOCK_MODULES=M3,M5`, and generate a Fernet key:
+\* `repo/base.py` is frozen with two team-agreed, additive exceptions already
+landed: `AiTool.first_seen` and `AuditRepo.list(cross_department_only=...)`.
+See `docs/README_M0.md`.
 
-```powershell
-cd "C:\path\to\HackAttack 3.0\backend"
-.\.venv\Scripts\python.exe -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
+## Ground rules
 
-Paste the output into `.env` as `VAULT_FERNET_KEY=...`.
+Still binding for whoever picks up M2, M3, M5, M7 or M8:
 
-### 2. Backend
+1. **The contracts are law.** If your module seems to need a change, stop and
+   say so. Do not change it locally.
+2. **Your module must run standalone.** If a dependency is not built yet,
+   import it behind a stub that satisfies the contract and returns empty.
+3. **Build ONLY the module named in your task.** Someone else already has the
+   neighbouring one.
+4. Python 3.11, full type hints. PostgreSQL 16 is the only external service.
+   No Redis, no Celery, no message queue, no pgvector.
+5. Every module ships with a way to prove it works from the command line.
+6. **Nothing outside `backend/app/repo/` may import `app/models.py`, open a
+   `Session`, or write SQL.** This is what lets the schema stay undecided while
+   everything else gets built.
+7. **Policy is data, not code.** Never hardcode a rule or a hostname-to-tier
+   mapping anywhere.
 
-```powershell
-cd "C:\path\to\HackAttack 3.0\backend"
-python -m venv .venv
-.\.venv\Scripts\pip.exe install -r requirements.txt
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
+One module, one session, one branch. Two modules in one session is where
+interface drift starts.
 
-Health check from a second terminal:
+## Start
 
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/health" -Headers @{ "X-Api-Key" = "dev-key-change-me" }
-```
+```bash
+# Repo root: copy the example env once (values already work for local dev)
+cp .env.example .env
 
-Expected current result: `mocked` contains only `M3` and `M5`.
-
-### 3. Extension
-
-```powershell
-cd "C:\path\to\HackAttack 3.0\extension"
-npm install
-npm run typecheck
-npm run build
-```
-
-Then load it in Chrome:
-
-1. Open `chrome://extensions`.
-2. Enable **Developer mode**.
-3. Remove any old `AI Governance Gateway` entry.
-4. Click **Load unpacked**.
-5. Select `extension\dist`.
-6. Open the extension popup and set:
-
-```text
-Base URL: http://localhost:8000
-User ID: wei.eng@acme.my
-API key: dev-key-change-me
-MOCK_MODE: off
-```
-
-After reloading the extension, open a fresh `https://chatgpt.com/` tab or
-refresh the existing ChatGPT tab.
-
-### 4. Dashboard
-
-```powershell
-cd "C:\path\to\HackAttack 3.0\dashboard"
-npm install
-npm run dev
-```
-
-The dashboard runs at `http://localhost:5173`.
-
-## Tests
-
-```powershell
+# Backend, no Docker needed — this is the default
 cd backend
-$env:REPO_BACKEND="memory"
-$env:MOCK_MODULES="M3,M5"
-.\.venv\Scripts\pytest.exe
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+REPO_BACKEND=memory uvicorn app.main:app --reload
+# -> http://localhost:8000, seeded with 4 users, 15 rules, 3 tools, 30 audit rows
 ```
 
-```powershell
+```bash
+# Extension (separate terminal)
 cd extension
-npm run typecheck
-npm run build
+npm install && npm run build      # -> extension/dist, a loadable unpacked build
+# chrome://extensions -> Developer mode -> Load unpacked -> extension/dist
 ```
 
-```powershell
+```bash
+# Dashboard (separate terminal)
 cd dashboard
-npm run test
+npm install
+cp .env.example .env
+npm run dev                        # -> http://localhost:5173
 ```
 
-## Layout
-
-```text
-backend/app/main.py             M1 FastAPI app and routers
-backend/app/schemas.py          M1 Pydantic wire models
-backend/app/mocks.py            M1 mocks for modules not active in this frame
-backend/app/db.py               M0 engine, session, create_all, reset
-backend/app/repo/               M0 repository interfaces and implementations
-backend/app/detect/rules.py     M2 deterministic detection
-backend/app/detect/embed.py     M8 embedding similarity
-backend/app/extract/files.py    M5 file extraction, currently mocked in this frame
-backend/app/policy/engine.py    M3 decision engine, currently mocked in this frame
-backend/app/vault/tokeniser.py  M7 encrypted reversible tokenisation
-extension/                      M4 MV3 Chrome extension
-dashboard/                      M6 React dashboard
-docs/EXTENSION_TEST_REPORT.md   Live extension acceptance record
+```bash
+# Tests
+cd backend && REPO_BACKEND=memory pytest    # 67 passed, 41 skipped without Docker
+cd dashboard && npm run test                 # vitest
+cd extension && npm run typecheck && npm run build
 ```
 
-## Prototype vs Consumer Install
+```bash
+# With Postgres instead of the memory backend
+docker compose up -d
+cd backend
+REPO_BACKEND=postgres python reset_db.py
+REPO_BACKEND=postgres uvicorn app.main:app --reload
+```
 
-The current local flow requires a backend, `.env`, `npm run build`, and
-Chrome **Load unpacked**. That is expected for this prototype.
-
-A consumer-ready version should move these responsibilities out of the user
-setup:
-
-- Hosted backend instead of `localhost`.
-- Server-side secret management or KMS for the vault key.
-- Chrome Web Store packaged extension.
-- Login or managed org configuration for backend URL and API token.
-- No user-generated Fernet key, no manual `dist` loading, and no local npm
-  build for normal users.
+The memory backend is seeded with the same 30 audit rows, 15 rules and 3
+tools as the real database, so the extension and dashboard work against real
+data before any table exists and nobody but a Postgres session needs Docker
+running.
 
 ## Docs
 
-- `docs/EXTENSION_TEST_REPORT.md` - live extension acceptance result.
-- `docs/README_M0.md` - persistence layer notes.
-- `extension/README.md` - extension wiring, selectors and failure modes.
-- `dashboard/README.md` - dashboard run notes and screen details.
+- `docs/README_M0.md` — the persistence layer, and the two additive
+  exceptions to `repo/base.py`
+- `extension/README.md` — every DOM selector used, where it came from, and
+  the MAIN-world/isolated-world composer-write split
+- `dashboard/README.md` — how to run it, what `VITE_USE_MSW` does, and which
+  screens are read-only in this MVP
