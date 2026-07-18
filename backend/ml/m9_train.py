@@ -85,6 +85,10 @@ def main() -> None:
         tuple(DEPARTMENT_TO_ID),
         tuple(SENSITIVITY_TO_ID),
     )
+    # Explicitly keep the custom two-head model in fp32. Some hosted GPU
+    # environments otherwise select mixed precision automatically; with this
+    # small synthetic baseline that can save NaN head weights to the artifact.
+    model.float()
     training_args = TrainingArguments(
         output_dir=str(BACKEND_ROOT / "artifacts" / "m9-checkpoints"),
         num_train_epochs=args.epochs,
@@ -100,6 +104,8 @@ def main() -> None:
         report_to=[],
         seed=42,
         use_cpu=not torch.cuda.is_available(),
+        fp16=False,
+        bf16=False,
         label_names=["department_labels", "sensitivity_labels"],
     )
     trainer = Trainer(

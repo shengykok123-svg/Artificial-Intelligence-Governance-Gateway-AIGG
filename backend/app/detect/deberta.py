@@ -117,8 +117,12 @@ class DebertaDetector:
             encoded = {key: value.to(self._device) for key, value in encoded.items()}
             with self._torch.inference_mode():
                 output = self._model(**encoded)
-                department_probabilities = self._torch.softmax(output.department_logits[0], dim=-1)
-                sensitivity_probabilities = self._torch.softmax(output.sensitivity_logits[0], dim=-1)
+                # Artifacts trained with GPU mixed precision can emit float16
+                # logits. Compute probabilities in float32: half-precision
+                # softmax may round a value slightly above 1.0 and trip the
+                # confidence contract below.
+                department_probabilities = self._torch.softmax(output.department_logits[0].float(), dim=-1)
+                sensitivity_probabilities = self._torch.softmax(output.sensitivity_logits[0].float(), dim=-1)
             department_confidence, department_id = self._torch.max(department_probabilities, dim=-1)
             sensitivity_confidence, sensitivity_id = self._torch.max(sensitivity_probabilities, dim=-1)
             prediction = SentencePrediction(
@@ -130,7 +134,10 @@ class DebertaDetector:
         if prediction.department not in DEPARTMENT_LABELS:
             raise ValueError(f"M9 predictor returned unsupported department {prediction.department!r}.")
         if not 0.0 <= prediction.department_confidence <= 1.0 or not 0.0 <= prediction.sensitivity_confidence <= 1.0:
-            raise ValueError("M9 predictor confidences must be between 0 and 1.")
+            raise RuntimeError(
+                "M9 model produced non-finite confidence values. Retrain the artifact in fp32; "
+                "do not use this model for inspection."
+            )
         return prediction
 
     def _is_confident_confidential(self, prediction: SentencePrediction) -> bool:
