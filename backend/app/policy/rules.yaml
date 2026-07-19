@@ -37,13 +37,12 @@ rules:
     purpose: "*"
     decision: allow
 
-  # --- SALARY: HR may work with it on an enterprise tool; nobody paste it
-  #     into a public one.
+  # --- SALARY: direct block on public AI per the meeting policy frame.
   - data_class: SALARY
     ai_tool_tier: PUBLIC_AI
     user_role: "*"
     purpose: "*"
-    decision: hold
+    decision: deny
   - data_class: SALARY
     ai_tool_tier: ENTERPRISE_AI
     user_role: hr
@@ -73,12 +72,12 @@ rules:
     purpose: "*"
     decision: redact
 
-  # --- BANK_ACCT
+  # --- BANK_ACCT: direct block on public AI per the meeting policy frame.
   - data_class: BANK_ACCT
     ai_tool_tier: PUBLIC_AI
     user_role: "*"
     purpose: "*"
-    decision: redact
+    decision: deny
   - data_class: BANK_ACCT
     ai_tool_tier: ENTERPRISE_AI
     user_role: finance

@@ -363,6 +363,8 @@ def test_rules_yaml_seeds_the_table(repos):
     assert len(repos.rules.all()) == 15
     assert any(r.data_class == "SECRET" and r.decision == "deny"
                for r in repos.rules.all())
+    assert any(r.data_class == "DEPT_CONFIDENTIAL" and r.decision == "hold"
+               for r in repos.rules.all())
 
 
 # --------------------------------------------------------------------------
@@ -500,3 +502,28 @@ def test_internal_doc_similarity_returns_nearest_chunks(repos):
     assert matches[0].source_file == "roadmap.docx"
     assert matches[0].department == "engineering"
     assert matches[0].similarity > 0.9
+
+
+def test_internal_doc_add_list_and_clear_source(repos):
+    rows = [
+        ("chunk-1", "2027 Product Roadmap for unreleased platform features.", [1.0] + [0.0] * 383),
+        ("chunk-2", "Private launch dependencies for the API migration.", [0.9, 0.1] + [0.0] * 382),
+    ]
+
+    assert repos.internal_docs.add_chunks(
+        rows,
+        source_file="roadmap.docx",
+        department="engineering",
+    ) == 2
+
+    page, total = repos.internal_docs.list(limit=10, offset=0)
+
+    assert total == 2
+    assert {chunk.id for chunk in page} == {"chunk-1", "chunk-2"}
+    assert {chunk.source_file for chunk in page} == {"roadmap.docx"}
+    assert {chunk.department for chunk in page} == {"engineering"}
+    assert all("embedding" not in chunk.__dict__ for chunk in page)
+
+    assert repos.internal_docs.clear_source("roadmap.docx") == 2
+    _page, total = repos.internal_docs.list(limit=10, offset=0)
+    assert total == 0

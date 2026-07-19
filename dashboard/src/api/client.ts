@@ -8,6 +8,9 @@ import type {
   AiTool,
   AuditRecord,
   HealthResponse,
+  InternalDocsPage,
+  InternalDocUploadRequest,
+  InternalDocUploadResponse,
   LogDecisionRequest,
   LogsPage,
   LogsQuery,
@@ -84,6 +87,17 @@ export function getTools(): Promise<AiTool[]> {
 
 export function postToolDecision(host: string, body: ToolDecisionRequest): Promise<AiTool> {
   return request<AiTool>(`/v1/tools/${encodeURIComponent(host)}/decision`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getInternalDocs(): Promise<InternalDocsPage> {
+  return request<InternalDocsPage>("/v1/internal-docs?limit=50&offset=0");
+}
+
+export function postInternalDoc(body: InternalDocUploadRequest): Promise<InternalDocUploadResponse> {
+  return request<InternalDocUploadResponse>("/v1/internal-docs", {
     method: "POST",
     body: JSON.stringify(body),
   });

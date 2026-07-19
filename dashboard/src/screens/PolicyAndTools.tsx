@@ -1,16 +1,24 @@
 // M6  Screen 4. Rules table (IF-10) + tools table with Approve/Block. Showing the rules IS the point.
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 
-import { useRulesQuery, useToolDecisionMutation, useToolsQuery } from "../api/queries";
+import {
+  useInternalDocsQuery,
+  useInternalDocUploadMutation,
+  useRulesQuery,
+  useToolDecisionMutation,
+  useToolsQuery,
+} from "../api/queries";
 import type { AiTool, Decision, ToolStatus } from "../api/types";
 import { EmptyState, ErrorState, SkeletonRows } from "../components/EmptyState";
 import { VerdictBadge } from "../components/VerdictBadge";
 
 const RULES_COLUMNS = 5;
+const INTERNAL_DOC_COLUMNS = 4;
 const TOOLS_COLUMNS = 6;
 
 const DECISIONS: readonly string[] = ["allow", "redact", "hold", "deny"];
+const DEPARTMENTS = ["engineering", "finance", "hr", "legal"];
 
 function isDecision(value: string): value is Decision {
   return DECISIONS.includes(value);
@@ -96,6 +104,127 @@ function ToolRow({ tool }: { tool: AiTool }) {
   );
 }
 
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read file"));
+    reader.onload = () => {
+      const value = String(reader.result ?? "");
+      resolve(value.includes(",") ? value.split(",", 2)[1] : value);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function InternalDocsPanel() {
+  const docs = useInternalDocsQuery();
+  const upload = useInternalDocUploadMutation();
+  const [department, setDepartment] = useState("engineering");
+  const [file, setFile] = useState<File | null>(null);
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!file) return;
+    const content_b64 = await readFileAsBase64(file);
+    upload.mutate({
+      department,
+      replace_source: true,
+      attachment: {
+        filename: file.name,
+        mime: file.type || "application/octet-stream",
+        content_b64,
+      },
+    });
+  }
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h1 className="text-xl font-semibold text-gray-900">Internal document corpus</h1>
+        <p className="text-sm text-gray-500">
+          Upload internal documents into PostgreSQL pgvector for M8 similarity checks. The
+          backend stores chunks and embeddings; it does not store the original file.
+        </p>
+      </div>
+
+      <form
+        className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4"
+        onSubmit={submit}
+      >
+        <label className="block text-sm text-gray-700">
+          Department
+          <select
+            className="mt-1 block rounded border border-gray-300 px-2 py-1.5 text-sm"
+            value={department}
+            onChange={(e) => setDepartment(e.target.value)}
+            disabled={upload.isPending}
+          >
+            {DEPARTMENTS.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm text-gray-700">
+          Document
+          <input
+            type="file"
+            className="mt-1 block text-sm"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            disabled={upload.isPending}
+          />
+        </label>
+        <button
+          type="submit"
+          className="rounded bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+          disabled={!file || upload.isPending}
+        >
+          {upload.isPending ? "Indexing..." : "Upload & index"}
+        </button>
+        {upload.data && (
+          <span className="text-sm text-green-700">
+            Indexed {upload.data.chunk_count} chunks from {upload.data.source_file}
+          </span>
+        )}
+        {upload.isError && (
+          <span className="text-sm text-red-700">{upload.error.message}</span>
+        )}
+      </form>
+
+      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-2 text-left font-medium text-gray-600">Source</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-600">Department</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-600">Chunk</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-600">Indexed</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {docs.isLoading && <SkeletonRows rows={3} columns={INTERNAL_DOC_COLUMNS} />}
+            {!docs.isLoading && docs.data?.items.map((chunk) => (
+              <tr key={chunk.id}>
+                <td className="px-4 py-3 font-medium text-gray-800">{chunk.source_file}</td>
+                <td className="px-4 py-3 text-gray-600">{chunk.department}</td>
+                <td className="max-w-xl px-4 py-3 text-gray-600">
+                  <span className="block max-h-12 overflow-hidden">{chunk.chunk_text}</span>
+                </td>
+                <td className="px-4 py-3 text-gray-600">{formatDate(chunk.created_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!docs.isLoading && docs.isError && (
+          <ErrorState message={(docs.error as Error).message} />
+        )}
+        {!docs.isLoading && !docs.isError && (docs.data?.items.length ?? 0) === 0 && (
+          <EmptyState title="No internal documents indexed" />
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function PolicyAndTools() {
   const rules = useRulesQuery();
   const tools = useToolsQuery();
@@ -151,6 +280,8 @@ export default function PolicyAndTools() {
           )}
         </div>
       </section>
+
+      <InternalDocsPanel />
 
       <section className="space-y-3">
         <div>

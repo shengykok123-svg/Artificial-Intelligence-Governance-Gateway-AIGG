@@ -104,6 +104,17 @@ class InternalDocMatch:
     # M8 pgvector retrieval result. The raw embedding never leaves the repo.
 
 
+@dataclass
+class InternalDocChunk:
+    id: str
+    source_file: str
+    department: str
+    chunk_text: str
+    created_at: datetime
+    # Stored internal-document chunk. The raw embedding is intentionally not
+    # returned through API/debug surfaces.
+
+
 # --------------------------------------------------------------------------
 # Protocols
 # --------------------------------------------------------------------------
@@ -151,6 +162,9 @@ class UserRepo(Protocol):
 
 class InternalDocRepo(Protocol):
     def search_similar(self, embedding: list[float], *, limit: int) -> list[InternalDocMatch]: ...
+    def add_chunks(self, rows: list[tuple[str, str, list[float]]], *, source_file: str, department: str) -> int: ...
+    def list(self, *, limit: int, offset: int) -> tuple[list[InternalDocChunk], int]: ...
+    def clear_source(self, source_file: str) -> int: ...
 
 
 # --------------------------------------------------------------------------
@@ -206,12 +220,19 @@ class InternalDocRepo(Protocol):
 # InternalDocRepo.search_similar
 #                       newest ingestion order is irrelevant: returns nearest
 #                       chunks by embedding similarity descending, capped by
-#                       limit. If pgvector is unavailable or no chunks are
-#                       indexed, returns [] so M8 can fall back to its local
-#                       exemplar bank.
+#                       limit. pgvector absence is an environment failure for
+#                       the PostgreSQL backend, not a silent semantic fallback.
+# InternalDocRepo.add_chunks
+#                       rows are (chunk_id, chunk_text, embedding). Replaces
+#                       are explicit: callers must clear_source first if they
+#                       want one uploaded source to replace another.
+# InternalDocRepo.list  newest first for dashboard/debug visibility.
+# InternalDocRepo.clear_source
+#                       deletes all chunks for an uploaded source_file and
+#                       returns the number of removed chunks.
 
 __all__ = [
     "AuditRecord", "TokenEntry", "RuleRow", "StatsSummary", "AiTool", "UserRow",
-    "InternalDocMatch",
+    "InternalDocMatch", "InternalDocChunk",
     "AuditRepo", "VaultRepo", "RuleRepo", "ToolRepo", "UserRepo", "InternalDocRepo",
 ]

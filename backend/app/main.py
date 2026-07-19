@@ -8,6 +8,7 @@ import io
 import os
 import sys
 import textwrap
+import uuid
 from collections import Counter
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -36,6 +37,10 @@ from app.repo.base import AuditRecord
 from app.schemas import (
     Attachment,
     DetectionDebug,
+    InternalDocChunkResponse,
+    InternalDocsPage,
+    InternalDocUploadRequest,
+    InternalDocUploadResponse,
     InspectDebug,
     InspectRequest,
     InspectResponse,
@@ -51,6 +56,9 @@ MOCK_MODULES: set[str] = {
     if m.strip()
 }
 SEMANTIC_DETECTOR = os.getenv("SEMANTIC_DETECTOR", "m8").strip().lower()
+VALID_DEPARTMENTS = {"finance", "hr", "legal", "engineering"}
+INTERNAL_DOC_CHUNK_CHARS = 900
+INTERNAL_DOC_CHUNK_OVERLAP = 120
 
 # The default admin identity behind the dashboard's hardcoded login. Neither
 # POST /v1/logs/{id}/decision nor POST /v1/tools/{host}/decision carries a
@@ -130,6 +138,40 @@ def get_tokeniser(vault: Any) -> Any:
         return MockTokeniser(vault)
     from app.vault.tokeniser import Tokeniser
     return Tokeniser(vault)
+
+
+def get_m8_encoder() -> Any:
+    from app.detect.embed import MODEL_NAME
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer(MODEL_NAME, local_files_only=True)
+
+
+def _chunk_internal_doc_text(text: str) -> list[str]:
+    normalized = "\n".join(line.strip() for line in text.splitlines())
+    normalized = "\n".join(line for line in normalized.splitlines() if line)
+    if not normalized:
+        return []
+
+    chunks: list[str] = []
+    start = 0
+    while start < len(normalized):
+        end = min(start + INTERNAL_DOC_CHUNK_CHARS, len(normalized))
+        if end < len(normalized):
+            break_at = max(
+                normalized.rfind("\n", start, end),
+                normalized.rfind(". ", start, end),
+                normalized.rfind(" ", start, end),
+            )
+            if break_at > start + 200:
+                end = break_at + 1
+        chunk = normalized[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        if end >= len(normalized):
+            break
+        start = max(end - INTERNAL_DOC_CHUNK_OVERLAP, start + 1)
+    return chunks
 
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -891,6 +933,71 @@ def decide_tool(
     # nowhere to persist it yet.
     del remark
     return repos.tools._set_status(host, status, DASHBOARD_ADMIN)  # type: ignore[attr-defined]
+
+
+# --------------------------------------------------------------------------
+# M8 internal-document corpus
+# --------------------------------------------------------------------------
+
+
+@app.get("/v1/internal-docs", response_model=InternalDocsPage)
+def list_internal_docs(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    repos: Repos = Depends(get_repos),
+) -> InternalDocsPage:
+    rows, total = repos.internal_docs.list(limit=limit, offset=offset)
+    return InternalDocsPage(
+        items=[
+            InternalDocChunkResponse(
+                id=row.id,
+                source_file=row.source_file,
+                department=row.department,
+                chunk_text=row.chunk_text,
+                created_at=row.created_at.isoformat(),
+            )
+            for row in rows
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.post("/v1/internal-docs", response_model=InternalDocUploadResponse)
+def upload_internal_doc(
+    req: InternalDocUploadRequest,
+    repos: Repos = Depends(get_repos),
+) -> InternalDocUploadResponse:
+    department = req.department.strip().lower()
+    if department not in VALID_DEPARTMENTS:
+        raise HTTPException(status_code=422, detail="department must be finance, hr, legal, or engineering")
+
+    doc = get_extractor()(req.attachment.filename, req.attachment.mime, req.attachment.content_b64)
+    chunks = _chunk_internal_doc_text(doc.text)
+    if not chunks:
+        raise HTTPException(status_code=422, detail="no text could be extracted from this internal document")
+
+    encoder = get_m8_encoder()
+    embeddings = encoder.encode(chunks, normalize_embeddings=True)
+
+    if req.replace_source:
+        repos.internal_docs.clear_source(req.attachment.filename)
+    chunk_count = repos.internal_docs.add_chunks(
+        [
+            (str(uuid.uuid4()), chunk, [float(value) for value in embedding.tolist()])
+            for chunk, embedding in zip(chunks, embeddings)
+        ],
+        source_file=req.attachment.filename,
+        department=department,
+    )
+    _rows, total = repos.internal_docs.list(limit=1, offset=0)
+    return InternalDocUploadResponse(
+        source_file=req.attachment.filename,
+        department=department,
+        chunk_count=chunk_count,
+        total=total,
+    )
 
 
 # --------------------------------------------------------------------------

@@ -10,6 +10,7 @@ import io
 import zipfile
 from xml.sax.saxutils import escape
 
+import numpy as np
 import pdfplumber
 import pytest
 from docx import Document as DocxDocument
@@ -281,6 +282,36 @@ def inspect(client: TestClient, **overrides):
     return client.post("/v1/inspect", headers=HEADERS, json=body)
 
 
+def seed_internal_doc_for_m8_hold(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeEncoder:
+        def encode(self, texts: list[str], *, normalize_embeddings: bool) -> np.ndarray:
+            assert normalize_embeddings is True
+            return np.asarray([[1.0] + [0.0] * 383 for _ in texts])
+
+    monkeypatch.setattr("app.main.get_m8_encoder", lambda: FakeEncoder())
+    monkeypatch.setattr(
+        "app.detect.embed.EmbedDetector._load_default_encoder",
+        staticmethod(lambda: FakeEncoder()),
+    )
+
+    content = base64.b64encode(
+        b"HR confidential termination plan for employee grievance cases."
+    ).decode("ascii")
+    r = client.post(
+        "/v1/internal-docs",
+        headers=HEADERS,
+        json={
+            "department": "hr",
+            "attachment": {
+                "filename": "hr-termination-plan.txt",
+                "mime": "text/plain",
+                "content_b64": content,
+            },
+        },
+    )
+    assert r.status_code == 200
+
+
 # --------------------------------------------------------------------------
 # One test per verdict
 # --------------------------------------------------------------------------
@@ -329,14 +360,14 @@ def test_redact(client: TestClient) -> None:
     assert "[MYKAD_1]" in body["redacted_prompt"]
 
 
-def test_hold(client: TestClient) -> None:
+def test_salary_is_denied(client: TestClient) -> None:
     r = inspect(
         client, user_id="aiman.hr@acme.my",
         prompt="Draft a reply to the payroll query. "
                "Gaji bulanan RM 8,500 for grade M3.",
     )
     body = r.json()
-    assert body["decision"] == "hold"
+    assert body["decision"] == "deny"
     assert "SALARY" in body["data_classes"]
     assert body["debug"]["detections"] == [
         {
@@ -346,6 +377,22 @@ def test_hold(client: TestClient) -> None:
             "source": "prompt",
         }
     ]
+    assert body["redacted_prompt"] is None
+
+
+def test_m8_internal_doc_similarity_is_held(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seed_internal_doc_for_m8_hold(client, monkeypatch)
+
+    r = inspect(
+        client, user_id="aiman.hr@acme.my",
+        prompt="Please summarize the HR confidential termination plan "
+               "for employee grievance cases.",
+    )
+    body = r.json()
+    assert body["decision"] == "hold"
+    assert "DEPT_CONFIDENTIAL" in body["data_classes"]
     assert body["redacted_prompt"] is None
 
 
@@ -374,11 +421,15 @@ def test_sd1_original_never_in_audit_record(client: TestClient) -> None:
 # --------------------------------------------------------------------------
 
 
-def test_hold_approve_unblock_loop(client: TestClient) -> None:
+def test_hold_approve_unblock_loop(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seed_internal_doc_for_m8_hold(client, monkeypatch)
+
     r = inspect(
         client, user_id="aiman.hr@acme.my",
-        prompt="Draft a reply to the payroll query. "
-               "Gaji bulanan RM 8,500 for grade M3.",
+        prompt="Please summarize the HR confidential termination plan "
+               "for employee grievance cases.",
     )
     body = r.json()
     log_id = body["log_id"]
@@ -401,11 +452,15 @@ def test_hold_approve_unblock_loop(client: TestClient) -> None:
     assert unblocked == {"decision": "hold", "status": "approved"}
 
 
-def test_hold_deny_review_sets_status_denied(client: TestClient) -> None:
+def test_hold_deny_review_sets_status_denied(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seed_internal_doc_for_m8_hold(client, monkeypatch)
+
     r = inspect(
         client, user_id="aiman.hr@acme.my",
-        prompt="Draft a reply to the payroll query. "
-               "Gaji bulanan RM 8,500 for grade M3.",
+        prompt="Please summarize the HR confidential termination plan "
+               "for employee grievance cases.",
     )
     log_id = r.json()["log_id"]
 
@@ -443,6 +498,43 @@ def test_tools_include_first_seen(client: TestClient) -> None:
     tools = client.get("/v1/tools", headers=HEADERS).json()
     fresh = next(t for t in tools if t["host"] == "brand-new-shadow.ai")
     assert fresh["first_seen"] is not None
+
+
+def test_internal_doc_upload_indexes_extracted_chunks(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeEncoder:
+        def encode(self, texts: list[str], *, normalize_embeddings: bool) -> np.ndarray:
+            assert normalize_embeddings is True
+            return np.asarray([[1.0] + [0.0] * 383 for _ in texts])
+
+    monkeypatch.setattr("app.main.get_m8_encoder", lambda: FakeEncoder())
+
+    content = base64.b64encode(
+        b"2027 Product Roadmap is confidential engineering planning."
+    ).decode("ascii")
+    r = client.post(
+        "/v1/internal-docs",
+        headers=HEADERS,
+        json={
+            "department": "engineering",
+            "attachment": {
+                "filename": "roadmap.txt",
+                "mime": "text/plain",
+                "content_b64": content,
+            },
+        },
+    )
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["source_file"] == "roadmap.txt"
+    assert body["department"] == "engineering"
+    assert body["chunk_count"] == 1
+
+    listed = client.get("/v1/internal-docs", headers=HEADERS).json()
+    assert listed["total"] == 1
+    assert listed["items"][0]["source_file"] == "roadmap.txt"
+    assert "2027 Product Roadmap" in listed["items"][0]["chunk_text"]
+    assert "embedding" not in listed["items"][0]
 
 
 # --------------------------------------------------------------------------
@@ -541,7 +633,7 @@ def test_supported_attachment_contributes_to_verdict(client: TestClient) -> None
                     "content_b64": content},
                ])
     body = r.json()
-    assert body["decision"] == "hold"
+    assert body["decision"] == "deny"
     assert "SALARY" in body["data_classes"]
     assert body["debug"]["detections"] == [
         {
@@ -569,7 +661,7 @@ def test_docx_attachment_contributes_to_verdict(client: TestClient) -> None:
                 ])
 
     body = r.json()
-    assert body["decision"] == "hold"
+    assert body["decision"] == "deny"
     assert "SALARY" in body["data_classes"]
     assert body["redacted_attachments"] == []
 

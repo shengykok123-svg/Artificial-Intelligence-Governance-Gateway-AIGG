@@ -21,9 +21,14 @@ changing interfaces or adding a module.
 
 ## Status
 
-**2026-07-18 update:** M2, M5, M7 and M8 have now landed as real modules; M3
+**2026-07-19 update:** M2, M5, M7 and M8 have now landed as real modules; M3
 remains mocked by design for this frame. Chrome extension live acceptance
-passed for MyKad redact, API key deny, salary hold, and approval-send. See
+passed for MyKad redact, API key deny, file redaction replacement, previous
+message edit interception, and attachment-removal stale-state handling. The
+mock M3 policy has been aligned to the meeting markdown: M2-detected API keys,
+bank account/card-like numbers, and salary are denied; tokenisable PII is
+redacted; M8 internal-document confidential similarity is held for admin
+review. See
 `docs/EXTENSION_TEST_REPORT.md` and `extension/README.md` for the current
 setup and evidence.
 
@@ -41,7 +46,7 @@ explicitly via `MOCK_MODULES=M3` in `.env`.
 | ✅ | **M5** File extractor | P1 | Built — TXT/CSV/PDF/DOCX/PPTX/XLSX/image OCR extraction |
 | ✅ | **M6** Employer dashboard | P1 | Built |
 | ✅ | **M7** Tokenisation vault | P2 | Built — Fernet-encrypted reversible token maps |
-| ✅ | **M8** Embedding similarity | P1 | Built — local `all-MiniLM-L6-v2` classifier with optional pgvector internal-doc retrieval |
+| ✅ | **M8** Embedding similarity | P1 | Built — `all-MiniLM-L6-v2` embeddings over PostgreSQL + pgvector internal-document chunks |
 | 🧪 | **M9** Fine-tuned DeBERTa-v3-small | P3 | Built as an opt-in two-head department + confidentiality detector; synthetic baseline trained, pending reviewed gold data |
 
 `GET /v1/health` reports which modules are currently mocked — check it before
@@ -53,7 +58,8 @@ verdicts:
 |---|---|
 | `880412-08-5561` | redact |
 | `sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d` | deny |
-| `RM 8,500` | hold |
+| `RM 8,500` | deny |
+| prompt similar to indexed internal documents | hold |
 | anything else | allow |
 
 ### Proof it works
@@ -69,10 +75,14 @@ bash backend/scripts/backbone_smoke.sh   # all 5 backbone flows, REPO_BACKEND=me
   the cross-department predicate including the exact-`0.6` boundary).
 - **Extension:** `tsc --noEmit` and `vite build` clean; loadable unpacked
   build in `extension/dist`. Live ChatGPT acceptance passed for MyKad redact,
-  API key deny, salary hold, and approval-send.
+  API key deny, file replacement redaction, previous-message edit interception,
+  and attachment-removal stale-state handling.
 - **File redaction:** TXT/CSV/PDF/DOCX/PPTX/XLSX/PNG/JPEG attachments can be
   checked before upload and replaced in-browser with backend-returned redacted
   copies. OCR requires a local Tesseract binary.
+- **M8 internal docs:** PostgreSQL + pgvector stores internal-document chunks,
+  chunk text, and embeddings. The dashboard can upload documents into this
+  corpus from `Policy & tools`.
 
 ## Layout — do not deviate
 
@@ -116,8 +126,8 @@ Still binding for whoever picks up M2, M3, M5, M7 or M8:
 3. **Build ONLY the module named in your task.** Someone else already has the
    neighbouring one.
 4. Python 3.11, full type hints. PostgreSQL 16 is the only external service.
-   No Redis, no Celery, no message queue. The agreed exception is pgvector
-   inside PostgreSQL for M8 internal-document similarity.
+   No Redis, no Celery, no message queue. M8 uses pgvector inside PostgreSQL
+   for internal-document similarity; do not add a separate vector database.
 5. Every module ships with a way to prove it works from the command line.
 6. **Nothing outside `backend/app/repo/` may import `app/models.py`, open a
    `Session`, or write SQL.** This is what lets the schema stay undecided while
@@ -165,11 +175,11 @@ cd extension && npm run typecheck && npm run build
 ```
 
 ```bash
-# With Postgres instead of the memory backend
+# With PostgreSQL + pgvector instead of the memory backend
 docker compose up -d
 cd backend
 REPO_BACKEND=postgres python reset_db.py
-python scripts/index_internal_docs_pgvector.py   # optional M8 internal-doc similarity corpus
+python scripts/index_internal_docs_pgvector.py   # seed a sample M8 internal-doc corpus
 REPO_BACKEND=postgres uvicorn app.main:app --reload
 ```
 
@@ -177,6 +187,12 @@ The memory backend is seeded with the same 30 audit rows, 15 rules and 3
 tools as the real database, so the extension and dashboard work against real
 data before any table exists and nobody but a Postgres session needs Docker
 running.
+
+For strict M8 testing, use `REPO_BACKEND=postgres` with a PostgreSQL database
+that has pgvector installed. If pgvector is missing, `reset_db.py` fails while
+creating `internal_doc_chunks`; that is expected because M8 is not considered
+ready without pgvector. The dashboard uploader calls `POST /v1/internal-docs`
+and indexes uploaded files into that same table.
 
 ## Docs
 
@@ -189,3 +205,5 @@ running.
 - `backend/README_M9.md` — M9 data format, training, and opt-in runtime setup
 - `backend/docs/M9_ANNOTATION_GUIDE.md` — team annotation rules and end-to-end M9 data/training flow
 - `backend/docs/M9_ANNOTATION_GUIDE_ZH.md` — 中文版 M9 标注规则与训练流程
+- `docs/M8_PGVECTOR_INTERNAL_DOCS.md` — M8 PostgreSQL + pgvector setup,
+  dashboard upload path, and current limitations

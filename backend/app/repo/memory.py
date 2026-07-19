@@ -19,6 +19,7 @@ from math import sqrt
 from app.repo.base import (
     AiTool,
     AuditRecord,
+    InternalDocChunk,
     InternalDocMatch,
     RuleRow,
     StatsSummary,
@@ -201,11 +202,11 @@ class InMemoryUserRepo:
 
 class InMemoryInternalDocRepo:
     def __init__(self) -> None:
-        self._rows: list[tuple[str, str, str, list[float]]] = []
+        self._rows: list[tuple[str, str, str, str, list[float], datetime]] = []
 
     def search_similar(self, embedding: list[float], *, limit: int) -> list[InternalDocMatch]:
         matches: list[InternalDocMatch] = []
-        for source_file, department, chunk_text, chunk_embedding in self._rows:
+        for _id, source_file, department, chunk_text, chunk_embedding, _created_at in self._rows:
             similarity = _cosine_similarity(embedding, chunk_embedding)
             matches.append(InternalDocMatch(
                 source_file=source_file,
@@ -216,9 +217,38 @@ class InMemoryInternalDocRepo:
         matches.sort(key=lambda match: match.similarity, reverse=True)
         return deepcopy(matches[:limit])
 
+    def add_chunks(self, rows: list[tuple[str, str, list[float]]], *, source_file: str, department: str) -> int:
+        now = _now()
+        for chunk_id, chunk_text, embedding in rows:
+            self._rows.append((chunk_id, source_file, department, chunk_text, embedding, now))
+        return len(rows)
+
+    def list(self, *, limit: int, offset: int) -> tuple[list[InternalDocChunk], int]:
+        rows = sorted(self._rows, key=lambda row: row[5], reverse=True)
+        page = rows[offset:offset + limit]
+        return [
+            InternalDocChunk(
+                id=chunk_id,
+                source_file=source_file,
+                department=department,
+                chunk_text=chunk_text,
+                created_at=created_at,
+            )
+            for chunk_id, source_file, department, chunk_text, _embedding, created_at in page
+        ], len(rows)
+
+    def clear_source(self, source_file: str) -> int:
+        before = len(self._rows)
+        self._rows = [row for row in self._rows if row[1] != source_file]
+        return before - len(self._rows)
+
     # Tests and seed scripts only. The public protocol is read-only.
     def _seed(self, rows: list[tuple[str, str, str, list[float]]]) -> None:
-        self._rows = deepcopy(rows)
+        now = _now()
+        self._rows = [
+            (str(uuid.uuid4()), source_file, department, chunk_text, embedding, now)
+            for source_file, department, chunk_text, embedding in deepcopy(rows)
+        ]
 
 
 def _cosine_similarity(left: list[float], right: list[float]) -> float:

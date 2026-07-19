@@ -5,8 +5,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import uuid
+
 import yaml
-from sqlalchemy import text
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
@@ -34,16 +35,21 @@ def main() -> int:
     )
 
     with SessionLocal() as session:
-        session.execute(text("DELETE FROM internal_doc_chunks"))
-        PgInternalDocRepo(session)._seed([
-            (
-                row["source_file"],
-                row["department"],
-                row["text"],
-                [float(value) for value in embedding.tolist()],
+        repo = PgInternalDocRepo(session)
+        for source_file in {row["source_file"] for row in rows}:
+            repo.clear_source(source_file)
+        grouped: dict[tuple[str, str], list[tuple[str, str, list[float]]]] = {}
+        for row, embedding in zip(rows, embeddings):
+            key = (row["source_file"], row["department"])
+            grouped.setdefault(key, []).append(
+                (
+                    str(uuid.uuid4()),
+                    row["text"],
+                    [float(value) for value in embedding.tolist()],
+                )
             )
-            for row, embedding in zip(rows, embeddings)
-        ])
+        for (source_file, department), chunks in grouped.items():
+            repo.add_chunks(chunks, source_file=source_file, department=department)
 
     print(f"indexed {len(rows)} internal document chunks from {CHUNKS_PATH.relative_to(BACKEND_ROOT)}")
     return 0

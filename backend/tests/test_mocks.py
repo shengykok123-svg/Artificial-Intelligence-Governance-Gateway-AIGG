@@ -43,7 +43,7 @@ def test_decide_strictest_wins_and_ignores_rules() -> None:
                        spans=[], content_department=None,
                        department_confidence=0.0)
     verdict = mock_decide(c, CTX, rules=[])
-    assert verdict.decision == "hold"   # SALARY (hold) outranks MYKAD (redact)
+    assert verdict.decision == "deny"   # SALARY (deny) outranks MYKAD (redact)
 
 
 def test_tokeniser_right_to_left_preserves_earlier_spans() -> None:

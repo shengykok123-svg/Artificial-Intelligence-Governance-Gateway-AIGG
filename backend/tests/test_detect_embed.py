@@ -40,19 +40,46 @@ class FakeInternalDocRepo:
         return self.matches[:limit]
 
 
+class FakeVectorAwareInternalDocRepo:
+    def search_similar(self, embedding: list[float], *, limit: int) -> list[InternalDocMatch]:
+        del limit
+        if embedding and embedding[0] > 0.9:
+            return [
+                InternalDocMatch(
+                    source_file="forecast.xlsx",
+                    department="finance",
+                    chunk_text="Quarterly revenue is below forecast.",
+                    similarity=1.0,
+                )
+            ]
+        return []
+
+
 def _doc(text: str) -> Document:
     return Document(text=text, source_filename=None, mime="text/plain")
 
 
 def test_classifies_department_above_threshold() -> None:
-    department, confidence = EmbedDetector(FakeEncoder()).classify(
+    detector = EmbedDetector(
+        FakeEncoder(),
+        internal_docs=FakeInternalDocRepo([
+            InternalDocMatch(
+                source_file="forecast.xlsx",
+                department="finance",
+                chunk_text="Our quarterly revenue is below forecast.",
+                similarity=1.0,
+            ),
+        ]),
+    )
+
+    department, confidence = detector.classify(
         _doc("Our quarterly revenue is below forecast."),
     )
     assert department == "finance"
     assert confidence == 1.0
 
 
-def test_classifies_from_internal_document_similarity_before_exemplars() -> None:
+def test_classifies_from_internal_document_similarity() -> None:
     detector = EmbedDetector(
         FakeEncoder(),
         internal_docs=FakeInternalDocRepo([
@@ -71,7 +98,7 @@ def test_classifies_from_internal_document_similarity_before_exemplars() -> None
     assert confidence == 0.91
 
 
-def test_low_internal_similarity_falls_back_to_exemplars() -> None:
+def test_low_internal_similarity_returns_none_without_exemplar_fallback() -> None:
     detector = EmbedDetector(
         FakeEncoder(),
         internal_docs=FakeInternalDocRepo([
@@ -86,17 +113,21 @@ def test_low_internal_similarity_falls_back_to_exemplars() -> None:
 
     department, confidence = detector.classify(_doc("Our quarterly revenue is below forecast."))
 
-    assert department == "finance"
-    assert confidence == 1.0
+    assert department is None
+    assert confidence == 0.0
 
 
 def test_returns_none_for_content_below_classification_threshold() -> None:
-    assert EmbedDetector(FakeEncoder()).classify(_doc("Please improve this sentence.")) == (None, 0.0)
+    detector = EmbedDetector(FakeEncoder(), internal_docs=FakeInternalDocRepo([]))
+    assert detector.classify(_doc("Please improve this sentence.")) == (None, 0.0)
 
 
 def test_detects_only_high_confidence_sentence_spans_with_real_offsets() -> None:
     text = "Quarterly revenue is below forecast. Please improve this sentence."
-    spans = EmbedDetector(FakeEncoder()).detect(_doc(text))
+    spans = EmbedDetector(
+        FakeEncoder(),
+        internal_docs=FakeVectorAwareInternalDocRepo(),
+    ).detect(_doc(text))
     assert len(spans) == 1
     assert spans[0].data_class == "DEPT_CONFIDENTIAL"
     assert spans[0].detector == "embed"
@@ -105,6 +136,15 @@ def test_detects_only_high_confidence_sentence_spans_with_real_offsets() -> None
 
 
 def test_empty_document_has_no_department_or_spans() -> None:
-    detector = EmbedDetector(FakeEncoder())
+    detector = EmbedDetector(FakeEncoder(), internal_docs=FakeInternalDocRepo([]))
     assert detector.classify(_doc("   ")) == (None, 0.0)
     assert detector.detect(_doc("   ")) == []
+
+
+def test_requires_internal_doc_repo() -> None:
+    try:
+        EmbedDetector(FakeEncoder())
+    except RuntimeError as exc:
+        assert "pgvector internal document repository" in str(exc)
+    else:
+        raise AssertionError("M8 should fail when no internal document repo is provided")

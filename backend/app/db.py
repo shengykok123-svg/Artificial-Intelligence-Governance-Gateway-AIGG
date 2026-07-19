@@ -58,7 +58,7 @@ def get_session() -> Iterator[Session | None]:
 def create_all() -> None:
     from app.models import Base  # imported here: only the repo layer and db
     Base.metadata.create_all(engine)
-    ensure_pgvector_schema()
+    require_pgvector_schema()
 
 
 def drop_all() -> None:
@@ -67,34 +67,38 @@ def drop_all() -> None:
     drop_pgvector_schema()
 
 
-def ensure_pgvector_schema() -> bool:
-    """Create optional M8 pgvector storage if the extension is installed.
+def require_pgvector_schema() -> None:
+    """Create M8 pgvector storage or fail loudly.
 
-    The MVP can still run without pgvector: M8 falls back to exemplar
-    similarity when this table is absent or empty.
+    M8's internal-document similarity is a real PostgreSQL + pgvector path.
+    If this extension is unavailable, the environment is not ready for M8.
     """
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.execute(text(
+            """
+            CREATE TABLE IF NOT EXISTS internal_doc_chunks (
+                id VARCHAR(36) PRIMARY KEY,
+                source_file TEXT NOT NULL,
+                department VARCHAR(32) NOT NULL,
+                chunk_text TEXT NOT NULL,
+                embedding vector(384) NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        ))
+        conn.execute(text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_internal_doc_chunks_embedding
+            ON internal_doc_chunks
+            USING hnsw (embedding vector_cosine_ops)
+            """
+        ))
+
+
+def ensure_pgvector_schema() -> bool:
     try:
-        with engine.begin() as conn:
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            conn.execute(text(
-                """
-                CREATE TABLE IF NOT EXISTS internal_doc_chunks (
-                    id VARCHAR(36) PRIMARY KEY,
-                    source_file TEXT NOT NULL,
-                    department VARCHAR(32) NOT NULL,
-                    chunk_text TEXT NOT NULL,
-                    embedding vector(384) NOT NULL,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                )
-                """
-            ))
-            conn.execute(text(
-                """
-                CREATE INDEX IF NOT EXISTS ix_internal_doc_chunks_embedding
-                ON internal_doc_chunks
-                USING hnsw (embedding vector_cosine_ops)
-                """
-            ))
+        require_pgvector_schema()
         return True
     except Exception:
         return False

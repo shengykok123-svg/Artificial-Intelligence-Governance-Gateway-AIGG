@@ -75,10 +75,10 @@ class MockEmbedDetector:
 # Strictest-wins over a hardcoded data_class -> decision table.
 _MOCK_TABLE: dict[DataClass, str] = {
     "SECRET": "deny",
-    "SALARY": "hold",
+    "SALARY": "deny",
     "DEPT_CONFIDENTIAL": "hold",
     "MYKAD": "redact",
-    "BANK_ACCT": "redact",
+    "BANK_ACCT": "deny",
     "EMAIL": "redact",
     "PHONE": "redact",
     "PERSON": "redact",

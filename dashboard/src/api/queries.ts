@@ -12,16 +12,20 @@ import {
 
 import {
   getHealth,
+  getInternalDocs,
   getLogs,
   getRules,
   getStats,
   getTools,
+  postInternalDoc,
   postLogDecision,
   postToolDecision,
 } from "./client";
 import type {
   AiTool,
   AuditRecord,
+  InternalDocUploadRequest,
+  InternalDocUploadResponse,
   LogDecisionRequest,
   LogsPage,
   LogsQuery,
@@ -69,6 +73,14 @@ export function useHealthQuery() {
   return useQuery({
     queryKey: ["health"] as const,
     queryFn: getHealth,
+    refetchInterval: POLL_MS,
+  });
+}
+
+export function useInternalDocsQuery() {
+  return useQuery({
+    queryKey: ["internal-docs"] as const,
+    queryFn: getInternalDocs,
     refetchInterval: POLL_MS,
   });
 }
@@ -151,6 +163,17 @@ export function useToolDecisionMutation() {
         if (!old) return old;
         return old.map((t) => (t.host === host ? { ...t, status: body.status } : t));
       });
+    },
+  });
+}
+
+export function useInternalDocUploadMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation<InternalDocUploadResponse, Error, InternalDocUploadRequest>({
+    mutationFn: postInternalDoc,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["internal-docs"] });
     },
   });
 }

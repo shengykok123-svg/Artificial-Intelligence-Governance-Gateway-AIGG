@@ -1,16 +1,22 @@
 # M8 pgvector internal-document similarity
 
-M8 now has a hybrid retrieval path:
+M8 now uses PostgreSQL + pgvector for internal-document similarity:
 
 1. Encode the prompt, attachment text, or sentence with
    `sentence-transformers/all-MiniLM-L6-v2`.
-2. If `REPO_BACKEND=postgres` and pgvector chunks are indexed, search
-   `internal_doc_chunks` for nearest internal document chunks.
-3. If no pgvector match is available, fall back to the existing local
-   `backend/app/detect/exemplars.yaml` similarity bank.
+2. Search `internal_doc_chunks` for nearest internal document chunks.
+3. If the best similarity is above the configured threshold, emit
+   `DEPT_CONFIDENTIAL`.
 
-This keeps the demo path stable: pgvector improves M8 when available, but M8
-still runs without it.
+Per the 2026-07-19 meeting markdown, `DEPT_CONFIDENTIAL` from M8 is treated as
+an admin-review signal in the current mock M3 policy, so public-AI requests are
+held rather than automatically denied.
+
+There is no external vector database and no hosted vector service in this
+implementation. The database scheme is PostgreSQL with the pgvector extension.
+If pgvector is unavailable, the M8 environment is not ready; the backend should
+fail/disable that path rather than silently falling back to a local exemplar
+bank.
 
 ## Setup
 
@@ -37,17 +43,26 @@ and writes embeddings into:
 internal_doc_chunks
 ```
 
-## Fallback
+The dashboard also exposes an internal-document uploader under
+`Policy & tools`. It posts files to `POST /v1/internal-docs`; the backend uses
+M5 extraction, chunks the extracted text, embeds the chunks, and stores
+`source_file`, `department`, `chunk_text`, and the pgvector embedding.
 
-If pgvector is unavailable or no chunks are indexed, M8 returns to the existing
-SentenceTransformer + `exemplars.yaml` path. This is the fallback option if the
-pgvector setup is too risky on teammate machines.
+## API
+
+- `GET /v1/internal-docs` lists indexed chunks for dashboard/debug visibility.
+- `POST /v1/internal-docs` uploads one file with a department label and indexes
+  its extracted text into pgvector.
 
 ## Current limitations
 
-- The sample corpus is tiny and meant for proof-of-concept testing.
-- There is no upload/admin UI for indexing real internal documents yet.
+- The sample corpus is tiny and meant for proof-of-concept testing; real
+  quality depends on the uploaded internal corpus.
 - `internal_doc_chunks.embedding` is fixed at `vector(384)` because
   `all-MiniLM-L6-v2` outputs 384-dimensional embeddings.
-- pgvector retrieval stores only chunk text and embedding metadata; it does not
-  store raw source files.
+- Chunk text is stored intentionally for debug/explain visibility; raw source
+  files are not stored.
+- OCR-dependent documents still inherit the existing Tesseract limitations:
+  scanned/blurred images may produce imperfect extracted text.
+- Local Windows PostgreSQL must have the pgvector extension installed. Without
+  it, `reset_db.py` fails when creating M8 storage.

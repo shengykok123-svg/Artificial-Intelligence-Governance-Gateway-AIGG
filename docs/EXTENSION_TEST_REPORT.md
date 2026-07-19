@@ -37,8 +37,8 @@ popup, and verified against the local backend.
 | --- | --- | --- | --- |
 | Deterministic redaction | `My IC is 880412-08-5561` | redact | redact; `My IC is [MYKAD_1]` |
 | Secret prevention | OpenAI API key | deny | deny |
-| Salary review | `Gaji bulanan RM 8,500` | hold | hold |
-| Semantic internal-doc signal | internal text similar to indexed pgvector chunks | deny | deny; `DEPT_CONFIDENTIAL` |
+| Salary review | `Gaji bulanan RM 8,500` | deny | deny |
+| Semantic internal-doc signal | internal text similar to indexed pgvector chunks | hold | hold; `DEPT_CONFIDENTIAL` |
 
 ## M5 file extraction checks
 
@@ -66,15 +66,19 @@ the returned redacted file copy when the verdict is `redact`.
 
 Evidence was captured by manual screenshots during the live ChatGPT run.
 
+Policy note: the 2026-07-18 screenshots below were captured before the
+2026-07-19 meeting-policy alignment. Current expected behavior is salary
+`deny` and M8 internal-document confidential similarity `hold`.
+
 | Case | Screenshot evidence | Result |
 | --- | --- | --- |
 | Popup health | Manual screenshot | Pass. Popup connected to `http://localhost:8000`, `MOCK_MODE` was off, and health displayed the active mock list. |
 | MyKad redact | Manual screenshot | Pass. `880412-08-5561` was tokenised to `[MYKAD_1]` before ChatGPT received the prompt; banner showed `redacted before sending (MYKAD)`. |
 | API key deny | Manual screenshot | Pass. Prompt containing `sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d` was blocked and remained in the composer; no ChatGPT user bubble was sent. |
-| Salary hold | Manual screenshot | Pass. `Gaji bulanan RM 8,500` produced `held for compliance review -- waiting for approval` and was not sent immediately. |
-| Salary approval send | Manual screenshot + backend status | Pass. `POST /v1/logs/{log_id}/decision` changed status to `approved`; the extension detected the approval and replayed the original salary prompt to ChatGPT. |
+| Salary hold | Manual screenshot | Historical pass before policy alignment. Current policy expects salary `deny`. |
+| Salary approval send | Manual screenshot + backend status | Historical pass before policy alignment. Current hold approval should be tested with M8 internal-document confidential similarity. |
 | TXT attachment deny | Manual screenshot + backend log `67aab510-01f1-433e-8c78-99a4afba4341` | Pass. `secret.txt` contained the fake OpenAI API key; M5 extracted it, M2 classified `SECRET`, and the extension blocked the send. |
-| DOCX attachment hold + approval send | Manual screenshot + backend log `1a0b1db1-119f-4add-a484-282225d490d0` | Pass. `salary.docx` contained `Gaji bulanan RM 8,500`; M5 extracted it, M2 classified `SALARY`, M3 mock held it, and approval replayed the attachment prompt to ChatGPT. |
+| DOCX attachment hold + approval send | Manual screenshot + backend log `1a0b1db1-119f-4add-a484-282225d490d0` | Historical pass before policy alignment. Current policy expects salary attachments to be denied; hold approval should be tested with M8 internal-document confidential similarity. |
 | TXT attachment redaction replacement | Manual screenshot + backend logs `75dc6972-7b26-4546-9e49-1cf4acae64a7`, `928302a6-f14b-4ee0-9f28-c837966e00b8` | Pass. `mykad.txt` was inspected and replaced with `mykad.redacted.txt`; ChatGPT read `Employee IC [MYKAD_1] needs a reply.` and the replaced file passed the follow-up send-time inspection as `allow`. |
 | DOCX attachment redaction replacement | Manual screenshot + backend logs `4e29f889-4d4e-4d23-902c-0e0ae2f96957`, `d9498500-8b6c-4df1-9ceb-cf7188308dc8` | Pass. `mykad.docx` was inspected and replaced with `mykad.redacted.docx`; ChatGPT read `Employee IC [MYKAD_1] needs a reply.` and the replaced file passed the follow-up send-time inspection as `allow`. |
 | PPTX attachment redaction replacement | Manual screenshot + backend logs `23dbeffc-75ce-4d89-b474-ad9f45d5a82d`, `ae863792-f240-4702-b587-b5bd06b31bf6` | Pass. `mykad.pptx` was inspected and replaced with `mykad.redacted.pptx`; ChatGPT read `Employee IC [MYKAD_1] needs a reply.` and the replaced file passed the follow-up send-time inspection as `allow`. |
@@ -90,7 +94,7 @@ refreshing the existing ChatGPT conversation tab.
 | Normal composer deny sanity check | Chrome CUA interaction + AIGG Debug panel | Pass. The fake API-key prompt was blocked with `SECRET detected (mock policy)` and remained in the composer. |
 | Previous-message edit deny | Chrome CUA interaction | Pass. Editing a sent message to contain `sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d` showed the blocked banner, kept the edit box open, and did not submit the edit. |
 | Previous-message edit redact | Chrome CUA interaction | Pass. Editing a sent message to `My IC is 880412-08-5561` submitted `My IC is [MYKAD_1]`; the edit box closed after the redacted version was sent. |
-| Previous-message edit hold approval | Chrome CUA interaction + backend log `80a3f56b-bee7-4798-bd82-5331d844120f` | Pass. Editing a sent message to salary text produced hold. After approval, the extension showed `approved edit request -- click submit again to re-check and send`, kept the edit box open, and did not auto-send a stale edit target. |
+| Previous-message edit hold approval | Chrome CUA interaction + backend log `80a3f56b-bee7-4798-bd82-5331d844120f` | Historical pass before policy alignment. Current hold edit approval should be retested with M8 internal-document confidential similarity. |
 | Attachment removal stale-state | Chrome CUA interaction + backend logs `b3fb1586-8922-42cf-9257-9fc589f34af4`, `9adc5af7-e3c1-4f70-bf54-83a8c2c95f1e` | Pass after fix. The first live attempt exposed stale state: `safe.txt` was removed from the composer but the send-time audit still recorded `filename: safe.txt`. After updating the send-time refresh to clear cached attachments when their filename is no longer visible on the page, the retest sent `hello attachment removal fixed 20260719-2242` with `filename: null`. |
 
 One UX polish landed after the acceptance run: successful sent-state banners

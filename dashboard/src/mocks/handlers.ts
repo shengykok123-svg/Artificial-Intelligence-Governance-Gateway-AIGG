@@ -7,7 +7,7 @@
 
 import { http, HttpResponse } from "msw";
 
-import type { AiTool, AuditRecord, RuleRow, StatsSummary } from "../api/types";
+import type { AiTool, AuditRecord, InternalDocChunk, RuleRow, StatsSummary } from "../api/types";
 
 const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
@@ -40,8 +40,10 @@ const rules: RuleRow[] = [
   { data_class: "SALARY", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "hold" },
   { data_class: "SALARY", ai_tool_tier: "ENTERPRISE_AI", user_role: "hr", purpose: "*", decision: "allow" },
   { data_class: "BANK_ACCT", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "redact" },
-  { data_class: "DEPT_CONFIDENTIAL", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "hold" },
+  { data_class: "DEPT_CONFIDENTIAL", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "deny" },
 ];
+
+const internalDocs: InternalDocChunk[] = [];
 
 let seq = 0;
 function row(partial: Partial<AuditRecord> & Pick<AuditRecord, "decision">): AuditRecord {
@@ -219,6 +221,41 @@ export const handlers = [
     tool.approved_by = "admin@acme.my";
     tool.approved_at = new Date().toISOString();
     return HttpResponse.json(tool);
+  }),
+
+  http.get(`${BASE}/v1/internal-docs`, ({ request }) => {
+    const url = new URL(request.url);
+    const limit = Number(url.searchParams.get("limit") ?? 50);
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const items = internalDocs.slice(offset, offset + limit);
+    return HttpResponse.json({ items, total: internalDocs.length, limit, offset });
+  }),
+
+  http.post(`${BASE}/v1/internal-docs`, async ({ request }) => {
+    const body = (await request.json()) as {
+      department: string;
+      attachment: { filename: string; content_b64: string };
+      replace_source?: boolean;
+    };
+    if (body.replace_source !== false) {
+      for (let i = internalDocs.length - 1; i >= 0; i -= 1) {
+        if (internalDocs[i].source_file === body.attachment.filename) internalDocs.splice(i, 1);
+      }
+    }
+    const chunk: InternalDocChunk = {
+      id: `mock-internal-${internalDocs.length + 1}`,
+      source_file: body.attachment.filename,
+      department: body.department,
+      chunk_text: atob(body.attachment.content_b64).slice(0, 900),
+      created_at: new Date().toISOString(),
+    };
+    internalDocs.unshift(chunk);
+    return HttpResponse.json({
+      source_file: body.attachment.filename,
+      department: body.department,
+      chunk_count: 1,
+      total: internalDocs.length,
+    });
   }),
 
   http.get(`${BASE}/v1/health`, () => HttpResponse.json({ status: "ok", mocked: [] })),

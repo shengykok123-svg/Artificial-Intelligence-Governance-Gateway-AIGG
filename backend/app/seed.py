@@ -70,8 +70,8 @@ _SCENARIOS: list[tuple[str, str | None, list[str], str, str, str | None]] = [
      None, ["MYKAD", "PERSON"], "redact",
      "MYKAD to a public AI tool: values tokenised before send.", "hr"),
     ("Draft a reply to the payroll query. Gaji bulanan RM 8,500 for grade M3.",
-     None, ["SALARY"], "hold",
-     "SALARY to a public AI tool: awaiting compliance review.", "hr"),
+     None, ["SALARY"], "deny",
+     "SALARY to a public AI tool: blocked by policy.", "hr"),
     ("Debug this: OPENAI_API_KEY=sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d",
      None, ["SECRET"], "deny",
      "Credential detected. Prompt blocked at the browser.", "engineering"),
@@ -81,8 +81,8 @@ _SCENARIOS: list[tuple[str, str | None, list[str], str, str, str | None]] = [
     ("Rewrite this paragraph to be more concise, no client names in it.",
      None, [], "allow", "No sensitive data class detected.", None),
     ("Reconcile these vendor payments, Maybank account 5142 8890 3312.",
-     "vendor_payments_q2.xlsx", ["BANK_ACCT"], "redact",
-     "BANK_ACCT to a public AI tool: values tokenised before send.",
+     "vendor_payments_q2.xlsx", ["BANK_ACCT"], "deny",
+     "BANK_ACCT to a public AI tool: blocked by policy.",
      "finance"),
     ("Turn this into bullet points for the standup.",
      None, [], "allow", "No sensitive data class detected.", "engineering"),
@@ -92,7 +92,7 @@ _SCENARIOS: list[tuple[str, str | None, list[str], str, str, str | None]] = [
      "hr"),
     ("Our Q3 revenue dipped 40% against forecast, help me explain it.",
      None, ["DEPT_CONFIDENTIAL"], "hold",
-     "Department-confidential content: awaiting compliance review.",
+     "High confidential internal-document signal: awaiting compliance review.",
      "finance"),
     ("Check my grammar on this internal announcement.",
      None, [], "allow", "No sensitive data class detected.", None),
@@ -112,7 +112,7 @@ _MISMATCH: dict[int, str] = {
 
 # Which held rows are already reviewed, so screen 2 has both a queue with work
 # in it and a history that is not empty.
-_REVIEWED: dict[int, bool] = {1: True, 21: False}  # log index -> approved?
+_REVIEWED: dict[int, bool] = {7: True, 27: False}  # log index -> approved?
 
 
 def _audit_rows(n: int = 30) -> list[AuditRecord]:

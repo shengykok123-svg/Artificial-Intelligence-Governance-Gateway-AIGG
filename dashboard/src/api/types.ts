@@ -78,6 +78,38 @@ export interface ToolDecisionRequest {
   remark: string;
 }
 
+export interface InternalDocChunk {
+  id: string;
+  source_file: string;
+  department: string;
+  chunk_text: string;
+  created_at: string;
+}
+
+export interface InternalDocsPage {
+  items: InternalDocChunk[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface InternalDocUploadRequest {
+  department: string;
+  attachment: {
+    filename: string;
+    mime: string;
+    content_b64: string;
+  };
+  replace_source?: boolean;
+}
+
+export interface InternalDocUploadResponse {
+  source_file: string;
+  department: string;
+  chunk_count: number;
+  total: number;
+}
+
 export interface HealthResponse {
   status: "ok";
   mocked: string[]; // e.g. ["M2","M3","M5","M7","M8"]

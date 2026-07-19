@@ -24,6 +24,7 @@ from app.models import (
 from app.repo.base import (
     AiTool,
     AuditRecord,
+    InternalDocChunk,
     InternalDocMatch,
     RuleRow,
     StatsSummary,
@@ -341,21 +342,18 @@ class PgInternalDocRepo:
     def search_similar(self, embedding: list[float], *, limit: int) -> list[InternalDocMatch]:
         if not embedding:
             return []
-        try:
-            rows = self.s.execute(
-                text(
-                    """
-                    SELECT source_file, department, chunk_text,
-                           1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
-                    FROM internal_doc_chunks
-                    ORDER BY embedding <=> CAST(:embedding AS vector)
-                    LIMIT :limit
-                    """
-                ),
-                {"embedding": _vector_literal(embedding), "limit": limit},
-            ).all()
-        except Exception:
-            return []
+        rows = self.s.execute(
+            text(
+                """
+                SELECT source_file, department, chunk_text,
+                       1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
+                FROM internal_doc_chunks
+                ORDER BY embedding <=> CAST(:embedding AS vector)
+                LIMIT :limit
+                """
+            ),
+            {"embedding": _vector_literal(embedding), "limit": limit},
+        ).all()
         return [
             InternalDocMatch(
                 source_file=row.source_file,
@@ -366,9 +364,8 @@ class PgInternalDocRepo:
             for row in rows
         ]
 
-    # Tests and seed scripts only. The public protocol is read-only.
-    def _seed(self, rows: list[tuple[str, str, str, list[float]]]) -> None:
-        for source_file, department, chunk_text, embedding in rows:
+    def add_chunks(self, rows: list[tuple[str, str, list[float]]], *, source_file: str, department: str) -> int:
+        for chunk_id, chunk_text, embedding in rows:
             self.s.execute(
                 text(
                     """
@@ -379,7 +376,7 @@ class PgInternalDocRepo:
                     """
                 ),
                 {
-                    "id": str(uuid.uuid4()),
+                    "id": chunk_id,
                     "source_file": source_file,
                     "department": department,
                     "chunk_text": chunk_text,
@@ -387,6 +384,50 @@ class PgInternalDocRepo:
                 },
             )
         self.s.commit()
+        return len(rows)
+
+    def list(self, *, limit: int, offset: int) -> tuple[list[InternalDocChunk], int]:
+        total = self.s.scalar(
+            text("SELECT count(*) FROM internal_doc_chunks")
+        ) or 0
+        rows = self.s.execute(
+            text(
+                """
+                SELECT id, source_file, department, chunk_text, created_at
+                FROM internal_doc_chunks
+                ORDER BY created_at DESC, id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {"limit": limit, "offset": offset},
+        ).all()
+        return [
+            InternalDocChunk(
+                id=row.id,
+                source_file=row.source_file,
+                department=row.department,
+                chunk_text=row.chunk_text,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ], int(total)
+
+    def clear_source(self, source_file: str) -> int:
+        result = self.s.execute(
+            text("DELETE FROM internal_doc_chunks WHERE source_file = :source_file"),
+            {"source_file": source_file},
+        )
+        self.s.commit()
+        return int(result.rowcount or 0)
+
+    # Tests and seed scripts only. The public protocol is read-only.
+    def _seed(self, rows: list[tuple[str, str, str, list[float]]]) -> None:
+        for source_file, department, chunk_text, embedding in rows:
+            self.add_chunks(
+                [(str(uuid.uuid4()), chunk_text, embedding)],
+                source_file=source_file,
+                department=department,
+            )
 
 
 def _vector_literal(values: list[float]) -> str:

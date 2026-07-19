@@ -56,9 +56,41 @@ class InspectResponse(BaseModel):
     department_confidence: float
     debug: InspectDebug
 
+
+class InternalDocUploadRequest(BaseModel):
+    department: str
+    attachment: Attachment
+    replace_source: bool = True
+
+
+class InternalDocUploadResponse(BaseModel):
+    source_file: str
+    department: str
+    chunk_count: int
+    total: int
+
+
+class InternalDocChunkResponse(BaseModel):
+    id: str
+    source_file: str
+    department: str
+    chunk_text: str
+    created_at: str
+
+
+class InternalDocsPage(BaseModel):
+    items: list[InternalDocChunkResponse]
+    total: int
+    limit: int
+    offset: int
+
 __all__ = [
     "Attachment",
     "DetectionDebug",
+    "InternalDocChunkResponse",
+    "InternalDocsPage",
+    "InternalDocUploadRequest",
+    "InternalDocUploadResponse",
     "InspectDebug",
     "InspectRequest",
     "InspectResponse",
