@@ -7,6 +7,40 @@ auditable log; an employer dashboard is where a held prompt gets approved or
 denied, and the extension unblocks the employee within seconds of that
 decision.
 
+## Teammate Handover
+
+If you are taking over from Luis's branch, start here before running commands:
+
+1. `docs/LUIS_HANDOVER_SUMMARY.md` - short overview of what Luis added on top
+   of `origin/main`.
+2. `docs/LUIS_DEVELOPMENT_CONTEXT.md` - fuller context for teammates or coding
+   agents, including decisions, alternatives discussed, and known limits.
+3. `docs/RUNBOOK.md` - step-by-step local setup, run, acceptance, and
+   troubleshooting guide.
+
+The main mental-model change from `main` is:
+
+```text
+origin/main already had the M5 extraction foundation.
+Luis's branch adds file redaction replacement on top of it,
+extends file coverage needed for redaction, and moves M8 to
+PostgreSQL + pgvector internal-document similarity.
+```
+
+Current demo expectations:
+
+```text
+Mocked module: M3 only
+Salary: deny
+API key: deny
+MyKad/email/phone/person: redact
+M8 internal-document confidential similarity: hold
+```
+
+Use `docs/RUNBOOK.md` for commands. Use
+`docs/LUIS_DEVELOPMENT_CONTEXT.md` if any setup step or policy decision is
+unclear.
+
 ## Scope snapshot
 
 This repository is a browser-boundary AI governance MVP. It inspects a prompt
