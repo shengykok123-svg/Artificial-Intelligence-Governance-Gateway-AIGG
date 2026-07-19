@@ -193,6 +193,39 @@ def replace_zip_parts(raw: bytes, replacements: dict[str, bytes]) -> bytes:
     return output.getvalue()
 
 
+def docx_bytes_with_embedded_docx(text: str) -> bytes:
+    embedded = DocxDocument()
+    embedded.add_paragraph(text)
+    embedded_buf = io.BytesIO()
+    embedded.save(embedded_buf)
+
+    outer = DocxDocument()
+    outer.add_paragraph("Outer document")
+    outer_buf = io.BytesIO()
+    outer.save(outer_buf)
+    return replace_zip_parts(
+        outer_buf.getvalue(),
+        {"word/embeddings/embedded.docx": embedded_buf.getvalue()},
+    )
+
+
+def pptx_bytes_with_embedded_docx(text: str) -> bytes:
+    embedded = DocxDocument()
+    embedded.add_paragraph(text)
+    embedded_buf = io.BytesIO()
+    embedded.save(embedded_buf)
+
+    deck = Presentation()
+    slide = deck.slides.add_slide(deck.slide_layouts[5])
+    slide.shapes.title.text = "Outer deck"
+    deck_buf = io.BytesIO()
+    deck.save(deck_buf)
+    return replace_zip_parts(
+        deck_buf.getvalue(),
+        {"ppt/embeddings/embedded.docx": embedded_buf.getvalue()},
+    )
+
+
 def test_extract_text_plain() -> None:
     doc = extract("note.txt", "text/plain", b64(b"My IC is 880412-08-5561"))
     assert doc.text == "My IC is 880412-08-5561"
@@ -268,6 +301,17 @@ def test_extract_docx_comments_and_tracked_changes() -> None:
     assert "Deleted IC 880412-08-5561" in doc.text
 
 
+def test_extract_docx_embedded_ooxml_package() -> None:
+    doc = extract(
+        "outer.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        b64(docx_bytes_with_embedded_docx("Embedded IC 880412-08-5561")),
+    )
+
+    assert "Outer document" in doc.text
+    assert "Embedded IC 880412-08-5561" in doc.text
+
+
 def test_extract_pptx_text_shapes() -> None:
     deck = Presentation()
     slide = deck.slides.add_slide(deck.slide_layouts[5])
@@ -311,6 +355,17 @@ def test_extract_pptx_comments() -> None:
 
     assert "Public title" in doc.text
     assert "Comment IC 880412-08-5561" in doc.text
+
+
+def test_extract_pptx_embedded_ooxml_package() -> None:
+    doc = extract(
+        "outer.pptx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        b64(pptx_bytes_with_embedded_docx("Embedded IC 880412-08-5561")),
+    )
+
+    assert "Outer deck" in doc.text
+    assert "Embedded IC 880412-08-5561" in doc.text
 
 
 def test_extract_xlsx_shared_strings() -> None:

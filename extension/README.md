@@ -60,6 +60,8 @@ M2, M5, M7 and M8 are real. M3 remains mocked by design:
 - DOCX extraction/redaction includes body text, tables, headers, footers,
   comments and tracked-change text.
 - PPTX extraction/redaction includes slide text, speaker notes and comments.
+- DOCX/PPTX embedded OOXML packages are recursively checked when stored as
+  `.docx`, `.pptx` or `.xlsx` zip packages.
 - Image and scanned-PDF OCR requires a local Tesseract binary.
 - M7 tokenises redacted spans into encrypted reversible vault mappings.
 - M8 classifies department/confidential semantic signals with local embeddings.

@@ -24,7 +24,7 @@ popup, and verified against the local backend.
 | --- | --- |
 | `npm run typecheck` | Pass |
 | `npm run build` | Pass; loadable `extension/dist` generated |
-| Backend suite in `.venv` | 113 passed, 41 skipped |
+| Backend suite in `.venv` | 117 passed, 41 skipped |
 | Real M2 + M7 + M8 integration suite | 39 passed |
 | Real M5 extraction/redaction coverage | Included in backend suite |
 
@@ -47,7 +47,8 @@ enforces a 5 MB attachment size limit. DOCX coverage includes body text, tables,
 headers, footers, comments and tracked-change text. PPTX coverage includes
 slide text, speaker notes and comments. XLSX coverage includes shared strings
 and worksheet inline strings. PDF extraction falls back to OCR when normal text
-extraction returns no text.
+extraction returns no text. DOCX/PPTX embedded OOXML packages are recursively
+checked when they are stored as `.docx`, `.pptx` or `.xlsx` zip packages.
 
 When a TXT, CSV, PDF, DOCX, PPTX, XLSX or PNG/JPEG image attachment causes a
 `redact` verdict, `/v1/inspect` now returns a redacted attachment copy in
@@ -87,9 +88,9 @@ new text-only PDF containing the tokenised text, so the original PDF objects
 are not carried forward into the replacement file. Image redaction produces a
 PNG copy with OCR-detected sensitive word boxes blacked out.
 
-Known remaining file limitations: DOCX/PPTX embedded objects are not parsed,
-and OCR quality depends on the installed local Tesseract binary and image
-quality.
+Known remaining file limitations: legacy OLE embedded objects such as
+`oleObject*.bin` are not parsed, and OCR quality depends on the installed local
+Tesseract binary and image quality.
 
 ## Push recommendation
 

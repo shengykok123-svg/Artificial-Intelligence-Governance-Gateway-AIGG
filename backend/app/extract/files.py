@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import binascii
 import io
+import zipfile
 from collections.abc import Callable
 from typing import Any
 
@@ -119,6 +120,9 @@ def _extract_docx(raw: bytes) -> str:
     ooxml_text = extract_docx_ooxml_text(raw)
     if ooxml_text:
         parts.append(ooxml_text)
+    embedded_text = _extract_embedded_ooxml_text(raw, "word/embeddings/")
+    if embedded_text:
+        parts.append(embedded_text)
     return "\n".join(parts)
 
 
@@ -159,6 +163,9 @@ def _extract_pptx(raw: bytes) -> str:
     ooxml_text = extract_pptx_ooxml_text(raw)
     if ooxml_text:
         parts.append(ooxml_text)
+    embedded_text = _extract_embedded_ooxml_text(raw, "ppt/embeddings/")
+    if embedded_text:
+        parts.append(embedded_text)
     return "\n".join(parts)
 
 
@@ -167,6 +174,41 @@ def _extract_xlsx(raw: bytes) -> str:
         return extract_xlsx_text(raw)
     except Exception as exc:
         raise UnsupportedFile("XLSX text could not be extracted") from exc
+
+
+def _extract_embedded_ooxml_text(raw: bytes, prefix: str) -> str:
+    parts: list[str] = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            for name in sorted(archive.namelist()):
+                if not name.startswith(prefix):
+                    continue
+                embedded = archive.read(name)
+                if not embedded.startswith(b"PK"):
+                    continue
+                mime = _embedded_mime_for(name)
+                if mime is None:
+                    continue
+                try:
+                    doc = extract(name.rsplit("/", 1)[-1], mime, base64.b64encode(embedded).decode("ascii"))
+                except UnsupportedFile:
+                    continue
+                if doc.text:
+                    parts.append(doc.text)
+    except zipfile.BadZipFile:
+        return ""
+    return "\n".join(parts)
+
+
+def _embedded_mime_for(name: str) -> str | None:
+    lower = name.lower()
+    if lower.endswith(".docx"):
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    if lower.endswith(".pptx"):
+        return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    if lower.endswith(".xlsx"):
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return None
 
 
 __all__ = ["MAX_ATTACHMENT_BYTES", "UnsupportedFile", "extract"]

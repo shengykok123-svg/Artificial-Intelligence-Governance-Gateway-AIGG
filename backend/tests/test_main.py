@@ -200,6 +200,39 @@ def replace_zip_parts(raw: bytes, replacements: dict[str, bytes]) -> bytes:
     return output.getvalue()
 
 
+def docx_bytes_with_embedded_docx(text: str) -> bytes:
+    embedded = DocxDocument()
+    embedded.add_paragraph(text)
+    embedded_buf = io.BytesIO()
+    embedded.save(embedded_buf)
+
+    outer = DocxDocument()
+    outer.add_paragraph("Outer document")
+    outer_buf = io.BytesIO()
+    outer.save(outer_buf)
+    return replace_zip_parts(
+        outer_buf.getvalue(),
+        {"word/embeddings/embedded.docx": embedded_buf.getvalue()},
+    )
+
+
+def pptx_bytes_with_embedded_docx(text: str) -> bytes:
+    embedded = DocxDocument()
+    embedded.add_paragraph(text)
+    embedded_buf = io.BytesIO()
+    embedded.save(embedded_buf)
+
+    deck = Presentation()
+    slide = deck.slides.add_slide(deck.slide_layouts[5])
+    slide.shapes.title.text = "Outer deck"
+    deck_buf = io.BytesIO()
+    deck.save(deck_buf)
+    return replace_zip_parts(
+        deck_buf.getvalue(),
+        {"ppt/embeddings/embedded.docx": embedded_buf.getvalue()},
+    )
+
+
 @pytest.fixture(autouse=True)
 def _fresh_repos():
     """The memory backend is a process-wide singleton (state has to survive
@@ -600,6 +633,30 @@ def test_docx_attachment_redacts_comments_and_tracked_changes(client: TestClient
     assert "[MYKAD_3]" in redacted_doc.text
 
 
+def test_docx_attachment_redacts_embedded_ooxml_package(client: TestClient) -> None:
+    docx = docx_bytes_with_embedded_docx("Embedded IC 880412-08-5561")
+
+    r = inspect(client, user_id="aiman.hr@acme.my",
+                prompt="see attached", attachments=[
+                    {
+                        "filename": "outer.docx",
+                        "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        "content_b64": base64.b64encode(docx).decode(),
+                    },
+                ])
+
+    body = r.json()
+    assert body["decision"] == "redact"
+    assert "MYKAD" in body["data_classes"]
+    assert len(body["redacted_attachments"]) == 1
+
+    redacted = body["redacted_attachments"][0]
+    redacted_doc = extract(redacted["filename"], redacted["mime"], redacted["content_b64"])
+
+    assert "880412-08-5561" not in redacted_doc.text
+    assert "[MYKAD_1]" in redacted_doc.text
+
+
 def test_pptx_attachment_redaction_returns_redacted_copy(client: TestClient) -> None:
     deck = Presentation()
     slide = deck.slides.add_slide(deck.slide_layouts[5])
@@ -647,6 +704,30 @@ def test_pptx_attachment_redacts_comments(client: TestClient) -> None:
                 prompt="see attached", attachments=[
                     {
                         "filename": "comments.pptx",
+                        "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        "content_b64": base64.b64encode(pptx).decode(),
+                    },
+                ])
+
+    body = r.json()
+    assert body["decision"] == "redact"
+    assert "MYKAD" in body["data_classes"]
+    assert len(body["redacted_attachments"]) == 1
+
+    redacted = body["redacted_attachments"][0]
+    redacted_doc = extract(redacted["filename"], redacted["mime"], redacted["content_b64"])
+
+    assert "880412-08-5561" not in redacted_doc.text
+    assert "[MYKAD_1]" in redacted_doc.text
+
+
+def test_pptx_attachment_redacts_embedded_ooxml_package(client: TestClient) -> None:
+    pptx = pptx_bytes_with_embedded_docx("Embedded IC 880412-08-5561")
+
+    r = inspect(client, user_id="aiman.hr@acme.my",
+                prompt="see attached", attachments=[
+                    {
+                        "filename": "outer.pptx",
                         "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
                         "content_b64": base64.b64encode(pptx).decode(),
                     },
