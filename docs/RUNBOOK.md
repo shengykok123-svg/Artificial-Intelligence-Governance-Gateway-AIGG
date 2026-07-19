@@ -1,12 +1,64 @@
-# AI Governance Gateway Runbook
+# AI Governance Gateway Handover Runbook
 
-This runbook is for a teammate taking over local development. It explains how
-to start the backend, dashboard, Chrome extension, PostgreSQL + pgvector M8
-path, and the core acceptance checks.
+This document is for teammates who did not follow Luis's local development
+session. It explains what was added on top of the upstream project, why the new
+setup exists, and how to reproduce the same local behavior after cloning the
+repo.
 
-## Current Frame
+Do not copy Luis's local Windows path. In every command below:
 
-Built and wired:
+```text
+<repo-root>
+```
+
+means the folder where you cloned this repository.
+
+Example:
+
+```powershell
+cd "<repo-root>"
+```
+
+If your clone is in `D:\Projects\HackAttack 3.0`, then `<repo-root>` means that
+folder. If your clone is somewhere else, use your own path.
+
+## 1. What This Branch Adds
+
+The base project already had the AI Governance Gateway shape:
+
+```text
+Chrome extension
+  -> FastAPI backend
+  -> detectors / policy
+  -> audit log
+  -> dashboard
+```
+
+Luis's local work added and verified these main pieces on top of the latest
+team repo:
+
+| Area | What changed |
+| --- | --- |
+| File extraction/redaction | TXT, CSV, DOCX, PPTX, PDF, XLSX, PNG/JPEG attachments can be inspected. Redactable files can be replaced with redacted copies before upload. |
+| Extension live behavior | Normal composer send, previous-message edit, hold approval, banner behavior, and attachment-removal stale state were hardened. |
+| M8 pgvector | M8 now uses PostgreSQL + pgvector internal-document chunks instead of a separate vector database service. |
+| Dashboard | `Policy & tools` can upload internal documents into the M8 corpus. |
+| Policy alignment | Mock M3 was adjusted to match the meeting frame: salary/API key/bank account deny, PII redact, M8 confidential similarity hold. |
+| Documentation | Test evidence, limitations, OCR notes, and this handover runbook were added. |
+
+Recent local commits of interest:
+
+```text
+433710d docs: add local development runbook
+5ee526b feat: align M8 hold policy with meeting frame
+52d5a60 fix: harden extension edit and attachment removal flow
+f049b99 feat: add optional pgvector internal doc similarity
+98ff995 merge origin main with file redaction
+```
+
+## 2. Current Module Status
+
+Real / built in this branch:
 
 - M0 persistence
 - M1 FastAPI API
@@ -21,84 +73,135 @@ Still mocked by design:
 
 - M3 policy engine
 
-Optional / not the default runtime:
+Optional, not the current demo runtime:
 
 - M9 DeBERTa detector
 
-Before trusting any verdict, check:
-
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/health" `
-  -Headers @{ "X-Api-Key" = "dev-key-change-me" }
-```
-
-Expected for the current demo frame:
+This matters because the extension popup and debug panel may say:
 
 ```text
-mocked: M3
-semantic_detector: m8
+Mocked: M3
 ```
 
-## Policy Expectations
+That is expected. It means the policy engine is still a mock table, but M2,
+M5, M7, and M8 are real in this frame.
 
-The current mock M3 policy is aligned to the 2026-07-19 meeting frame.
+## 3. Current Policy Frame
 
-| Detection | Source | Expected decision |
+This is the behavior Luis aligned to the meeting notes.
+
+| Detector output | Meaning | Final decision |
 | --- | --- | --- |
-| `SECRET` / API key | M2 | deny |
-| `SALARY` | M2 | deny |
-| `BANK_ACCT` | M2 | deny |
-| `MYKAD` | M2 | redact |
-| `EMAIL` | M2 | redact |
-| `PHONE` | M2 | redact |
-| `PERSON` | M2 | redact |
-| `DEPT_CONFIDENTIAL` | M8 | hold |
-| no sensitive data | none | allow |
+| `SECRET` | API key / credential | deny |
+| `SALARY` | salary amount | deny |
+| `BANK_ACCT` | bank account/card-like number | deny |
+| `MYKAD` | Malaysian IC | redact |
+| `EMAIL` | email address | redact |
+| `PHONE` | phone number | redact |
+| `PERSON` | person name | redact |
+| `DEPT_CONFIDENTIAL` | M8 matched internal confidential content | hold |
+| none | no sensitive signal | allow |
 
-Important: M8 does not decide `hold` by itself. M8 emits
-`DEPT_CONFIDENTIAL`; M3/mock policy converts that evidence into `hold`.
+Important distinction:
 
-## One-Time Setup
+- M8 does not directly decide hold.
+- M8 emits `DEPT_CONFIDENTIAL`.
+- M3/mock policy converts `DEPT_CONFIDENTIAL` into `hold`.
 
-Run from the repo root:
+So a correct M8 JSON trace should show:
 
-```powershell
-cd "C:\Users\louis\OneDrive\Documents\HackAttack 3.0"
+```json
+{
+  "decision": "hold",
+  "data_classes": ["DEPT_CONFIDENTIAL"],
+  "debug": {
+    "semantic_detector": "m8",
+    "detections": [
+      {
+        "data_class": "DEPT_CONFIDENTIAL",
+        "detector": "embed"
+      }
+    ]
+  }
+}
 ```
 
-Backend:
+## 4. Why PostgreSQL + pgvector Is Needed
+
+M8 is the internal-document similarity module.
+
+The goal is:
+
+```text
+Employee prompt / attachment text
+  -> embedding
+  -> compare against indexed internal document chunks
+  -> if similarity is high, emit DEPT_CONFIDENTIAL
+```
+
+The team decision for this branch is:
+
+```text
+Use PostgreSQL + pgvector only.
+Do not add Pinecone, Qdrant, ChromaDB, Weaviate, Supabase, or another vector DB.
+```
+
+That means a teammate who wants to test real M8 needs:
+
+- PostgreSQL running locally or on a server.
+- The pgvector extension installed/enabled.
+- Internal documents indexed through the script or dashboard upload.
+
+If pgvector is not available, M8 is not considered fully ready. Do not silently
+replace it with another vector database.
+
+## 5. Setup Order From a Fresh Clone
+
+Use this order. It mirrors the order the feature was built and debugged.
+
+```text
+1. Install backend dependencies.
+2. Run backend in memory mode to confirm the basic API works.
+3. Build dashboard.
+4. Build and load Chrome extension.
+5. Run basic redact/deny checks.
+6. Switch backend to PostgreSQL + pgvector.
+7. Index/upload internal docs for M8.
+8. Run M8 hold checks.
+9. Run acceptance tests.
+```
+
+Do not start with Chrome. If the backend is wrong, Chrome will only make the
+problem harder to understand.
+
+## 6. Backend Setup
+
+Open PowerShell:
 
 ```powershell
-cd "C:\Users\louis\OneDrive\Documents\HackAttack 3.0\backend"
+cd "<repo-root>\backend"
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Dashboard:
+If you see:
 
-```powershell
-cd "C:\Users\louis\OneDrive\Documents\HackAttack 3.0\dashboard"
-npm install
+```text
+No module named uvicorn
 ```
 
-Extension:
+you are probably using the wrong Python. Always run backend commands through:
 
 ```powershell
-cd "C:\Users\louis\OneDrive\Documents\HackAttack 3.0\extension"
-npm install
-npm run build
+.\.venv\Scripts\python.exe
 ```
 
-Tesseract is required only for image/scanned-PDF OCR extraction/redaction. If it
-is installed outside the default path, set `TESSERACT_EXE`.
+## 7. First Backend Run: Memory Mode
 
-## Backend: Memory Mode
-
-Use this when Docker/PostgreSQL/pgvector is not ready. It is enough for most API
-and extension checks, but not strict pgvector validation.
+Memory mode does not need PostgreSQL. Use it first to prove the backend starts.
 
 ```powershell
-cd "C:\Users\louis\OneDrive\Documents\HackAttack 3.0\backend"
+cd "<repo-root>\backend"
 
 $env:REPO_BACKEND="memory"
 $env:MOCK_MODULES="M3"
@@ -113,12 +216,201 @@ Expected startup:
 Application startup complete.
 ```
 
-## Backend: PostgreSQL + pgvector Mode
+If you see:
 
-Use this for the real M8 vector path. The database must support pgvector.
+```text
+address already in use
+```
+
+another backend is already using port `8000`. Find that PowerShell tab and
+press `Ctrl + C`, then run the command again.
+
+## 8. Health Check
+
+Open a second PowerShell window while backend is still running:
 
 ```powershell
-cd "C:\Users\louis\OneDrive\Documents\HackAttack 3.0\backend"
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/health" `
+  -Headers @{ "X-Api-Key" = "dev-key-change-me" }
+```
+
+For this branch, expected result should show:
+
+```text
+mocked: M3
+semantic_detector: m8
+```
+
+If `M2`, `M5`, `M7`, or `M8` appears in `mocked`, you are not running the
+intended frame.
+
+## 9. Basic Backend JSON Checks
+
+Run these before opening Chrome.
+
+API key should deny:
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/inspect" `
+  -Method Post `
+  -Headers @{ "X-Api-Key" = "dev-key-change-me"; "Content-Type" = "application/json" } `
+  -Body '{"user_id":"wei.eng@acme.my","target_host":"chatgpt.com","prompt":"Use this API key: sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d","attachments":[]}' |
+  ConvertTo-Json -Depth 8
+```
+
+Expected important fields:
+
+```json
+{
+  "decision": "deny",
+  "data_classes": ["SECRET"],
+  "reason": "SECRET detected (mock policy)."
+}
+```
+
+Salary should deny:
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/inspect" `
+  -Method Post `
+  -Headers @{ "X-Api-Key" = "dev-key-change-me"; "Content-Type" = "application/json" } `
+  -Body '{"user_id":"aiman.hr@acme.my","target_host":"chatgpt.com","prompt":"Please review this salary: Gaji bulanan RM 8,500","attachments":[]}' |
+  ConvertTo-Json -Depth 8
+```
+
+Expected important fields:
+
+```json
+{
+  "decision": "deny",
+  "data_classes": ["SALARY"]
+}
+```
+
+MyKad should redact:
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/inspect" `
+  -Method Post `
+  -Headers @{ "X-Api-Key" = "dev-key-change-me"; "Content-Type" = "application/json" } `
+  -Body '{"user_id":"aiman.hr@acme.my","target_host":"chatgpt.com","prompt":"My IC is 880412-08-5561","attachments":[]}' |
+  ConvertTo-Json -Depth 8
+```
+
+Expected important fields:
+
+```json
+{
+  "decision": "redact",
+  "data_classes": ["MYKAD"],
+  "redacted_prompt": "My IC is [MYKAD_1]"
+}
+```
+
+## 10. Dashboard Setup
+
+Open another PowerShell window:
+
+```powershell
+cd "<repo-root>\dashboard"
+npm install
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:5173
+```
+
+The dashboard is useful for:
+
+- audit log review
+- hold queue
+- tool governance
+- uploading internal docs into M8 from `Policy & tools`
+
+## 11. Extension Setup
+
+Build:
+
+```powershell
+cd "<repo-root>\extension"
+npm install
+npm run build
+```
+
+Load in Chrome:
+
+```text
+chrome://extensions
+```
+
+Then:
+
+1. Turn on Developer mode.
+2. Click `Load unpacked`.
+3. Select:
+
+```text
+<repo-root>\extension\dist
+```
+
+Open the extension popup and set:
+
+```text
+Base URL: http://localhost:8000
+User ID: wei.eng@acme.my
+API key: dev-key-change-me
+MOCK_MODE: off
+```
+
+Click save. If nothing visibly happens, that is okay; verify by closing and
+opening the popup again.
+
+After every extension code change:
+
+```text
+1. npm run build
+2. reload the extension in chrome://extensions
+3. refresh the ChatGPT tab
+```
+
+If Chrome still shows old behavior, one of those three steps was likely missed.
+
+## 12. Chrome Acceptance Checks
+
+Use a refreshed ChatGPT tab after backend and extension reload.
+
+| Case | Input | Expected |
+| --- | --- | --- |
+| Popup health | Open extension popup | Backend connected, mocked list shows `M3` |
+| MyKad redact | `My IC is 880412-08-5561` | ChatGPT receives `[MYKAD_1]` |
+| API key deny | fake `sk-proj-...` key | Prompt blocked and remains in composer |
+| Salary deny | `Gaji bulanan RM 8,500` | Prompt blocked and remains in composer |
+| Previous-message edit deny | Edit an old sent message to include fake API key | Edit is blocked |
+| Previous-message edit redact | Edit an old sent message to include MyKad | Redacted edit submits |
+| Attachment removal | Upload a file, remove it, then send text only | Removed file is not included in audit |
+| File redaction | Upload MyKad file | Extension replaces it with redacted file before upload |
+
+The attachment-removal case was specifically fixed because the extension
+previously kept stale attachment state after the user removed a file.
+
+## 13. PostgreSQL + pgvector Setup for M8
+
+Only do this after the memory-mode checks pass.
+
+You need PostgreSQL with pgvector available. The default local connection used
+in this branch is:
+
+```text
+postgresql+psycopg://postgres:postgres@127.0.0.1:5432/postgres
+```
+
+Run:
+
+```powershell
+cd "<repo-root>\backend"
 
 $env:REPO_BACKEND="postgres"
 $env:DATABASE_URL="postgresql+psycopg://postgres:postgres@127.0.0.1:5432/postgres"
@@ -129,134 +421,58 @@ $env:MOCK_MODULES="M3"
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-If port `8000` is already used, stop the old backend first:
+What each line does:
 
-```text
-Ctrl + C
-```
+- `REPO_BACKEND=postgres`: tells backend to use PostgreSQL instead of memory.
+- `DATABASE_URL=...`: tells backend where PostgreSQL is.
+- `MOCK_MODULES=M3`: keeps only M3 mocked.
+- `reset_db.py --yes`: recreates tables and seed data.
+- `index_internal_docs_pgvector.py`: adds sample internal-doc chunks for M8.
+- `uvicorn ...`: starts the backend API.
 
-If pgvector is missing, `reset_db.py` should fail when creating M8 storage. That
-is expected; M8 is not considered ready without pgvector.
+If `reset_db.py` fails at pgvector/table creation, the database is not ready
+for M8. Install/enable pgvector or use a PostgreSQL server that already has it.
 
-## Dashboard
+## 14. M8 Internal Document Upload
 
-Run in a separate PowerShell window:
+M8 needs internal docs to compare against. There are two ways to add them.
 
-```powershell
-cd "C:\Users\louis\OneDrive\Documents\HackAttack 3.0\dashboard"
-npm run dev
-```
-
-Open:
-
-```text
-http://localhost:5173
-```
-
-The `Policy & tools` page can upload internal documents into M8 through:
-
-```text
-POST /v1/internal-docs
-```
-
-## Chrome Extension
-
-Build:
+Option A: seed script:
 
 ```powershell
-cd "C:\Users\louis\OneDrive\Documents\HackAttack 3.0\extension"
-npm run build
+cd "<repo-root>\backend"
+.\.venv\Scripts\python.exe scripts\index_internal_docs_pgvector.py
 ```
 
-Load into Chrome:
-
-1. Open `chrome://extensions`.
-2. Turn on Developer mode.
-3. Click `Load unpacked`.
-4. Select:
+Option B: dashboard upload:
 
 ```text
-C:\Users\louis\OneDrive\Documents\HackAttack 3.0\extension\dist
+Dashboard -> Policy & tools -> upload internal document
 ```
 
-Popup settings:
-
-```text
-Base URL: http://localhost:8000
-User ID: wei.eng@acme.my
-API key: dev-key-change-me
-MOCK_MODE: off
-```
-
-After any extension code change:
-
-1. Run `npm run build`.
-2. Go to `chrome://extensions`.
-3. Click reload on `AI Governance Gateway`.
-4. Refresh the ChatGPT tab.
-
-## Core HTTP Checks
-
-API key deny:
+To confirm indexed chunks exist:
 
 ```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/inspect" `
-  -Method Post `
-  -Headers @{ "X-Api-Key" = "dev-key-change-me"; "Content-Type" = "application/json" } `
-  -Body '{"user_id":"wei.eng@acme.my","target_host":"chatgpt.com","prompt":"Use this API key: sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d","attachments":[]}' |
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/internal-docs?limit=5" `
+  -Headers @{ "X-Api-Key" = "dev-key-change-me" } |
   ConvertTo-Json -Depth 8
 ```
 
-Expected:
+You should see rows with:
 
-```json
-{
-  "decision": "deny",
-  "data_classes": ["SECRET"],
-  "reason": "SECRET detected (mock policy)."
-}
+```text
+source_file
+department
+chunk_text
+created_at
 ```
 
-Salary deny:
+## 15. M8 JSON Check
 
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/inspect" `
-  -Method Post `
-  -Headers @{ "X-Api-Key" = "dev-key-change-me"; "Content-Type" = "application/json" } `
-  -Body '{"user_id":"aiman.hr@acme.my","target_host":"chatgpt.com","prompt":"Please review this salary: Gaji bulanan RM 8,500","attachments":[]}' |
-  ConvertTo-Json -Depth 8
-```
+After internal docs are indexed, inspect a prompt similar to the indexed
+document.
 
-Expected:
-
-```json
-{
-  "decision": "deny",
-  "data_classes": ["SALARY"]
-}
-```
-
-MyKad redact:
-
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/inspect" `
-  -Method Post `
-  -Headers @{ "X-Api-Key" = "dev-key-change-me"; "Content-Type" = "application/json" } `
-  -Body '{"user_id":"aiman.hr@acme.my","target_host":"chatgpt.com","prompt":"My IC is 880412-08-5561","attachments":[]}' |
-  ConvertTo-Json -Depth 8
-```
-
-Expected:
-
-```json
-{
-  "decision": "redact",
-  "data_classes": ["MYKAD"],
-  "redacted_prompt": "My IC is [MYKAD_1]"
-}
-```
-
-M8 hold:
+Example:
 
 ```powershell
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/inspect" `
@@ -273,12 +489,15 @@ Expected shape:
   "decision": "hold",
   "data_classes": ["DEPT_CONFIDENTIAL"],
   "content_department": "hr",
+  "department_confidence": 0.91,
   "debug": {
+    "policy_layer": "M3",
     "semantic_detector": "m8",
     "detections": [
       {
         "data_class": "DEPT_CONFIDENTIAL",
         "detector": "embed",
+        "confidence": 0.91,
         "source": "prompt"
       }
     ]
@@ -286,26 +505,17 @@ Expected shape:
 }
 ```
 
-## Chrome Acceptance Checklist
+The exact confidence may change depending on the indexed document and model,
+but the important parts are:
 
-Use a refreshed ChatGPT tab after backend and extension reload.
+- `decision` is `hold`
+- `data_classes` contains `DEPT_CONFIDENTIAL`
+- `semantic_detector` is `m8`
+- `detector` is `embed`
 
-| Case | Input | Expected |
-| --- | --- | --- |
-| Popup health | Open extension popup | Connected, mocked list shows `M3` |
-| MyKad redact | `My IC is 880412-08-5561` | ChatGPT receives `[MYKAD_1]` |
-| API key deny | fake `sk-proj-...` key | blocked, composer keeps text |
-| Salary deny | `Gaji bulanan RM 8,500` | blocked, composer keeps text |
-| M8 hold | prompt similar to indexed internal doc | waiting for approval |
-| Previous-message edit deny | edit an old message to include fake API key | edit is blocked |
-| Previous-message edit redact | edit an old message to include MyKad | redacted edit submits |
-| Attachment removal | upload then remove file before send | removed file is not inspected |
-| TXT/CSV redaction | upload file containing MyKad | replaced with `.redacted.txt` / `.redacted.csv` |
-| DOCX/PPTX/PDF/XLSX/image redaction | upload file containing MyKad | replaced with redacted copy |
+## 16. Approving a Hold
 
-## Approving a Hold
-
-Find pending hold events:
+Find pending holds:
 
 ```powershell
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/logs?status=pending&decision=hold&limit=5" `
@@ -323,23 +533,60 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/logs/<LOG_ID>/decision" `
   ConvertTo-Json -Depth 8
 ```
 
-The extension should then show approval state and release the held request.
-For previous-message edit holds, the extension asks the user to submit the edit
-again instead of auto-sending a stale edit target.
+Normal composer hold:
 
-## Test Commands
+- extension should release the held prompt after approval.
 
-Backend targeted policy/API checks:
+Previous-message edit hold:
+
+- extension should not auto-send a stale edit target.
+- it should ask the user to submit the edit again.
+
+## 17. File Redaction Status
+
+Supported replacement:
+
+- TXT
+- CSV
+- DOCX
+- PPTX
+- PDF
+- XLSX
+- PNG/JPEG image OCR
+
+Important limitations:
+
+- PDF redaction generates a new text-only PDF. It does not preserve the
+  original PDF layout, images, or tables.
+- OCR depends on local Tesseract and image quality.
+- Legacy OLE embedded objects fail closed with HTTP 415.
+- OCR is not deterministic like TXT/DOCX/XLSX extraction.
+
+Tesseract note:
+
+- Tesseract is currently used for OCR.
+- Other OCR alternatives were discussed, but not implemented in this branch.
+- If Tesseract is installed outside the default path, set `TESSERACT_EXE`.
+
+## 18. Test Commands
+
+Backend targeted tests:
 
 ```powershell
-cd "C:\Users\louis\OneDrive\Documents\HackAttack 3.0\backend"
+cd "<repo-root>\backend"
 .\.venv\Scripts\python.exe -m pytest tests/test_mocks.py tests/test_main.py tests/test_repos.py
+```
+
+Luis's last targeted run returned:
+
+```text
+83 passed, 43 skipped, 1 warning
 ```
 
 Extension:
 
 ```powershell
-cd "C:\Users\louis\OneDrive\Documents\HackAttack 3.0\extension"
+cd "<repo-root>\extension"
 npm run typecheck
 npm run build
 ```
@@ -347,74 +594,134 @@ npm run build
 Dashboard:
 
 ```powershell
-cd "C:\Users\louis\OneDrive\Documents\HackAttack 3.0\dashboard"
+cd "<repo-root>\dashboard"
 npm run test
 npm run build
 ```
 
-## File Redaction Status
+## 19. What To Check Before Push
 
-Supported extraction/redaction replacement:
+Use this checklist before pushing or opening a PR:
 
-- TXT
-- CSV
-- PDF
-- DOCX
-- PPTX
-- XLSX
-- PNG/JPEG image OCR
-
-Known limitations:
-
-- PDF redaction generates a new text-only PDF, not a layout-preserving PDF.
-- OCR depends on local Tesseract and image quality.
-- Legacy OLE embedded objects fail closed with HTTP 415.
-- M3 is still a mock policy engine.
-- M9 is opt-in and should not be claimed as the active semantic runtime unless
-  `SEMANTIC_DETECTOR=m9_deberta` is configured and model artifacts exist.
-
-## Common Problems
-
-`address already in use`:
-
-- Another backend is still running on port `8000`.
-- Go to that PowerShell tab and press `Ctrl + C`.
-
-Chrome still shows old behavior:
-
-- Rebuild extension.
-- Reload unpacked extension in `chrome://extensions`.
-- Refresh ChatGPT.
-- Restart backend if policy code changed.
-
-M8 does not detect internal document similarity:
-
-- Confirm backend is running with `REPO_BACKEND=postgres`.
-- Confirm pgvector is installed.
-- Confirm internal docs exist:
-
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/internal-docs?limit=5" `
-  -Headers @{ "X-Api-Key" = "dev-key-change-me" } |
-  ConvertTo-Json -Depth 8
+```text
+1. git status --short
+2. backend targeted tests pass
+3. extension typecheck/build pass
+4. dashboard test/build pass if dashboard files changed
+5. health shows only M3 mocked
+6. Chrome extension reloaded from extension/dist
+7. ChatGPT tab refreshed
+8. MyKad redact passes
+9. API key deny passes
+10. salary deny passes
+11. M8 hold passes after internal docs are indexed
 ```
 
-Backend says `No module named uvicorn`:
+Do not commit these unless intentionally promoted to fixtures:
 
-- You are using the wrong Python environment.
-- Run from `backend` with:
+- `manual-test-files/`
+- `pgvector-build/`
+- generated screenshots
+- npm lockfile noise from a different npm version
+
+## 20. Common Problems and Fixes
+
+Problem:
+
+```text
+Backend says address already in use.
+```
+
+Fix:
+
+```text
+Another backend is already running. Stop it with Ctrl + C.
+```
+
+Problem:
+
+```text
+Extension still shows old behavior.
+```
+
+Fix:
+
+```text
+Run npm run build in extension.
+Reload the unpacked extension in chrome://extensions.
+Refresh the ChatGPT tab.
+Restart backend if policy code changed.
+```
+
+Problem:
+
+```text
+M8 does not produce DEPT_CONFIDENTIAL.
+```
+
+Fix:
+
+```text
+Confirm REPO_BACKEND=postgres.
+Confirm pgvector is installed.
+Confirm /v1/internal-docs has indexed chunks.
+Use a prompt similar to the indexed document.
+```
+
+Problem:
+
+```text
+Backend says No module named uvicorn.
+```
+
+Fix:
 
 ```powershell
+cd "<repo-root>\backend"
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-## What Not To Change Casually
+Problem:
 
-- Do not add Pinecone, Qdrant, ChromaDB, Weaviate, Supabase, Redis, Celery, or
-  another queue/database service.
-- Do not bypass `backend/app/repo/` and import ORM models from feature code.
-- Do not claim M3 is real while `MOCK_MODULES=M3`.
-- Do not claim OCR is deterministic.
-- Do not commit manual test files unless they are intentionally promoted to
-  fixtures.
+```text
+Chrome popup save seems to do nothing.
+```
+
+Fix:
+
+```text
+Close and reopen the popup.
+Check that Base URL, User ID, API key, and MOCK_MODE are still correct.
+Then run /v1/health from PowerShell.
+```
+
+## 21. What Is Still Not Done
+
+These are not solved by Luis's branch:
+
+- M3 is still mock policy, not a real configurable policy engine.
+- Justification Required UI/flow is not implemented.
+- Full admin review page polish is not finished.
+- M9 is not the default runtime.
+- OCR is best-effort, not perfect.
+- PDF redaction is text-only replacement, not layout-preserving redaction.
+- Production auth, identity, permissions, and deployment are out of scope.
+
+## 22. Suggested Next Development Order
+
+Recommended order for the next teammate:
+
+```text
+1. Pull/checkout this branch.
+2. Run memory-mode backend checks.
+3. Run extension build and Chrome smoke tests.
+4. Set up PostgreSQL + pgvector.
+5. Upload/index internal docs.
+6. Verify M8 hold JSON.
+7. Continue M3 policy engine or admin review UI, depending on assigned module.
+```
+
+Keep changes scoped. If working on M3, do not modify detector contracts. If
+working on dashboard/admin review, do not change M8 storage behavior unless the
+team agrees.
 
