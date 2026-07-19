@@ -1,7 +1,8 @@
 # Luis Handover Summary
 
 This is the short version for teammates. For exact commands, use
-`docs/RUNBOOK.md`.
+`docs/RUNBOOK.md`. For the fuller reasoning and decision history, use
+`docs/LUIS_DEVELOPMENT_CONTEXT.md`.
 
 ## What This Branch Is
 

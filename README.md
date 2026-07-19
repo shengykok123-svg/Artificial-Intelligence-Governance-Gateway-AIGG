@@ -209,5 +209,7 @@ and indexes uploaded files into that same table.
   dashboard upload path, and current limitations
 - `docs/LUIS_HANDOVER_SUMMARY.md` — short teammate-facing summary of what
   Luis added on top of `origin/main`
+- `docs/LUIS_DEVELOPMENT_CONTEXT.md` — fuller decision/context handover for
+  teammates or coding agents continuing Luis's branch
 - `docs/RUNBOOK.md` — step-by-step local setup, run, acceptance, and takeover
   checklist for backend, dashboard, extension, and M8 pgvector

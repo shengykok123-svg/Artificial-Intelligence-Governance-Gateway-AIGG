@@ -90,16 +90,21 @@ Recommended reading order:
 
 ```text
 1. README.md
-2. docs/RUNBOOK.md
-3. docs/FILE_REDACTION_STATUS.md
-4. docs/M8_PGVECTOR_INTERNAL_DOCS.md
-5. extension/README.md
-6. docs/EXTENSION_TEST_REPORT.md
+2. docs/LUIS_HANDOVER_SUMMARY.md
+3. docs/LUIS_DEVELOPMENT_CONTEXT.md
+4. docs/RUNBOOK.md
+5. docs/FILE_REDACTION_STATUS.md
+6. docs/M8_PGVECTOR_INTERNAL_DOCS.md
+7. extension/README.md
+8. docs/EXTENSION_TEST_REPORT.md
 ```
 
 Why:
 
 - `README.md` gives the current project status.
+- `LUIS_HANDOVER_SUMMARY.md` gives the short teammate-facing summary.
+- `LUIS_DEVELOPMENT_CONTEXT.md` gives the reasoning and decisions behind the
+  branch for teammates or coding agents.
 - this runbook explains how to reproduce Luis's local setup.
 - `FILE_REDACTION_STATUS.md` explains supported file types and limitations.
 - `M8_PGVECTOR_INTERNAL_DOCS.md` explains the pgvector path.
