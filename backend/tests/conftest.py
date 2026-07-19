@@ -24,6 +24,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.repo.memory import (
     InMemoryAuditRepo,
+    InMemoryInternalDocRepo,
     InMemoryRuleRepo,
     InMemoryToolRepo,
     InMemoryUserRepo,
@@ -37,9 +38,10 @@ ADMIN_URL = os.getenv(
 
 
 class Bundle:
-    def __init__(self, audit, vault, rules, tools, users):
+    def __init__(self, audit, vault, rules, tools, users, internal_docs):
         self.audit, self.vault, self.rules, self.tools = audit, vault, rules, tools
         self.users = users
+        self.internal_docs = internal_docs
 
 
 def seed_users(bundle, rows):
@@ -71,6 +73,10 @@ def seed_rules(bundle, rows):
     bundle.rules.s.commit()
 
 
+def seed_internal_docs(bundle, rows):
+    bundle.internal_docs._seed(rows)
+
+
 @pytest.fixture(scope="session")
 def pg_engine():
     """A throwaway database, created and dropped around the session."""
@@ -87,6 +93,34 @@ def pg_engine():
 
     from app.models import Base
     Base.metadata.create_all(engine)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            conn.execute(text(
+                """
+                CREATE TABLE IF NOT EXISTS internal_doc_chunks (
+                    id VARCHAR(36) PRIMARY KEY,
+                    source_file TEXT NOT NULL,
+                    department VARCHAR(32) NOT NULL,
+                    chunk_text TEXT NOT NULL,
+                    embedding vector(384) NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            ))
+            conn.execute(text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_internal_doc_chunks_embedding
+                ON internal_doc_chunks
+                USING hnsw (embedding vector_cosine_ops)
+                """
+            ))
+    except Exception as exc:
+        engine.dispose()
+        with admin.connect() as conn:
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{dbname}" WITH (FORCE)'))
+        admin.dispose()
+        pytest.skip(f"postgres has no pgvector extension for tests: {exc}")
 
     yield engine
 
@@ -101,13 +135,14 @@ def repos(request):
     if request.param == "memory":
         yield Bundle(InMemoryAuditRepo(), InMemoryVaultRepo(),
                      InMemoryRuleRepo(), InMemoryToolRepo(),
-                     InMemoryUserRepo())
+                     InMemoryUserRepo(), InMemoryInternalDocRepo())
         return
 
     engine = request.getfixturevalue("pg_engine")
     from app.models import Base
     from app.repo.postgres import (
         PgAuditRepo,
+        PgInternalDocRepo,
         PgRuleRepo,
         PgToolRepo,
         PgUserRepo,
@@ -119,8 +154,9 @@ def repos(request):
     with engine.begin() as conn:
         tables = ", ".join(f'"{t.name}"' for t in reversed(Base.metadata.sorted_tables))
         conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+        conn.execute(text("TRUNCATE internal_doc_chunks"))
 
     Session = sessionmaker(bind=engine, expire_on_commit=False)
     with Session() as s:
         yield Bundle(PgAuditRepo(s), PgVaultRepo(s), PgRuleRepo(s),
-                     PgToolRepo(s), PgUserRepo(s))
+                     PgToolRepo(s), PgUserRepo(s), PgInternalDocRepo(s))

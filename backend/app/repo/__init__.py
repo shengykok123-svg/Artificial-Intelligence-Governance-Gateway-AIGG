@@ -14,9 +14,10 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app import db
-from app.repo.base import AuditRepo, RuleRepo, ToolRepo, UserRepo, VaultRepo
+from app.repo.base import AuditRepo, InternalDocRepo, RuleRepo, ToolRepo, UserRepo, VaultRepo
 from app.repo.memory import (
     InMemoryAuditRepo,
+    InMemoryInternalDocRepo,
     InMemoryRuleRepo,
     InMemoryToolRepo,
     InMemoryUserRepo,
@@ -33,6 +34,7 @@ class Repos:
     rules: RuleRepo
     tools: ToolRepo
     users: UserRepo   # SD-2. M1 keys role and department off user_id.
+    internal_docs: InternalDocRepo
 
 
 # Process-wide singletons for the memory backend: the state has to survive
@@ -49,6 +51,7 @@ def memory_repos() -> Repos:
             rules=InMemoryRuleRepo(),
             tools=InMemoryToolRepo(),
             users=InMemoryUserRepo(),
+            internal_docs=InMemoryInternalDocRepo(),
         )
         from app.seed import seed_memory  # local import: seed imports us
         seed_memory(_memory_repos)
@@ -66,6 +69,7 @@ def get_repos(session: Session | None = Depends(db.get_session)) -> Repos:
         assert session is not None
         from app.repo.postgres import (
             PgAuditRepo,
+            PgInternalDocRepo,
             PgRuleRepo,
             PgToolRepo,
             PgUserRepo,
@@ -77,6 +81,7 @@ def get_repos(session: Session | None = Depends(db.get_session)) -> Repos:
             rules=PgRuleRepo(session),
             tools=PgToolRepo(session),
             users=PgUserRepo(session),
+            internal_docs=PgInternalDocRepo(session),
         )
     return memory_repos()
 

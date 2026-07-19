@@ -14,10 +14,12 @@ import uuid
 from collections import Counter, defaultdict
 from copy import deepcopy
 from datetime import datetime, timezone
+from math import sqrt
 
 from app.repo.base import (
     AiTool,
     AuditRecord,
+    InternalDocMatch,
     RuleRow,
     StatsSummary,
     TokenEntry,
@@ -195,3 +197,36 @@ class InMemoryUserRepo:
     # from an IdP in production), never from the API.
     def _seed(self, rows: list[UserRow]) -> None:
         self._rows = {r.user_id: deepcopy(r) for r in rows}
+
+
+class InMemoryInternalDocRepo:
+    def __init__(self) -> None:
+        self._rows: list[tuple[str, str, str, list[float]]] = []
+
+    def search_similar(self, embedding: list[float], *, limit: int) -> list[InternalDocMatch]:
+        matches: list[InternalDocMatch] = []
+        for source_file, department, chunk_text, chunk_embedding in self._rows:
+            similarity = _cosine_similarity(embedding, chunk_embedding)
+            matches.append(InternalDocMatch(
+                source_file=source_file,
+                department=department,
+                chunk_text=chunk_text,
+                similarity=similarity,
+            ))
+        matches.sort(key=lambda match: match.similarity, reverse=True)
+        return deepcopy(matches[:limit])
+
+    # Tests and seed scripts only. The public protocol is read-only.
+    def _seed(self, rows: list[tuple[str, str, str, list[float]]]) -> None:
+        self._rows = deepcopy(rows)
+
+
+def _cosine_similarity(left: list[float], right: list[float]) -> float:
+    if len(left) != len(right) or not left:
+        return 0.0
+    numerator = sum(a * b for a, b in zip(left, right))
+    left_norm = sqrt(sum(a * a for a in left))
+    right_norm = sqrt(sum(b * b for b in right))
+    if left_norm == 0.0 or right_norm == 0.0:
+        return 0.0
+    return numerator / (left_norm * right_norm)

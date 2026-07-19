@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.repo.base import AuditRecord, RuleRow, TokenEntry, UserRow
-from tests.conftest import seed_rules, seed_users
+from tests.conftest import seed_internal_docs, seed_rules, seed_users
 
 NOW = datetime(2026, 7, 17, 9, 0, tzinfo=timezone.utc)
 
@@ -468,3 +468,35 @@ def test_seeded_users_are_reachable_through_the_repo(repos):
     assert repos.users.by_id("admin@acme.my").role == "admin"
     assert repos.users.by_id("aiman.hr@acme.my").department == "hr"
     assert repos.users.by_id("wei.eng@acme.my").department == "engineering"
+
+
+# --------------------------------------------------------------------------
+# InternalDocRepo -- M8 pgvector document similarity
+# --------------------------------------------------------------------------
+
+def test_internal_doc_similarity_returns_nearest_chunks(repos):
+    engineering = [1.0] + [0.0] * 383
+    finance = [0.0, 1.0] + [0.0] * 382
+    query = [0.95, 0.05] + [0.0] * 382
+
+    seed_internal_docs(repos, [
+        (
+            "roadmap.docx",
+            "engineering",
+            "2027 Product Roadmap for unreleased platform features.",
+            engineering,
+        ),
+        (
+            "forecast.xlsx",
+            "finance",
+            "Private operating forecast for the next financial year.",
+            finance,
+        ),
+    ])
+
+    matches = repos.internal_docs.search_similar(query, limit=1)
+
+    assert len(matches) == 1
+    assert matches[0].source_file == "roadmap.docx"
+    assert matches[0].department == "engineering"
+    assert matches[0].similarity > 0.9

@@ -1,0 +1,13 @@
+chunks:
+  - source_file: engineering/2027-product-roadmap.docx
+    department: engineering
+    text: "2027 Product Roadmap for unreleased platform features, internal API migration, launch timeline, and confidential engineering milestones."
+  - source_file: finance/fy2027-operating-forecast.xlsx
+    department: finance
+    text: "Private operating forecast for the next financial year, including unreleased revenue plan, margin outlook, and budget variance assumptions."
+  - source_file: hr/succession-plan.docx
+    department: hr
+    text: "Internal succession plan, performance-improvement notes, employee grievance findings, and confidential manager feedback."
+  - source_file: legal/settlement-strategy.docx
+    department: legal
+    text: "Privileged legal settlement strategy, draft contract liability position, and confidential regulatory response."

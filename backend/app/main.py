@@ -96,7 +96,7 @@ def get_rules_detector() -> Detector:
     return RulesDetector()
 
 
-def get_embed_detector() -> Detector | DocumentClassifier:
+def get_embed_detector(internal_docs: Any | None = None) -> Detector | DocumentClassifier:
     if SEMANTIC_DETECTOR == "m9_deberta":
         # M9 is opt-in. It has the same two methods as M8, so nothing in the
         # inspect pipeline needs to know which semantic implementation runs.
@@ -108,7 +108,7 @@ def get_embed_detector() -> Detector | DocumentClassifier:
         from app.mocks import MockEmbedDetector
         return MockEmbedDetector()
     from app.detect.embed import EmbedDetector
-    return EmbedDetector()
+    return EmbedDetector(internal_docs=internal_docs)
 
 
 def get_extractor() -> Callable[[str, str, str], Document]:
@@ -568,7 +568,7 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         attachment_docs.append((att, doc))
 
     rules_detector = get_rules_detector()
-    embed_detector = get_embed_detector()
+    embed_detector = get_embed_detector(repos.internal_docs)
 
     # Span.start/end are offsets into ONE Document's text. The prompt's own
     # spans are what get redacted back into the response (redacted_prompt is

@@ -95,6 +95,15 @@ class UserRow:
     # Production reads this from an IdP claim. Future work.
 
 
+@dataclass
+class InternalDocMatch:
+    source_file: str
+    department: str
+    chunk_text: str
+    similarity: float
+    # M8 pgvector retrieval result. The raw embedding never leaves the repo.
+
+
 # --------------------------------------------------------------------------
 # Protocols
 # --------------------------------------------------------------------------
@@ -138,6 +147,10 @@ class UserRepo(Protocol):
     # login is hardcoded, so all() would be speculative. Adding a method to
     # a Protocol later is additive and breaks no caller; the only two
     # implementations are in this package.
+
+
+class InternalDocRepo(Protocol):
+    def search_similar(self, embedding: list[float], *, limit: int) -> list[InternalDocMatch]: ...
 
 
 # --------------------------------------------------------------------------
@@ -190,8 +203,15 @@ class UserRepo(Protocol):
 #                       does about an unknown user is M1's call and belongs
 #                       in the API, not here: this layer stores records and
 #                       does not know what a prompt is.
+# InternalDocRepo.search_similar
+#                       newest ingestion order is irrelevant: returns nearest
+#                       chunks by embedding similarity descending, capped by
+#                       limit. If pgvector is unavailable or no chunks are
+#                       indexed, returns [] so M8 can fall back to its local
+#                       exemplar bank.
 
 __all__ = [
     "AuditRecord", "TokenEntry", "RuleRow", "StatsSummary", "AiTool", "UserRow",
-    "AuditRepo", "VaultRepo", "RuleRepo", "ToolRepo", "UserRepo",
+    "InternalDocMatch",
+    "AuditRepo", "VaultRepo", "RuleRepo", "ToolRepo", "UserRepo", "InternalDocRepo",
 ]

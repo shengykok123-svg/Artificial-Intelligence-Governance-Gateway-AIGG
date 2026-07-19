@@ -10,10 +10,12 @@ import numpy as np
 import yaml
 
 from app.detect.base import Document, Span
+from app.repo.base import InternalDocRepo
 
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 CLASSIFY_THRESHOLD = 0.40
 SPAN_THRESHOLD = 0.72
+PGVECTOR_TOP_K = 5
 _EXEMPLARS_PATH = Path(__file__).with_name("exemplars.yaml")
 _SENTENCE_RE = re.compile(r"[^.!?\n]+(?:[.!?]+|$)")
 
@@ -29,10 +31,15 @@ class EmbedDetector:
     M2's job; M8 only emits DEPT_CONFIDENTIAL for semantic content.
     """
 
-    def __init__(self, encoder: Encoder | None = None) -> None:
+    def __init__(
+        self,
+        encoder: Encoder | None = None,
+        internal_docs: InternalDocRepo | None = None,
+    ) -> None:
         self._examples = self._load_examples()
         self._labels = [department for department, _ in self._examples]
         self._encoder = encoder or self._load_default_encoder()
+        self._internal_docs = internal_docs
         self._example_vectors = np.asarray(
             self._encoder.encode(
                 [text for _, text in self._examples], normalize_embeddings=True,
@@ -70,9 +77,26 @@ class EmbedDetector:
         vector = np.asarray(
             self._encoder.encode([text], normalize_embeddings=True)[0], dtype=float,
         )
+        pgvector_best = self._best_internal_chunk(vector)
+        if pgvector_best is not None:
+            return pgvector_best
         scores = self._example_vectors @ vector
         index = int(np.argmax(scores))
         return self._labels[index], float(scores[index])
+
+    def _best_internal_chunk(self, vector: np.ndarray) -> tuple[str, float] | None:
+        if self._internal_docs is None:
+            return None
+        matches = self._internal_docs.search_similar(
+            [float(value) for value in vector.tolist()],
+            limit=PGVECTOR_TOP_K,
+        )
+        if not matches:
+            return None
+        best = matches[0]
+        if best.similarity < CLASSIFY_THRESHOLD:
+            return None
+        return best.department, best.similarity
 
     @staticmethod
     def _load_examples() -> list[tuple[str, str]]:

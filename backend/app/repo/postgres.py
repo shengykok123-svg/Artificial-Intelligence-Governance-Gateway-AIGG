@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
@@ -24,6 +24,7 @@ from app.models import (
 from app.repo.base import (
     AiTool,
     AuditRecord,
+    InternalDocMatch,
     RuleRow,
     StatsSummary,
     TokenEntry,
@@ -331,3 +332,62 @@ class PgUserRepo:
     def by_id(self, user_id: str) -> UserRow | None:
         row = self.s.get(User, user_id)
         return _user_to_dto(row) if row else None
+
+
+class PgInternalDocRepo:
+    def __init__(self, session: Session) -> None:
+        self.s = session
+
+    def search_similar(self, embedding: list[float], *, limit: int) -> list[InternalDocMatch]:
+        if not embedding:
+            return []
+        try:
+            rows = self.s.execute(
+                text(
+                    """
+                    SELECT source_file, department, chunk_text,
+                           1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
+                    FROM internal_doc_chunks
+                    ORDER BY embedding <=> CAST(:embedding AS vector)
+                    LIMIT :limit
+                    """
+                ),
+                {"embedding": _vector_literal(embedding), "limit": limit},
+            ).all()
+        except Exception:
+            return []
+        return [
+            InternalDocMatch(
+                source_file=row.source_file,
+                department=row.department,
+                chunk_text=row.chunk_text,
+                similarity=float(row.similarity),
+            )
+            for row in rows
+        ]
+
+    # Tests and seed scripts only. The public protocol is read-only.
+    def _seed(self, rows: list[tuple[str, str, str, list[float]]]) -> None:
+        for source_file, department, chunk_text, embedding in rows:
+            self.s.execute(
+                text(
+                    """
+                    INSERT INTO internal_doc_chunks
+                        (id, source_file, department, chunk_text, embedding)
+                    VALUES
+                        (:id, :source_file, :department, :chunk_text, CAST(:embedding AS vector))
+                    """
+                ),
+                {
+                    "id": str(uuid.uuid4()),
+                    "source_file": source_file,
+                    "department": department,
+                    "chunk_text": chunk_text,
+                    "embedding": _vector_literal(embedding),
+                },
+            )
+        self.s.commit()
+
+
+def _vector_literal(values: list[float]) -> str:
+    return "[" + ",".join(f"{float(value):.9g}" for value in values) + "]"

@@ -41,7 +41,7 @@ explicitly via `MOCK_MODULES=M3` in `.env`.
 | ✅ | **M5** File extractor | P1 | Built — TXT/CSV/PDF/DOCX/PPTX/XLSX/image OCR extraction |
 | ✅ | **M6** Employer dashboard | P1 | Built |
 | ✅ | **M7** Tokenisation vault | P2 | Built — Fernet-encrypted reversible token maps |
-| ✅ | **M8** Embedding similarity | P1 | Built — local `all-MiniLM-L6-v2` semantic classifier |
+| ✅ | **M8** Embedding similarity | P1 | Built — local `all-MiniLM-L6-v2` classifier with optional pgvector internal-doc retrieval |
 | 🧪 | **M9** Fine-tuned DeBERTa-v3-small | P3 | Built as an opt-in two-head department + confidentiality detector; synthetic baseline trained, pending reviewed gold data |
 
 `GET /v1/health` reports which modules are currently mocked — check it before
@@ -116,7 +116,8 @@ Still binding for whoever picks up M2, M3, M5, M7 or M8:
 3. **Build ONLY the module named in your task.** Someone else already has the
    neighbouring one.
 4. Python 3.11, full type hints. PostgreSQL 16 is the only external service.
-   No Redis, no Celery, no message queue, no pgvector.
+   No Redis, no Celery, no message queue. The agreed exception is pgvector
+   inside PostgreSQL for M8 internal-document similarity.
 5. Every module ships with a way to prove it works from the command line.
 6. **Nothing outside `backend/app/repo/` may import `app/models.py`, open a
    `Session`, or write SQL.** This is what lets the schema stay undecided while
@@ -168,6 +169,7 @@ cd extension && npm run typecheck && npm run build
 docker compose up -d
 cd backend
 REPO_BACKEND=postgres python reset_db.py
+python scripts/index_internal_docs_pgvector.py   # optional M8 internal-doc similarity corpus
 REPO_BACKEND=postgres uvicorn app.main:app --reload
 ```
 

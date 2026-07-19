@@ -2,6 +2,7 @@ import numpy as np
 
 from app.detect.base import Document
 from app.detect.embed import EmbedDetector
+from app.repo.base import InternalDocMatch
 
 
 class FakeEncoder:
@@ -30,6 +31,15 @@ class FakeEncoder:
         return np.asarray(vectors)
 
 
+class FakeInternalDocRepo:
+    def __init__(self, matches: list[InternalDocMatch]) -> None:
+        self.matches = matches
+
+    def search_similar(self, embedding: list[float], *, limit: int) -> list[InternalDocMatch]:
+        del embedding
+        return self.matches[:limit]
+
+
 def _doc(text: str) -> Document:
     return Document(text=text, source_filename=None, mime="text/plain")
 
@@ -38,6 +48,44 @@ def test_classifies_department_above_threshold() -> None:
     department, confidence = EmbedDetector(FakeEncoder()).classify(
         _doc("Our quarterly revenue is below forecast."),
     )
+    assert department == "finance"
+    assert confidence == 1.0
+
+
+def test_classifies_from_internal_document_similarity_before_exemplars() -> None:
+    detector = EmbedDetector(
+        FakeEncoder(),
+        internal_docs=FakeInternalDocRepo([
+            InternalDocMatch(
+                source_file="roadmap.docx",
+                department="engineering",
+                chunk_text="2027 Product Roadmap for unreleased platform features.",
+                similarity=0.91,
+            ),
+        ]),
+    )
+
+    department, confidence = detector.classify(_doc("Our quarterly revenue is below forecast."))
+
+    assert department == "engineering"
+    assert confidence == 0.91
+
+
+def test_low_internal_similarity_falls_back_to_exemplars() -> None:
+    detector = EmbedDetector(
+        FakeEncoder(),
+        internal_docs=FakeInternalDocRepo([
+            InternalDocMatch(
+                source_file="unrelated.docx",
+                department="legal",
+                chunk_text="Unrelated public note.",
+                similarity=0.12,
+            ),
+        ]),
+    )
+
+    department, confidence = detector.classify(_doc("Our quarterly revenue is below forecast."))
+
     assert department == "finance"
     assert confidence == 1.0
 

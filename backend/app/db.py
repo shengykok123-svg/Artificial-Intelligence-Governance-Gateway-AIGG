@@ -14,7 +14,7 @@ import os
 from typing import Iterator
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 load_dotenv()
@@ -58,8 +58,51 @@ def get_session() -> Iterator[Session | None]:
 def create_all() -> None:
     from app.models import Base  # imported here: only the repo layer and db
     Base.metadata.create_all(engine)
+    ensure_pgvector_schema()
 
 
 def drop_all() -> None:
     from app.models import Base
     Base.metadata.drop_all(engine)
+    drop_pgvector_schema()
+
+
+def ensure_pgvector_schema() -> bool:
+    """Create optional M8 pgvector storage if the extension is installed.
+
+    The MVP can still run without pgvector: M8 falls back to exemplar
+    similarity when this table is absent or empty.
+    """
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            conn.execute(text(
+                """
+                CREATE TABLE IF NOT EXISTS internal_doc_chunks (
+                    id VARCHAR(36) PRIMARY KEY,
+                    source_file TEXT NOT NULL,
+                    department VARCHAR(32) NOT NULL,
+                    chunk_text TEXT NOT NULL,
+                    embedding vector(384) NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            ))
+            conn.execute(text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_internal_doc_chunks_embedding
+                ON internal_doc_chunks
+                USING hnsw (embedding vector_cosine_ops)
+                """
+            ))
+        return True
+    except Exception:
+        return False
+
+
+def drop_pgvector_schema() -> None:
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS internal_doc_chunks"))
+    except Exception:
+        return
