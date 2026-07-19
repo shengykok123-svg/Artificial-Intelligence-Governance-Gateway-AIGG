@@ -1,0 +1,6 @@
+{"id": "hr-01", "source_group": "synthetic-hr-confidential-a", "text": "The manager's notes describe an ongoing performance-improvement plan.", "department": "hr", "is_confidential": true}
+{"id": "hr-02", "source_group": "synthetic-hr-confidential-a", "text": "Candidate interview feedback is restricted to the hiring panel.", "department": "hr", "is_confidential": true}
+{"id": "hr-03", "source_group": "synthetic-hr-confidential-a", "text": "The disciplinary outcome has not yet been communicated to the employee.", "department": "hr", "is_confidential": true}
+{"id": "fin-01", "source_group": "synthetic-finance-confidential-a", "text": "The board pack shows a forty percent shortfall against the September revenue plan.", "department": "finance", "is_confidential": true}
+{"id": "fin-02", "source_group": "synthetic-finance-confidential-a", "text": "Reconcile the unpublished operating forecast before tomorrow's CFO review.", "department": "finance", "is_confidential": true}
+{"id": "fin-03", "source_group": "synthetic-finance-confidential-a", "text": "Treasury has not released the projected covenant headroom to external advisers.", "department": "finance", "is_confidential": true}

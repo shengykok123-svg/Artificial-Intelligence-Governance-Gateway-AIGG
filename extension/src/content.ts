@@ -9,6 +9,7 @@
 
 import { findComposer, findFileInput, findSendButton, siteKeyFor, type SiteKey } from "./selectors";
 import { removeBanner, showBanner } from "./banner";
+import { showDebugFailure, showInspectDebug } from "./debug-panel";
 import type {
   AttachmentPayload,
   BackgroundMessage,
@@ -220,11 +221,13 @@ function init(site: SiteKey): void {
     }
 
     if (!outcome.ok) {
+      showDebugFailure(outcome.message);
       handleFailure(composer, outcome);
       return;
     }
 
     const result = outcome.result;
+    showInspectDebug(result);
     switch (result.decision) {
       case "allow":
         replaySend(composer);

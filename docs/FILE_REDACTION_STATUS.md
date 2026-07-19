@@ -62,8 +62,8 @@ Alternatives are recorded in `docs/OCR_OPTIONS.md`.
 ## Integration note after fetching teammate main
 
 `origin/main` currently contains teammate M5 extraction work plus M9/debug-panel
-changes. The local redaction work can fit, but it should be integrated on top of
-`origin/main`, not pushed directly from the current local `main`.
+changes. The local redaction work is being merged on top of `origin/main`, not
+pushed directly from the older local `main`.
 
 Expected conflict areas:
 

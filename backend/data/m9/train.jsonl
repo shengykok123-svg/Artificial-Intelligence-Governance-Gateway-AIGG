@@ -1,0 +1,18 @@
+{"id": "eng-04", "source_group": "synthetic-engineering-public-a", "text": "The public API documentation describes how to authenticate a request.", "department": "engineering", "is_confidential": false}
+{"id": "eng-05", "source_group": "synthetic-engineering-public-a", "text": "This open-source repository explains how HTTPS encrypts traffic.", "department": "engineering", "is_confidential": false}
+{"id": "eng-06", "source_group": "synthetic-engineering-public-a", "text": "The published product roadmap lists features planned for next year.", "department": "engineering", "is_confidential": false}
+{"id": "other-01", "source_group": "synthetic-general-a", "text": "Rewrite the public product launch announcement in a more direct tone.", "department": "other", "is_confidential": false}
+{"id": "other-02", "source_group": "synthetic-general-a", "text": "Create an agenda for an open customer webinar next month.", "department": "other", "is_confidential": false}
+{"id": "other-03", "source_group": "synthetic-general-a", "text": "Summarise the published sustainability report for a general audience.", "department": "other", "is_confidential": false}
+{"id": "legal-04", "source_group": "synthetic-legal-public-a", "text": "The terms of service are available on the public website.", "department": "legal", "is_confidential": false}
+{"id": "legal-05", "source_group": "synthetic-legal-public-a", "text": "This article explains the general purpose of a contract.", "department": "legal", "is_confidential": false}
+{"id": "legal-06", "source_group": "synthetic-legal-public-a", "text": "The open-source project uses an MIT licence.", "department": "legal", "is_confidential": false}
+{"id": "eng-01", "source_group": "synthetic-engineering-confidential-a", "text": "The production authentication service includes a non-public token rotation design.", "department": "engineering", "is_confidential": true}
+{"id": "eng-02", "source_group": "synthetic-engineering-confidential-a", "text": "Investigate the private deployment script that manages our edge clusters.", "department": "engineering", "is_confidential": true}
+{"id": "eng-03", "source_group": "synthetic-engineering-confidential-a", "text": "The unreleased recommendation algorithm depends on a proprietary feature store.", "department": "engineering", "is_confidential": true}
+{"id": "other-04", "source_group": "synthetic-general-b", "text": "Explain the weather forecast for the office event tomorrow.", "department": "other", "is_confidential": false}
+{"id": "other-05", "source_group": "synthetic-general-b", "text": "Suggest a title for a public blog post about workplace wellbeing.", "department": "other", "is_confidential": false}
+{"id": "other-06", "source_group": "synthetic-general-b", "text": "Turn this approved customer testimonial into a short social media caption.", "department": "other", "is_confidential": false}
+{"id": "fin-04", "source_group": "synthetic-finance-public-a", "text": "The company published annual revenue in its investor report.", "department": "finance", "is_confidential": false}
+{"id": "fin-05", "source_group": "synthetic-finance-public-a", "text": "The finance team explained public results during an earnings call.", "department": "finance", "is_confidential": false}
+{"id": "fin-06", "source_group": "synthetic-finance-public-a", "text": "This article gives general advice about household budgeting.", "department": "finance", "is_confidential": false}

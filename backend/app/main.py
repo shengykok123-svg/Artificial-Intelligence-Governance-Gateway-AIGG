@@ -11,12 +11,14 @@ import textwrap
 from collections import Counter
 from dataclasses import asdict
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable
 
 from dotenv import load_dotenv
 from docx import Document as DocxDocument
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from pptx import Presentation
 
@@ -31,16 +33,24 @@ from app.extract.xlsx import XlsxTextTarget, iter_xlsx_text_targets, redact_xlsx
 from app.policy.engine import PolicyContext, Verdict
 from app.repo import Repos, get_repos
 from app.repo.base import AuditRecord
-from app.schemas import Attachment, InspectRequest, InspectResponse, RedactedAttachment
+from app.schemas import (
+    Attachment,
+    DetectionDebug,
+    InspectDebug,
+    InspectRequest,
+    InspectResponse,
+    RedactedAttachment,
+)
 
 load_dotenv()
 
 ENV = os.getenv("ENV", "dev")
 API_KEY = os.getenv("API_KEY", "dev-key-change-me")
 MOCK_MODULES: set[str] = {
-    m.strip() for m in os.getenv("MOCK_MODULES", "M2,M3,M5,M7,M8").split(",")
+    m.strip() for m in os.getenv("MOCK_MODULES", "M3").split(",")
     if m.strip()
 }
+SEMANTIC_DETECTOR = os.getenv("SEMANTIC_DETECTOR", "m8").strip().lower()
 
 # The default admin identity behind the dashboard's hardcoded login. Neither
 # POST /v1/logs/{id}/decision nor POST /v1/tools/{host}/decision carries a
@@ -64,7 +74,8 @@ def _check_demo_guard(env: str, mock_modules: set[str]) -> None:
 _check_demo_guard(ENV, MOCK_MODULES)
 
 print(
-    f"[startup] ENV={ENV} MOCK_MODULES={sorted(MOCK_MODULES) or ['none']}",
+    f"[startup] ENV={ENV} semantic_detector={SEMANTIC_DETECTOR} "
+    f"MOCK_MODULES={sorted(MOCK_MODULES) or ['none']}",
     file=sys.stderr,
 )
 
@@ -86,6 +97,13 @@ def get_rules_detector() -> Detector:
 
 
 def get_embed_detector() -> Detector | DocumentClassifier:
+    if SEMANTIC_DETECTOR == "m9_deberta":
+        # M9 is opt-in. It has the same two methods as M8, so nothing in the
+        # inspect pipeline needs to know which semantic implementation runs.
+        from app.detect.deberta import DebertaDetector
+        return DebertaDetector()
+    if SEMANTIC_DETECTOR != "m8":
+        raise RuntimeError("SEMANTIC_DETECTOR must be 'm8' or 'm9_deberta'.")
     if "M8" in MOCK_MODULES:
         from app.mocks import MockEmbedDetector
         return MockEmbedDetector()
@@ -94,9 +112,6 @@ def get_embed_detector() -> Detector | DocumentClassifier:
 
 
 def get_extractor() -> Callable[[str, str, str], Document]:
-    if "M5" in MOCK_MODULES:
-        from app.mocks import mock_extract
-        return mock_extract
     from app.extract.files import extract
     return extract
 
@@ -499,6 +514,10 @@ def require_api_key(x_api_key: str | None = Header(None)) -> None:
 app = FastAPI(title="AI Governance Gateway",
               dependencies=[Depends(require_api_key)])
 
+# Local-only testing UI. It makes its own authenticated API call from the
+# browser, so the page contains no bypass around the API-key dependency.
+app.mount("/m9-tester", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="m9-tester")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
@@ -560,11 +579,29 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
     prompt_spans = rules_detector.detect(prompt_doc) + embed_detector.detect(prompt_doc)
 
     all_spans: list[Span] = list(prompt_spans)
+    debug_detections = [
+        DetectionDebug(
+            data_class=span.data_class,
+            detector=span.detector,
+            confidence=span.confidence,
+            source="prompt",
+        )
+        for span in prompt_spans
+    ]
     attachment_spans: list[tuple[Attachment, Document, list[Span]]] = []
     for att, doc in attachment_docs:
         spans = rules_detector.detect(doc) + embed_detector.detect(doc)
         all_spans += spans
         attachment_spans.append((att, doc, spans))
+        debug_detections.extend(
+            DetectionDebug(
+                data_class=span.data_class,
+                detector=span.detector,
+                confidence=span.confidence,
+                source="attachment",
+            )
+            for span in spans
+        )
 
     data_classes = sorted({span.data_class for span in all_spans})
     confidence = max((s.confidence for s in all_spans), default=0.0)
@@ -757,6 +794,13 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         redacted_prompt=redacted_prompt,
         redacted_attachments=redacted_attachments,
         reason=verdict.reason,
+        content_department=content_department,
+        department_confidence=department_confidence,
+        debug=InspectDebug(
+            policy_layer="M3",
+            semantic_detector=SEMANTIC_DETECTOR,
+            detections=debug_detections,
+        ),
     )
 
 
@@ -856,4 +900,8 @@ def decide_tool(
 
 @app.get("/v1/health")
 def health() -> dict:
-    return {"status": "ok", "mocked": sorted(MOCK_MODULES)}
+    return {
+        "status": "ok",
+        "semantic_detector": SEMANTIC_DETECTOR,
+        "mocked": sorted(MOCK_MODULES),
+    }

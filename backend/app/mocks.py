@@ -1,4 +1,4 @@
-# M1  Mocks for modules not yet built (M2/M3/M5/M7/M8). Selected by MOCK_MODULES env. DELETE each mock as its module lands.
+# M1  Mocks for modules not yet built (M2/M3/M7/M8). Selected by MOCK_MODULES env. DELETE each mock as its module lands.
 #
 # Each mock below carries its own "DELETE WHEN <module> LANDS" header. When a
 # module lands, its owner removes the ID from MOCK_MODULES and deletes the
@@ -11,7 +11,6 @@ import uuid
 
 from app.detect.base import Classification, DataClass, Document, Span
 from app.errors import Forbidden
-from app.extract.files import UnsupportedFile
 from app.policy.engine import PolicyContext, Verdict
 from app.repo.base import RuleRow, TokenEntry, VaultRepo
 
@@ -67,21 +66,6 @@ class MockEmbedDetector:
 
     def classify(self, doc: Document) -> tuple[str | None, float]:
         return None, 0.0
-
-
-# --------------------------------------------------------------------------
-# DELETE WHEN M5 LANDS
-# --------------------------------------------------------------------------
-
-
-def mock_extract(filename: str, mime: str, content_b64: str) -> Document:
-    """Stand-in for app/extract/files.py:extract(). text/plain and text/csv
-    only, decoded as UTF-8. Does not import pdfplumber, python-docx or
-    python-pptx -- those are M5's dependencies."""
-    if mime not in ("text/plain", "text/csv"):
-        raise UnsupportedFile(f"{mime} (filename={filename!r})")
-    text = base64.b64decode(content_b64).decode("utf-8")
-    return Document(text=text, source_filename=filename, mime=mime)
 
 
 # --------------------------------------------------------------------------
@@ -192,6 +176,6 @@ class MockTokeniser:
 
 
 __all__ = [
-    "MockRulesDetector", "MockEmbedDetector", "mock_extract", "mock_decide",
+    "MockRulesDetector", "MockEmbedDetector", "mock_decide",
     "MockTokeniser",
 ]

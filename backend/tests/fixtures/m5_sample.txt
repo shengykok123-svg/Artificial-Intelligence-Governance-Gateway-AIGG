@@ -1,0 +1,2 @@
+M5_TXT_FIXTURE_TOKEN_7f3a9c
+A second line of plain text.

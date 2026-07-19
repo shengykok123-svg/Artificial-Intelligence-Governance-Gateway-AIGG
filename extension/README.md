@@ -43,6 +43,15 @@ API key: dev-key-change-me
 MOCK_MODE: off
 ```
 
+### Developer debug panel
+
+During a local demo, the extension renders a collapsible **AIGG Debug** panel
+at the upper-right of a supported AI page after every inspection. It shows the
+policy verdict, detector/layer trace (M2/M8/M9), safe class-level confidence,
+department prediction and audit log ID. It deliberately never renders the raw
+prompt or matched sensitive values. This is developer/demo visibility only;
+remove or gate it before any production deployment.
+
 Expected popup health in the current frame:
 
 ```text

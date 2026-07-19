@@ -294,6 +294,13 @@ def test_allow(client: TestClient) -> None:
     assert body["redacted_prompt"] is None
     assert body["redacted_attachments"] == []
     assert body["data_classes"] == []
+    assert body["content_department"] is None
+    assert body["department_confidence"] == 0.0
+    assert body["debug"] == {
+        "policy_layer": "M3",
+        "semantic_detector": "m8",
+        "detections": [],
+    }
 
     logs = client.get("/v1/logs", headers=HEADERS, params={"limit": 200}).json()
     assert any(x["log_id"] == body["log_id"] for x in logs["items"])
@@ -331,6 +338,14 @@ def test_hold(client: TestClient) -> None:
     body = r.json()
     assert body["decision"] == "hold"
     assert "SALARY" in body["data_classes"]
+    assert body["debug"]["detections"] == [
+        {
+            "data_class": "SALARY",
+            "detector": "rules",
+            "confidence": 1.0,
+            "source": "prompt",
+        }
+    ]
     assert body["redacted_prompt"] is None
 
 
@@ -528,6 +543,14 @@ def test_supported_attachment_contributes_to_verdict(client: TestClient) -> None
     body = r.json()
     assert body["decision"] == "hold"
     assert "SALARY" in body["data_classes"]
+    assert body["debug"]["detections"] == [
+        {
+            "data_class": "SALARY",
+            "detector": "rules",
+            "confidence": 1.0,
+            "source": "attachment",
+        }
+    ]
 
 
 def test_docx_attachment_contributes_to_verdict(client: TestClient) -> None:
