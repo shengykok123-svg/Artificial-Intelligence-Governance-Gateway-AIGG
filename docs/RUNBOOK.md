@@ -46,6 +46,93 @@ team repo:
 | Policy alignment | Mock M3 was adjusted to match the meeting frame: salary/API key/bank account deny, PII redact, M8 confidential similarity hold. |
 | Documentation | Test evidence, limitations, OCR notes, and this handover runbook were added. |
 
+## 2. If You Are Coming From `main`
+
+Read this section first if your local understanding is based on the old
+`main` branch. Several assumptions changed.
+
+| Topic | What `main` looked like | What this branch expects |
+| --- | --- | --- |
+| M5 file extractor | M5 was still mocked or limited. | M5 is real for TXT, CSV, DOCX, PPTX, PDF, XLSX, PNG/JPEG OCR extraction. |
+| File redaction | Mainly prompt/text redaction. | The extension can replace supported uploaded files with backend-returned redacted copies. |
+| M8 runtime | Local embedding/classifier style, no strict pgvector requirement. | M8 uses PostgreSQL + pgvector internal-document chunks. |
+| Mock modules | Health could show `M3, M5`. | Health should show only `M3`. |
+| Salary policy | Salary was previously used as a hold/approval demo. | Salary now denies. Use M8 `DEPT_CONFIDENTIAL` for hold tests. |
+| M8 confidential policy | Could be treated as deny in older checks. | M8 confidential similarity should hold for admin review. |
+| Extension edit behavior | Previous-message edit interception was incomplete. | Edits are re-inspected for deny/redact/hold; hold edit approval avoids stale auto-send. |
+| Attachment state | Removing an attachment could leave stale cached state. | Removed attachments should not be sent to `/v1/inspect`. |
+
+The biggest practical change is this:
+
+```text
+Old mental model:
+Salary -> hold
+M5 mocked
+M8 mostly local semantic demo
+
+Current branch:
+Salary -> deny
+M5 real file extraction/redaction
+M8 -> PostgreSQL + pgvector internal-doc similarity
+M8 confidential -> hold
+```
+
+So if a teammate tests `Gaji bulanan RM 8,500` and expects hold, they are using
+the old behavior. In this branch, that test should be deny.
+
+If a teammate wants to test hold now, they should index/upload an internal
+document and use a prompt similar to that document so M8 emits
+`DEPT_CONFIDENTIAL`.
+
+## 3. What To Read First
+
+Recommended reading order:
+
+```text
+1. README.md
+2. docs/RUNBOOK.md
+3. docs/FILE_REDACTION_STATUS.md
+4. docs/M8_PGVECTOR_INTERNAL_DOCS.md
+5. extension/README.md
+6. docs/EXTENSION_TEST_REPORT.md
+```
+
+Why:
+
+- `README.md` gives the current project status.
+- this runbook explains how to reproduce Luis's local setup.
+- `FILE_REDACTION_STATUS.md` explains supported file types and limitations.
+- `M8_PGVECTOR_INTERNAL_DOCS.md` explains the pgvector path.
+- `extension/README.md` explains extension setup and live cases.
+- `EXTENSION_TEST_REPORT.md` separates historical evidence from current
+  policy expectations.
+
+## 4. What Is Luis's Part vs Not Luis's Part
+
+Luis's branch focuses on:
+
+- file extraction/redaction replacement
+- extension acceptance behavior
+- previous-message edit interception
+- attachment removal stale-state fix
+- PostgreSQL + pgvector M8 internal-doc similarity
+- M8 upload path in dashboard `Policy & tools`
+- meeting-policy alignment for current mock M3
+- documentation and takeover notes
+
+Not completed in this branch:
+
+- real M3 policy engine
+- Justification Required modal/flow
+- full production admin review workflow
+- production auth/identity
+- M9 production model accuracy
+- layout-preserving PDF redaction
+
+This distinction matters when assigning next work. Do not treat this branch as
+the final product; treat it as a working local integration layer that another
+teammate can continue from.
+
 Recent local commits of interest:
 
 ```text
@@ -56,7 +143,7 @@ f049b99 feat: add optional pgvector internal doc similarity
 98ff995 merge origin main with file redaction
 ```
 
-## 2. Current Module Status
+## 5. Current Module Status
 
 Real / built in this branch:
 
@@ -86,7 +173,7 @@ Mocked: M3
 That is expected. It means the policy engine is still a mock table, but M2,
 M5, M7, and M8 are real in this frame.
 
-## 3. Current Policy Frame
+## 6. Current Policy Frame
 
 This is the behavior Luis aligned to the meeting notes.
 
@@ -126,7 +213,7 @@ So a correct M8 JSON trace should show:
 }
 ```
 
-## 4. Why PostgreSQL + pgvector Is Needed
+## 7. Why PostgreSQL + pgvector Is Needed
 
 M8 is the internal-document similarity module.
 
@@ -155,7 +242,7 @@ That means a teammate who wants to test real M8 needs:
 If pgvector is not available, M8 is not considered fully ready. Do not silently
 replace it with another vector database.
 
-## 5. Setup Order From a Fresh Clone
+## 8. Setup Order From a Fresh Clone
 
 Use this order. It mirrors the order the feature was built and debugged.
 
@@ -174,7 +261,7 @@ Use this order. It mirrors the order the feature was built and debugged.
 Do not start with Chrome. If the backend is wrong, Chrome will only make the
 problem harder to understand.
 
-## 6. Backend Setup
+## 9. Backend Setup
 
 Open PowerShell:
 
@@ -196,7 +283,7 @@ you are probably using the wrong Python. Always run backend commands through:
 .\.venv\Scripts\python.exe
 ```
 
-## 7. First Backend Run: Memory Mode
+## 10. First Backend Run: Memory Mode
 
 Memory mode does not need PostgreSQL. Use it first to prove the backend starts.
 
@@ -225,7 +312,7 @@ address already in use
 another backend is already using port `8000`. Find that PowerShell tab and
 press `Ctrl + C`, then run the command again.
 
-## 8. Health Check
+## 11. Health Check
 
 Open a second PowerShell window while backend is still running:
 
@@ -244,7 +331,7 @@ semantic_detector: m8
 If `M2`, `M5`, `M7`, or `M8` appears in `mocked`, you are not running the
 intended frame.
 
-## 9. Basic Backend JSON Checks
+## 12. Basic Backend JSON Checks
 
 Run these before opening Chrome.
 
@@ -307,7 +394,7 @@ Expected important fields:
 }
 ```
 
-## 10. Dashboard Setup
+## 13. Dashboard Setup
 
 Open another PowerShell window:
 
@@ -330,7 +417,7 @@ The dashboard is useful for:
 - tool governance
 - uploading internal docs into M8 from `Policy & tools`
 
-## 11. Extension Setup
+## 14. Extension Setup
 
 Build:
 
@@ -378,7 +465,7 @@ After every extension code change:
 
 If Chrome still shows old behavior, one of those three steps was likely missed.
 
-## 12. Chrome Acceptance Checks
+## 15. Chrome Acceptance Checks
 
 Use a refreshed ChatGPT tab after backend and extension reload.
 
@@ -396,7 +483,7 @@ Use a refreshed ChatGPT tab after backend and extension reload.
 The attachment-removal case was specifically fixed because the extension
 previously kept stale attachment state after the user removed a file.
 
-## 13. PostgreSQL + pgvector Setup for M8
+## 16. PostgreSQL + pgvector Setup for M8
 
 Only do this after the memory-mode checks pass.
 
@@ -433,7 +520,7 @@ What each line does:
 If `reset_db.py` fails at pgvector/table creation, the database is not ready
 for M8. Install/enable pgvector or use a PostgreSQL server that already has it.
 
-## 14. M8 Internal Document Upload
+## 17. M8 Internal Document Upload
 
 M8 needs internal docs to compare against. There are two ways to add them.
 
@@ -467,7 +554,7 @@ chunk_text
 created_at
 ```
 
-## 15. M8 JSON Check
+## 18. M8 JSON Check
 
 After internal docs are indexed, inspect a prompt similar to the indexed
 document.
@@ -513,7 +600,7 @@ but the important parts are:
 - `semantic_detector` is `m8`
 - `detector` is `embed`
 
-## 16. Approving a Hold
+## 19. Approving a Hold
 
 Find pending holds:
 
@@ -542,7 +629,7 @@ Previous-message edit hold:
 - extension should not auto-send a stale edit target.
 - it should ask the user to submit the edit again.
 
-## 17. File Redaction Status
+## 20. File Redaction Status
 
 Supported replacement:
 
@@ -568,7 +655,7 @@ Tesseract note:
 - Other OCR alternatives were discussed, but not implemented in this branch.
 - If Tesseract is installed outside the default path, set `TESSERACT_EXE`.
 
-## 18. Test Commands
+## 21. Test Commands
 
 Backend targeted tests:
 
@@ -599,7 +686,7 @@ npm run test
 npm run build
 ```
 
-## 19. What To Check Before Push
+## 22. What To Check Before Push
 
 Use this checklist before pushing or opening a PR:
 
@@ -624,7 +711,7 @@ Do not commit these unless intentionally promoted to fixtures:
 - generated screenshots
 - npm lockfile noise from a different npm version
 
-## 20. Common Problems and Fixes
+## 23. Common Problems and Fixes
 
 Problem:
 
@@ -695,7 +782,7 @@ Check that Base URL, User ID, API key, and MOCK_MODE are still correct.
 Then run /v1/health from PowerShell.
 ```
 
-## 21. What Is Still Not Done
+## 24. What Is Still Not Done
 
 These are not solved by Luis's branch:
 
@@ -707,7 +794,7 @@ These are not solved by Luis's branch:
 - PDF redaction is text-only replacement, not layout-preserving redaction.
 - Production auth, identity, permissions, and deployment are out of scope.
 
-## 22. Suggested Next Development Order
+## 25. Suggested Next Development Order
 
 Recommended order for the next teammate:
 
@@ -724,4 +811,3 @@ Recommended order for the next teammate:
 Keep changes scoped. If working on M3, do not modify detector contracts. If
 working on dashboard/admin review, do not change M8 storage behavior unless the
 team agrees.
-
