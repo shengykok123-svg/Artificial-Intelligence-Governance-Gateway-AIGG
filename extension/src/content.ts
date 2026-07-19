@@ -18,6 +18,11 @@ import type {
   InspectStatusResponse,
 } from "./types";
 
+interface ReplayContext {
+  kind: "composer" | "edit";
+  target: HTMLElement | null;
+}
+
 const site = siteKeyFor(location.hostname);
 if (site) init(site);
 
@@ -26,9 +31,15 @@ function init(site: SiteKey): void {
   let isInjectingFiles = false;
   let capturedAttachments: AttachmentPayload[] = [];
   let activeLogId: string | null = null;
+  let activeHoldSnapshot: { logId: string; prompt: string; replayMode: "composer" | "edit" } | null = null;
   let holdPollTimer: number | null = null;
 
   window.addEventListener("change", onFileInputChange, true);
+  document.addEventListener("input", onComposerMutation, true);
+  document.addEventListener("beforeinput", onComposerMutation, true);
+  document.addEventListener("paste", onComposerMutation, true);
+  document.addEventListener("cut", onComposerMutation, true);
+  document.addEventListener("drop", onComposerMutation, true);
   document.addEventListener("click", onClickCapture, true);
   document.addEventListener("keydown", onKeydownCapture, true);
   chrome.runtime.onMessage.addListener(onBackgroundMessage);
@@ -38,6 +49,8 @@ function init(site: SiteKey): void {
     if (!input || e.target !== input) return;
     const files = Array.from(input.files ?? []);
     if (files.length === 0) return;
+
+    invalidateActiveHold("attachment changed after review request -- click Send again to re-check.");
 
     if (isInjectingFiles) {
       void encodeFiles(files).then((encoded) => {
@@ -59,6 +72,21 @@ function init(site: SiteKey): void {
     input.value = "";
 
     void preprocessFilesBeforeUpload(input, files);
+  }
+
+  function onComposerMutation(e: Event): void {
+    if (!activeHoldSnapshot || isReplaying) return;
+    const composer = findComposer(site);
+    const target = e.target as Node | null;
+    if (!composer || !target || !composer.contains(target)) return;
+
+    window.setTimeout(() => {
+      if (!activeHoldSnapshot) return;
+      const latest = getComposerText(composer).trim();
+      if (latest !== activeHoldSnapshot.prompt) {
+        invalidateActiveHold("prompt changed after review request -- click Send again to re-check.");
+      }
+    }, 0);
   }
 
   async function preprocessFilesBeforeUpload(input: HTMLInputElement, files: File[]): Promise<void> {
@@ -176,31 +204,85 @@ function init(site: SiteKey): void {
 
   function onClickCapture(e: MouseEvent): void {
     if (isReplaying) return;
-    const sendBtn = findSendButton(site);
     const target = e.target as Element | null;
-    if (!sendBtn || !target || !(target === sendBtn || sendBtn.contains(target))) return;
+    if (!target) return;
+    scheduleAttachmentRefreshIfRemoval(target);
+
+    const sendBtn = findSendButton(site);
+    if (sendBtn && (target === sendBtn || sendBtn.contains(target))) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      void attemptSend(findComposer(site), { kind: "composer", target: sendBtn });
+      return;
+    }
+
+    const editSubmit = findEditableSubmitButton(target);
+    const editComposer = editSubmit ? findEditableNear(editSubmit) : null;
+    if (!editSubmit || !editComposer) return;
+
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
-    void attemptSend();
+    void attemptSend(editComposer, { kind: "edit", target: editSubmit });
   }
 
   function onKeydownCapture(e: KeyboardEvent): void {
     if (isReplaying) return;
     if (e.key !== "Enter" || e.shiftKey) return;
-    const composer = findComposer(site);
     const target = e.target as Node | null;
-    if (!composer || !target || !composer.contains(target)) return;
+    const composer = findComposer(site);
+    const editable = findEditableTarget(target);
+    if (!editable) return;
+    const activeComposer: HTMLElement = composer?.contains(target) ? composer : editable;
+    const isMainComposer = activeComposer === composer;
+    const replayContext: ReplayContext = {
+      kind: isMainComposer ? "composer" : "edit",
+      target: isMainComposer ? null : findEditableSubmitNear(activeComposer),
+    };
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
-    void attemptSend();
+    void attemptSend(activeComposer, replayContext);
   }
 
-  async function attemptSend(): Promise<void> {
-    const composer = findComposer(site);
+  function findEditableSubmitButton(target: Element): HTMLElement | null {
+    const button = target.closest("button");
+    if (!(button instanceof HTMLElement)) return null;
+    if (button === findSendButton(site)) return null;
+    if (!buttonLooksLikeSubmit(button)) return null;
+    return findEditableNear(button) ? button : null;
+  }
+
+  function buttonLooksLikeSubmit(button: HTMLElement): boolean {
+    const label = [
+      button.getAttribute("aria-label"),
+      button.getAttribute("title"),
+      button.textContent,
+    ].join(" ").toLowerCase();
+    if (/\b(send|submit|save|update|confirm)\b/.test(label)) return true;
+    return button instanceof HTMLButtonElement && button.type === "submit";
+  }
+
+  function findEditableNear(button: HTMLElement): HTMLElement | null {
+    let node: HTMLElement | null = button;
+    for (let depth = 0; node && depth < 8; depth += 1, node = node.parentElement) {
+      const editable = Array.from(
+        node.querySelectorAll<HTMLElement>(
+          'textarea, input[type="text"], [contenteditable="true"], [role="textbox"]',
+        ),
+      )
+        .filter((el) => isVisible(el))
+        .sort((a, b) => getComposerText(b).trim().length - getComposerText(a).trim().length)[0];
+      if (editable) return editable;
+    }
+    return null;
+  }
+
+  async function attemptSend(composer: HTMLElement | null, replay: ReplayContext): Promise<void> {
     if (!composer) return; // no composer found -- let whatever happens, happen
 
+    refreshCapturedAttachments(composer);
     const prompt = getComposerText(composer).trim();
     if (!prompt && capturedAttachments.length === 0) return;
 
@@ -216,13 +298,13 @@ function init(site: SiteKey): void {
       // Messaging layer itself failed (e.g. service worker briefly gone).
       // Same policy as an unreachable backend: fail OPEN.
       console.warn("[aigg] sendMessage failed, failing open:", err);
-      replaySend(composer);
+      replaySend(composer, replay);
       return;
     }
 
     if (!outcome.ok) {
       showDebugFailure(outcome.message);
-      handleFailure(composer, outcome);
+      handleFailure(composer, outcome, replay);
       return;
     }
 
@@ -230,7 +312,7 @@ function init(site: SiteKey): void {
     showInspectDebug(result);
     switch (result.decision) {
       case "allow":
-        replaySend(composer);
+        replaySend(composer, replay);
         return;
 
       case "redact": {
@@ -244,7 +326,7 @@ function init(site: SiteKey): void {
         const redacted = result.redacted_prompt ?? prompt;
         removeBanner();
 
-        const wrote = await setComposerViaMainWorld(redacted);
+        const wrote = await setComposerViaMainWorld(redacted, composer);
         const settled = wrote && (await composerSettledOn(composer, redacted));
         if (!settled) {
           showBanner(composer, "deny",
@@ -257,13 +339,14 @@ function init(site: SiteKey): void {
           "redact",
           `redacted before sending (${result.data_classes.join(", ") || "sensitive data"}).`,
         );
-        replaySend(composer);
+        replaySend(composer, replay);
         removeBannerSoon("redacted before sending");
         return;
       }
 
       case "hold":
         activeLogId = result.log_id;
+        activeHoldSnapshot = { logId: result.log_id, prompt, replayMode: replay.kind };
         showBanner(composer, "hold", "held for compliance review -- waiting for approval.");
         startHoldPolling(result.log_id);
         return;
@@ -274,18 +357,22 @@ function init(site: SiteKey): void {
     }
   }
 
-  function handleFailure(composer: HTMLElement, outcome: Extract<InspectOutcome, { ok: false }>): void {
+  function handleFailure(
+    composer: HTMLElement,
+    outcome: Extract<InspectOutcome, { ok: false }>,
+    replay: ReplayContext,
+  ): void {
     switch (outcome.reason) {
       case "unreachable":
         // Fail OPEN. A gateway that bricks the composer when the backend
         // blinks does not survive a demo, and blocking here would make the
         // tool itself the bypass. Known limitation -- see extension/README.md.
-        replaySend(composer);
+        replaySend(composer, replay);
         return;
 
       case "unconfigured":
         showBanner(composer, "unconfigured", "extension not configured (unknown user) -- letting this through.");
-        replaySend(composer);
+        replaySend(composer, replay);
         return;
 
       case "unsupported_file":
@@ -297,14 +384,25 @@ function init(site: SiteKey): void {
 
   function onBackgroundMessage(message: BackgroundMessage): void {
     if (message.type !== "HOLD_RESOLVED" || message.log_id !== activeLogId) return;
+    const holdSnapshot = activeHoldSnapshot;
     activeLogId = null;
+    activeHoldSnapshot = null;
     stopHoldPolling();
 
     const composer = findComposer(site);
     if (message.status === "approved") {
+      if (holdSnapshot?.replayMode === "edit") {
+        const bannerTarget = composer ?? document.body;
+        showBanner(bannerTarget, "hold", "approved edit request -- click submit again to re-check and send.");
+        return;
+      }
       if (composer) {
+        if (!holdSnapshot || getComposerText(composer).trim() !== holdSnapshot.prompt) {
+          showBanner(composer, "hold", "approved request changed -- not sent. Click Send again to re-check.");
+          return;
+        }
         showBanner(composer, "hold", "approved -- sending now.");
-        replaySend(composer); // replays the ORIGINAL prompt: hold never touched composer contents
+        replaySend(composer, { kind: "composer", target: null }); // replays the ORIGINAL prompt: hold never touched composer contents
         removeBannerSoon("approved -- sending now.");
       }
     } else if (message.status === "denied") {
@@ -343,6 +441,44 @@ function init(site: SiteKey): void {
     holdPollTimer = null;
   }
 
+  function invalidateActiveHold(message: string): void {
+    if (!activeHoldSnapshot) return;
+    activeLogId = null;
+    activeHoldSnapshot = null;
+    stopHoldPolling();
+
+    const composer = findComposer(site);
+    if (composer) showBanner(composer, "hold", message);
+  }
+
+  function scheduleAttachmentRefreshIfRemoval(target: Element): void {
+    if (capturedAttachments.length === 0) return;
+    const action = target.closest<HTMLElement>('button, [role="button"], [aria-label], [title]');
+    if (!action) return;
+    const label = [action.getAttribute("aria-label"), action.getAttribute("title"), action.textContent]
+      .join(" ")
+      .toLowerCase();
+    if (!/\b(remove|delete|close|discard|clear|cancel)\b/.test(label)) return;
+
+    window.setTimeout(() => {
+      const composer = findComposer(site);
+      if (composer) refreshCapturedAttachments(composer);
+    }, 150);
+  }
+
+  function refreshCapturedAttachments(composer: HTMLElement): void {
+    if (capturedAttachments.length === 0) return;
+
+    const scope = findComposerShell(composer);
+    const visibleText = (scope?.innerText || document.body.innerText || "").toLowerCase();
+    const stillVisible = capturedAttachments.filter((attachment) =>
+      visibleText.includes(attachment.filename.toLowerCase()),
+    );
+
+    if (stillVisible.length === capturedAttachments.length) return;
+    capturedAttachments = stillVisible;
+  }
+
   function removeBannerSoon(expectedText: string): void {
     window.setTimeout(() => {
       const banner = document.getElementById("aigg-banner");
@@ -350,9 +486,23 @@ function init(site: SiteKey): void {
     }, 3_000);
   }
 
-  function replaySend(composer: HTMLElement): void {
+  function replaySend(composer: HTMLElement, replay: ReplayContext): void {
     isReplaying = true;
     try {
+      const liveTarget =
+        replay.target && replay.target.isConnected
+          ? replay.target
+          : replay.kind === "edit"
+            ? findEditableSubmitNear(composer)
+            : null;
+      if (liveTarget) {
+        liveTarget.click();
+        return;
+      }
+      if (replay.kind === "edit") {
+        composer.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+        return;
+      }
       const btn = findSendButton(site);
       if (btn) {
         btn.click();
@@ -364,6 +514,27 @@ function init(site: SiteKey): void {
     } finally {
       isReplaying = false;
     }
+  }
+
+  function findEditableSubmitNear(composer: HTMLElement): HTMLElement | null {
+    let node: HTMLElement | null = composer;
+    for (let depth = 0; node && depth < 8; depth += 1, node = node.parentElement) {
+      const button = Array.from(node.querySelectorAll<HTMLElement>("button"))
+        .filter((candidate) => candidate.isConnected && isVisible(candidate) && buttonLooksLikeSubmit(candidate))[0];
+      if (button) return button;
+    }
+    return null;
+  }
+
+  function findComposerShell(composer: HTMLElement): HTMLElement | null {
+    let node: HTMLElement | null = composer;
+    for (let depth = 0; node && depth < 6; depth += 1, node = node.parentElement) {
+      const text = node.innerText.toLowerCase();
+      if (capturedAttachments.some((attachment) => text.includes(attachment.filename.toLowerCase()))) {
+        return node;
+      }
+    }
+    return null;
   }
 }
 
@@ -388,6 +559,21 @@ function getComposerText(el: HTMLElement): string {
   if (el.isContentEditable) return el.innerText;
   if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) return el.value;
   return el.textContent ?? "";
+}
+
+function findEditableTarget(target: Node | null): HTMLElement | null {
+  if (!(target instanceof Element)) return null;
+  const editable = target.closest<HTMLElement>(
+    'textarea, input[type="text"], [contenteditable="true"], [role="textbox"]',
+  );
+  if (!editable || !isVisible(editable)) return null;
+  return editable;
+}
+
+function isVisible(el: HTMLElement): boolean {
+  const rect = el.getBoundingClientRect();
+  const style = window.getComputedStyle(el);
+  return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
 }
 
 /** True once the composer reads `expected` AND KEEPS reading it. A single read
@@ -415,11 +601,13 @@ async function composerSettledOn(el: HTMLElement, expected: string): Promise<boo
  * JS share nothing except the DOM and this one `window` messaging channel.
  * Resolves false if mainworld.ts never answers (e.g. it failed to find the
  * composer either) rather than hanging -- the caller must fail closed. */
-function setComposerViaMainWorld(text: string): Promise<boolean> {
+function setComposerViaMainWorld(text: string, target?: HTMLElement): Promise<boolean> {
   return new Promise((resolve) => {
     const nonce = Math.random().toString(36).slice(2);
+    target?.setAttribute("data-aigg-write-target", nonce);
     const timeout = setTimeout(() => {
       window.removeEventListener("message", onResponse);
+      target?.removeAttribute("data-aigg-write-target");
       resolve(false);
     }, 1500);
 
@@ -429,10 +617,11 @@ function setComposerViaMainWorld(text: string): Promise<boolean> {
       if (data?.__aigg !== "SET_COMPOSER_DONE" || data.nonce !== nonce) return;
       clearTimeout(timeout);
       window.removeEventListener("message", onResponse);
+      target?.removeAttribute("data-aigg-write-target");
       resolve(Boolean(data.ok));
     }
 
     window.addEventListener("message", onResponse);
-    window.postMessage({ __aigg: "SET_COMPOSER", text, nonce }, "*");
+    window.postMessage({ __aigg: "SET_COMPOSER", text, nonce, targetId: target ? nonce : undefined }, "*");
   });
 }

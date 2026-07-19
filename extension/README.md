@@ -133,7 +133,12 @@ Use a fresh or refreshed ChatGPT tab after reloading the unpacked extension.
 | API key deny | `Use this API key: sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d` | Prompt is blocked and remains in composer |
 | Salary hold | `Please review this salary: Gaji bulanan RM 8,500` | Prompt is held until approval |
 | Salary approval | Approve the latest pending hold | Extension sends the held prompt |
+| Hold edit invalidation | Trigger salary hold, edit the composer while waiting, then approve | Extension does not send; user must click Send again to re-inspect |
+| Previous-message edit deny | Edit a sent ChatGPT message to include `sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d` | Edited message is blocked before submission |
+| Previous-message edit redact | Edit a sent ChatGPT message to include `880412-08-5561` | Edited message is submitted with `[MYKAD_1]` |
+| Previous-message edit hold | Edit a sent ChatGPT message to include salary text | Request is held; approval asks the user to submit the edit again |
 | TXT attachment redaction | Upload `mykad.txt` containing `880412-08-5561` | File is replaced with `mykad.redacted.txt` before upload |
+| Attachment removal | Upload a supported attachment, remove it from the composer, then send text only | Removed attachment is not included in the inspection request |
 | PDF attachment redaction | Upload `mykad.pdf` containing `880412-08-5561` | File is replaced with `mykad.redacted.pdf` before upload |
 | DOCX attachment redaction | Upload `mykad.docx` containing `880412-08-5561` | File is replaced with `mykad.redacted.docx` before upload |
 | PPTX attachment redaction | Upload `mykad.pptx` containing `880412-08-5561` | File is replaced with `mykad.redacted.pptx` before upload |

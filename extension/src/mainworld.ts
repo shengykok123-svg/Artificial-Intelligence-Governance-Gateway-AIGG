@@ -17,6 +17,7 @@ interface SetComposerRequest {
   __aigg: "SET_COMPOSER";
   text: string;
   nonce: string;
+  targetId?: string;
 }
 
 function isSetComposerRequest(data: unknown): data is SetComposerRequest {
@@ -59,14 +60,15 @@ function writeComposer(el: HTMLElement, text: string): boolean {
 
 window.addEventListener("message", (e: MessageEvent) => {
   if (e.source !== window || !isSetComposerRequest(e.data)) return;
-  const { text, nonce } = e.data;
+  const { text, nonce, targetId } = e.data;
 
   // Re-resolve here, in this world, via the SAME candidate list content.ts
   // uses -- a DOM element reference cannot cross postMessage's structured
   // clone, and hardcoding a selector here would be exactly the duplicated
   // knowledge selectors.ts exists to prevent.
   const site = siteKeyFor(location.hostname);
-  const el = site ? findComposer(site) : null;
+  const scoped = targetId ? document.querySelector(`[data-aigg-write-target="${CSS.escape(targetId)}"]`) : null;
+  const el = (scoped as HTMLElement | null) ?? (site ? findComposer(site) : null);
   const ok = el ? writeComposer(el, text) : false;
 
   window.postMessage({ __aigg: "SET_COMPOSER_DONE", nonce, ok }, "*");

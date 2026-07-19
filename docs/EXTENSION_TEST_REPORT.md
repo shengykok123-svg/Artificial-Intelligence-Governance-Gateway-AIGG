@@ -24,6 +24,7 @@ popup, and verified against the local backend.
 | --- | --- |
 | `npm run typecheck` | Pass |
 | `npm run build` | Pass; loadable `extension/dist` generated |
+| 2026-07-19 extension edit-flow recheck | Pass; `npm run typecheck` and `npm run build` both passed |
 | Backend suite in `.venv` | 123 passed, 41 skipped |
 | Real M2 + M7 + M8 integration suite | 39 passed |
 | Real M5 extraction/redaction coverage | Included in backend suite |
@@ -37,7 +38,7 @@ popup, and verified against the local backend.
 | Deterministic redaction | `My IC is 880412-08-5561` | redact | redact; `My IC is [MYKAD_1]` |
 | Secret prevention | OpenAI API key | deny | deny |
 | Salary review | `Gaji bulanan RM 8,500` | hold | hold |
-| Semantic finance signal | `Quarterly revenue is below forecast.` | hold | hold; `DEPT_CONFIDENTIAL` |
+| Semantic internal-doc signal | internal text similar to indexed pgvector chunks | deny | deny; `DEPT_CONFIDENTIAL` |
 
 ## M5 file extraction checks
 
@@ -78,6 +79,19 @@ Evidence was captured by manual screenshots during the live ChatGPT run.
 | DOCX attachment redaction replacement | Manual screenshot + backend logs `4e29f889-4d4e-4d23-902c-0e0ae2f96957`, `d9498500-8b6c-4df1-9ceb-cf7188308dc8` | Pass. `mykad.docx` was inspected and replaced with `mykad.redacted.docx`; ChatGPT read `Employee IC [MYKAD_1] needs a reply.` and the replaced file passed the follow-up send-time inspection as `allow`. |
 | PPTX attachment redaction replacement | Manual screenshot + backend logs `23dbeffc-75ce-4d89-b474-ad9f45d5a82d`, `ae863792-f240-4702-b587-b5bd06b31bf6` | Pass. `mykad.pptx` was inspected and replaced with `mykad.redacted.pptx`; ChatGPT read `Employee IC [MYKAD_1] needs a reply.` and the replaced file passed the follow-up send-time inspection as `allow`. |
 | PDF attachment redaction replacement | Manual screenshot + backend logs `58a9ab25-b8e6-4d3f-bc06-f49f13a7d7bf`, `954de026-a486-4ef3-b197-3159c161ae9e` | Pass. `mykad.pdf` was inspected and replaced with `mykad.redacted.pdf`; ChatGPT read `Employee IC [MYKAD_1] needs a reply.` and the replaced file passed the follow-up send-time inspection as `allow`. |
+
+## Live Chrome edit-flow recheck
+
+Additional checks were run on 2026-07-19 after reloading `extension/dist` and
+refreshing the existing ChatGPT conversation tab.
+
+| Case | Evidence | Result |
+| --- | --- | --- |
+| Normal composer deny sanity check | Chrome CUA interaction + AIGG Debug panel | Pass. The fake API-key prompt was blocked with `SECRET detected (mock policy)` and remained in the composer. |
+| Previous-message edit deny | Chrome CUA interaction | Pass. Editing a sent message to contain `sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d` showed the blocked banner, kept the edit box open, and did not submit the edit. |
+| Previous-message edit redact | Chrome CUA interaction | Pass. Editing a sent message to `My IC is 880412-08-5561` submitted `My IC is [MYKAD_1]`; the edit box closed after the redacted version was sent. |
+| Previous-message edit hold approval | Chrome CUA interaction + backend log `80a3f56b-bee7-4798-bd82-5331d844120f` | Pass. Editing a sent message to salary text produced hold. After approval, the extension showed `approved edit request -- click submit again to re-check and send`, kept the edit box open, and did not auto-send a stale edit target. |
+| Attachment removal stale-state | Chrome CUA interaction + backend logs `b3fb1586-8922-42cf-9257-9fc589f34af4`, `9adc5af7-e3c1-4f70-bf54-83a8c2c95f1e` | Pass after fix. The first live attempt exposed stale state: `safe.txt` was removed from the composer but the send-time audit still recorded `filename: safe.txt`. After updating the send-time refresh to clear cached attachments when their filename is no longer visible on the page, the retest sent `hello attachment removal fixed 20260719-2242` with `filename: null`. |
 
 One UX polish landed after the acceptance run: successful sent-state banners
 (`redacted before sending` and `approved -- sending now`) now disappear after
