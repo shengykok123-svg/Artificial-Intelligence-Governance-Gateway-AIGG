@@ -216,6 +216,17 @@ def docx_bytes_with_embedded_docx(text: str) -> bytes:
     )
 
 
+def docx_bytes_with_legacy_ole_object() -> bytes:
+    source = DocxDocument()
+    source.add_paragraph("Outer document")
+    buf = io.BytesIO()
+    source.save(buf)
+    return replace_zip_parts(
+        buf.getvalue(),
+        {"word/embeddings/oleObject1.bin": b"\xd0\xcf\x11\xe0legacy ole payload"},
+    )
+
+
 def pptx_bytes_with_embedded_docx(text: str) -> bytes:
     embedded = DocxDocument()
     embedded.add_paragraph(text)
@@ -230,6 +241,18 @@ def pptx_bytes_with_embedded_docx(text: str) -> bytes:
     return replace_zip_parts(
         deck_buf.getvalue(),
         {"ppt/embeddings/embedded.docx": embedded_buf.getvalue()},
+    )
+
+
+def pptx_bytes_with_legacy_ole_object() -> bytes:
+    deck = Presentation()
+    slide = deck.slides.add_slide(deck.slide_layouts[5])
+    slide.shapes.title.text = "Outer deck"
+    buf = io.BytesIO()
+    deck.save(buf)
+    return replace_zip_parts(
+        buf.getvalue(),
+        {"ppt/embeddings/oleObject1.bin": b"\xd0\xcf\x11\xe0legacy ole payload"},
     )
 
 
@@ -446,6 +469,28 @@ def test_unsupported_file_is_415(client: TestClient) -> None:
     r = inspect(client, prompt="see attached", attachments=[
         {"filename": "x.pdf", "mime": "application/pdf",
          "content_b64": base64.b64encode(b"whatever").decode()},
+    ])
+    assert r.status_code == 415
+
+
+def test_docx_legacy_ole_embedded_object_is_415(client: TestClient) -> None:
+    r = inspect(client, prompt="see attached", attachments=[
+        {
+            "filename": "outer.docx",
+            "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "content_b64": base64.b64encode(docx_bytes_with_legacy_ole_object()).decode(),
+        },
+    ])
+    assert r.status_code == 415
+
+
+def test_pptx_legacy_ole_embedded_object_is_415(client: TestClient) -> None:
+    r = inspect(client, prompt="see attached", attachments=[
+        {
+            "filename": "outer.pptx",
+            "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "content_b64": base64.b64encode(pptx_bytes_with_legacy_ole_object()).decode(),
+        },
     ])
     assert r.status_code == 415
 

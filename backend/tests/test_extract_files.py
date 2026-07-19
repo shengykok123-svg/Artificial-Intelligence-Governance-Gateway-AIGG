@@ -209,6 +209,17 @@ def docx_bytes_with_embedded_docx(text: str) -> bytes:
     )
 
 
+def docx_bytes_with_legacy_ole_object() -> bytes:
+    source = DocxDocument()
+    source.add_paragraph("Outer document")
+    buf = io.BytesIO()
+    source.save(buf)
+    return replace_zip_parts(
+        buf.getvalue(),
+        {"word/embeddings/oleObject1.bin": b"\xd0\xcf\x11\xe0legacy ole payload"},
+    )
+
+
 def pptx_bytes_with_embedded_docx(text: str) -> bytes:
     embedded = DocxDocument()
     embedded.add_paragraph(text)
@@ -223,6 +234,18 @@ def pptx_bytes_with_embedded_docx(text: str) -> bytes:
     return replace_zip_parts(
         deck_buf.getvalue(),
         {"ppt/embeddings/embedded.docx": embedded_buf.getvalue()},
+    )
+
+
+def pptx_bytes_with_legacy_ole_object() -> bytes:
+    deck = Presentation()
+    slide = deck.slides.add_slide(deck.slide_layouts[5])
+    slide.shapes.title.text = "Outer deck"
+    buf = io.BytesIO()
+    deck.save(buf)
+    return replace_zip_parts(
+        buf.getvalue(),
+        {"ppt/embeddings/oleObject1.bin": b"\xd0\xcf\x11\xe0legacy ole payload"},
     )
 
 
@@ -312,6 +335,15 @@ def test_extract_docx_embedded_ooxml_package() -> None:
     assert "Embedded IC 880412-08-5561" in doc.text
 
 
+def test_extract_docx_rejects_legacy_ole_embedded_object() -> None:
+    with pytest.raises(UnsupportedFile, match="legacy embedded object"):
+        extract(
+            "outer.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            b64(docx_bytes_with_legacy_ole_object()),
+        )
+
+
 def test_extract_pptx_text_shapes() -> None:
     deck = Presentation()
     slide = deck.slides.add_slide(deck.slide_layouts[5])
@@ -368,6 +400,15 @@ def test_extract_pptx_embedded_ooxml_package() -> None:
     assert "Embedded IC 880412-08-5561" in doc.text
 
 
+def test_extract_pptx_rejects_legacy_ole_embedded_object() -> None:
+    with pytest.raises(UnsupportedFile, match="legacy embedded object"):
+        extract(
+            "outer.pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            b64(pptx_bytes_with_legacy_ole_object()),
+        )
+
+
 def test_extract_xlsx_shared_strings() -> None:
     doc = extract(
         "payroll.xlsx",
@@ -398,3 +439,9 @@ def test_size_limit() -> None:
     too_large = b64(b"x" * (MAX_ATTACHMENT_BYTES + 1))
     with pytest.raises(UnsupportedFile):
         extract("large.txt", "text/plain", too_large)
+
+
+def test_extract_image_reports_missing_tesseract(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TESSERACT_EXE", r"C:\missing\tesseract.exe")
+    with pytest.raises(UnsupportedFile, match="image text could not be extracted"):
+        extract("scan.png", "image/png", b64(image_bytes_with_text("Employee IC 880412-08-5561")))

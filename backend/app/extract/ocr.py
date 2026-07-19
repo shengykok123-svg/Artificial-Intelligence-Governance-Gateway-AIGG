@@ -11,7 +11,7 @@ from pathlib import Path
 import pypdfium2 as pdfium
 from PIL import Image, ImageDraw
 
-TESSERACT_EXE = os.getenv("TESSERACT_EXE", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+DEFAULT_TESSERACT_EXE = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 
 @dataclass(frozen=True)
@@ -74,14 +74,15 @@ def redact_image_bytes(raw: bytes, result: OcrResult, spans: list[tuple[int, int
 
 
 def _ocr_image(image: Image.Image) -> OcrResult:
-    if not Path(TESSERACT_EXE).exists():
-        raise RuntimeError("Tesseract executable was not found")
+    tesseract_exe = os.getenv("TESSERACT_EXE", DEFAULT_TESSERACT_EXE)
+    if not Path(tesseract_exe).exists():
+        raise RuntimeError(f"Tesseract executable was not found at {tesseract_exe!r}")
 
     with tempfile.TemporaryDirectory() as tmp:
         image_path = Path(tmp) / "input.png"
         image.save(image_path)
         proc = subprocess.run(
-            [TESSERACT_EXE, str(image_path), "stdout", "--psm", "6", "tsv"],
+            [tesseract_exe, str(image_path), "stdout", "--psm", "6", "tsv"],
             check=True,
             capture_output=True,
             text=True,
@@ -115,4 +116,4 @@ def _overlaps_any(start: int, end: int, spans: list[tuple[int, int]]) -> bool:
     return any(start < span_end and span_start < end for span_start, span_end in spans)
 
 
-__all__ = ["OcrResult", "OcrWord", "ocr_image_bytes", "ocr_pdf_bytes", "redact_image_bytes"]
+__all__ = ["DEFAULT_TESSERACT_EXE", "OcrResult", "OcrWord", "ocr_image_bytes", "ocr_pdf_bytes", "redact_image_bytes"]

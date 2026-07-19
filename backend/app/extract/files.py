@@ -19,6 +19,7 @@ from pptx import Presentation
 
 from app.detect.base import Document
 from app.extract.docx_ooxml import extract_docx_ooxml_text
+from app.extract.embedded import has_unsupported_embedded_objects
 from app.extract.ocr import ocr_image_bytes, ocr_pdf_bytes
 from app.extract.pptx_ooxml import extract_pptx_ooxml_text
 from app.extract.xlsx import extract_xlsx_text
@@ -104,6 +105,9 @@ def _extract_image(raw: bytes) -> str:
 
 
 def _extract_docx(raw: bytes) -> str:
+    if has_unsupported_embedded_objects(raw, "word/embeddings/"):
+        raise UnsupportedFile("DOCX contains a legacy embedded object that cannot be inspected")
+
     try:
         doc = DocxDocument(io.BytesIO(raw))
     except Exception as exc:
@@ -148,6 +152,9 @@ def _iter_docx_story_containers(doc: Any) -> list[Any]:
 
 
 def _extract_pptx(raw: bytes) -> str:
+    if has_unsupported_embedded_objects(raw, "ppt/embeddings/"):
+        raise UnsupportedFile("PPTX contains a legacy embedded object that cannot be inspected")
+
     try:
         deck = Presentation(io.BytesIO(raw))
     except Exception as exc:

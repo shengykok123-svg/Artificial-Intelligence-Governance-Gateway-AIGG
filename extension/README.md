@@ -62,6 +62,8 @@ M2, M5, M7 and M8 are real. M3 remains mocked by design:
 - PPTX extraction/redaction includes slide text, speaker notes and comments.
 - DOCX/PPTX embedded OOXML packages are recursively checked when stored as
   `.docx`, `.pptx` or `.xlsx` zip packages.
+- Legacy OLE embedded objects such as `oleObject*.bin` fail closed with
+  unsupported-file handling because their contents cannot be inspected locally yet.
 - Image and scanned-PDF OCR requires a local Tesseract binary.
 - M7 tokenises redacted spans into encrypted reversible vault mappings.
 - M8 classifies department/confidential semantic signals with local embeddings.

@@ -30,6 +30,18 @@ def iter_embedded_ooxml_packages(raw: bytes, prefix: str) -> list[EmbeddedPackag
     return packages
 
 
+def has_unsupported_embedded_objects(raw: bytes, prefix: str) -> bool:
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        for name in archive.namelist():
+            if not name.startswith(prefix):
+                continue
+            embedded = archive.read(name)
+            if embedded.startswith(b"PK") and _embedded_mime_for(name) is not None:
+                continue
+            return True
+    return False
+
+
 def replace_embedded_packages(raw: bytes, replacements: Mapping[str, bytes]) -> bytes:
     output = io.BytesIO()
     with zipfile.ZipFile(io.BytesIO(raw)) as source, zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as dest:
@@ -55,4 +67,9 @@ def _embedded_mime_for(name: str) -> str | None:
     return None
 
 
-__all__ = ["EmbeddedPackage", "iter_embedded_ooxml_packages", "replace_embedded_packages"]
+__all__ = [
+    "EmbeddedPackage",
+    "has_unsupported_embedded_objects",
+    "iter_embedded_ooxml_packages",
+    "replace_embedded_packages",
+]
