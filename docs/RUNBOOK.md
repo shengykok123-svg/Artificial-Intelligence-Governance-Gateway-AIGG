@@ -39,7 +39,7 @@ team repo:
 
 | Area | What changed |
 | --- | --- |
-| File extraction/redaction | TXT, CSV, DOCX, PPTX, PDF, XLSX, PNG/JPEG attachments can be inspected. Redactable files can be replaced with redacted copies before upload. |
+| File extraction/redaction | `origin/main` already had the real M5 extractor for core attachment text extraction. Luis's branch extends coverage and wires redaction replacement so supported files can be replaced with redacted copies before upload. |
 | Extension live behavior | Normal composer send, previous-message edit, hold approval, banner behavior, and attachment-removal stale state were hardened. |
 | M8 pgvector | M8 now uses PostgreSQL + pgvector internal-document chunks instead of a separate vector database service. |
 | Dashboard | `Policy & tools` can upload internal documents into the M8 corpus. |
@@ -53,8 +53,8 @@ Read this section first if your local understanding is based on the old
 
 | Topic | What `main` looked like | What this branch expects |
 | --- | --- | --- |
-| M5 file extractor | M5 was still mocked or limited. | M5 is real for TXT, CSV, DOCX, PPTX, PDF, XLSX, PNG/JPEG OCR extraction. |
-| File redaction | Mainly prompt/text redaction. | The extension can replace supported uploaded files with backend-returned redacted copies. |
+| M5 file extractor | `origin/main` already has real M5 extraction for PDF, DOCX, PPTX, CSV and TXT. | This branch keeps that foundation and extends extraction coverage to XLSX, OCR, hidden Office text, and embedded OOXML checks. |
+| File redaction | Extraction could detect attachment text, but uploaded files were not fully replaced as redacted copies across formats. | The extension can replace supported uploaded files with backend-returned redacted copies. |
 | M8 runtime | Local embedding/classifier style, no strict pgvector requirement. | M8 uses PostgreSQL + pgvector internal-document chunks. |
 | Mock modules | Health could show `M3, M5`. | Health should show only `M3`. |
 | Salary policy | Salary was previously used as a hold/approval demo. | Salary now denies. Use M8 `DEPT_CONFIDENTIAL` for hold tests. |
@@ -67,12 +67,12 @@ The biggest practical change is this:
 ```text
 Old mental model:
 Salary -> hold
-M5 mocked
+M5 extraction exists, but file replacement redaction is not the main story
 M8 mostly local semantic demo
 
 Current branch:
 Salary -> deny
-M5 real file extraction/redaction
+M5 extraction foundation kept, file redaction replacement added on top
 M8 -> PostgreSQL + pgvector internal-doc similarity
 M8 confidential -> hold
 ```
@@ -111,7 +111,8 @@ Why:
 
 Luis's branch focuses on:
 
-- file extraction/redaction replacement
+- extending teammate M5 extraction coverage where needed for redaction
+- file redaction replacement across supported attachment types
 - extension acceptance behavior
 - previous-message edit interception
 - attachment removal stale-state fix

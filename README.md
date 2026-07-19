@@ -207,5 +207,7 @@ and indexes uploaded files into that same table.
 - `backend/docs/M9_ANNOTATION_GUIDE_ZH.md` — 中文版 M9 标注规则与训练流程
 - `docs/M8_PGVECTOR_INTERNAL_DOCS.md` — M8 PostgreSQL + pgvector setup,
   dashboard upload path, and current limitations
+- `docs/LUIS_HANDOVER_SUMMARY.md` — short teammate-facing summary of what
+  Luis added on top of `origin/main`
 - `docs/RUNBOOK.md` — step-by-step local setup, run, acceptance, and takeover
   checklist for backend, dashboard, extension, and M8 pgvector
