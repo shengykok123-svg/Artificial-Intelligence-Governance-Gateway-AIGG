@@ -9,6 +9,14 @@ Why Tesseract is the default now:
   `C:\Program Files\Tesseract-OCR\tesseract.exe`.
 - It avoids adding a large PyTorch-based OCR stack to the demo path.
 
+Current preprocessing before Tesseract:
+
+- Apply EXIF orientation correction.
+- Try the original RGB image, an autocontrasted grayscale image, and a
+  thresholded black/white image.
+- Run Tesseract with page segmentation modes `6`, `11` and `12`.
+- Pick the candidate with the strongest confidence/text score.
+
 Configuration:
 
 ```powershell

@@ -27,6 +27,16 @@ def image_bytes_with_text(text: str) -> bytes:
     return buf.getvalue()
 
 
+def low_contrast_image_bytes_with_text(text: str) -> bytes:
+    image = Image.new("RGB", (1200, 220), (232, 232, 232))
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.truetype(r"C:\Windows\Fonts\arial.ttf", 46)
+    draw.text((32, 76), text, fill=(95, 95, 95), font=font)
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def scanned_pdf_bytes_with_text(text: str) -> bytes:
     image = Image.open(io.BytesIO(image_bytes_with_text(text)))
     buf = io.BytesIO()
@@ -263,6 +273,11 @@ def test_extract_csv_as_utf8_text() -> None:
 
 def test_extract_image_ocr() -> None:
     doc = extract("scan.png", "image/png", b64(image_bytes_with_text("Employee IC 880412-08-5561")))
+    assert "880412-08-5561" in doc.text
+
+
+def test_extract_low_contrast_image_ocr() -> None:
+    doc = extract("scan.png", "image/png", b64(low_contrast_image_bytes_with_text("Employee IC 880412-08-5561")))
     assert "880412-08-5561" in doc.text
 
 

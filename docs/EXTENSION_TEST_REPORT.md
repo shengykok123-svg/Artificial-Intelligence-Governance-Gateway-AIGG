@@ -24,7 +24,7 @@ popup, and verified against the local backend.
 | --- | --- |
 | `npm run typecheck` | Pass |
 | `npm run build` | Pass; loadable `extension/dist` generated |
-| Backend suite in `.venv` | 122 passed, 41 skipped |
+| Backend suite in `.venv` | 123 passed, 41 skipped |
 | Real M2 + M7 + M8 integration suite | 39 passed |
 | Real M5 extraction/redaction coverage | Included in backend suite |
 
@@ -88,7 +88,9 @@ Current file-redaction replacement support covers TXT, CSV, PDF, DOCX, PPTX,
 XLSX and PNG/JPEG images. The generated PDF redaction copy is intentionally a
 new text-only PDF containing the tokenised text, so the original PDF objects
 are not carried forward into the replacement file. Image redaction produces a
-PNG copy with OCR-detected sensitive word boxes blacked out.
+PNG copy with OCR-detected sensitive word boxes blacked out. OCR preprocessing
+tries original, grayscale-enhanced and thresholded image variants across
+multiple Tesseract page segmentation modes.
 
 Known remaining file limitations: legacy OLE embedded objects are fail-closed
 instead of parsed, and OCR quality depends on the installed local Tesseract
