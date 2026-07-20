@@ -1,8 +1,12 @@
 # M3 — real decision engine landed (session summary)
 
-This session executed `M3_prompt_codex.md` end to end. `MOCK_MODULES` is now
-empty, `mock_decide` is deleted, and the whole system runs with zero mocks
-(M9 DeBERTa stays opt-in via `SEMANTIC_DETECTOR=m9_deberta`).
+This session executed `M3_prompt_codex.md` end to end, then fixed two bugs
+found while dogfooding the purpose picker live. `MOCK_MODULES` is now empty,
+`mock_decide` is deleted, and the whole system runs with zero mocks (M9
+DeBERTa stays opt-in via `SEMANTIC_DETECTOR=m9_deberta`).
+
+Landed on branch **`codex/m3-decision-engine`** (pushed to `origin`), off
+`codex/integrate-redaction-origin-main`.
 
 ## What changed
 
@@ -59,6 +63,38 @@ cases exercise a non-`GENERAL` context, so it doesn't change any of their
 outcomes — and it's covered by its own test
 (`test_require_purpose_drops_once_a_purpose_is_attested`).
 
+## Two bugs found and fixed after landing
+
+Both surfaced only once a human actually used the purpose picker in a live
+tab — the picker's defining trait is that it waits on a *person*, which is a
+much longer and less predictable delay than anything the original design
+accounted for (a network round-trip).
+
+**1. Picker flickered while choosing a purpose.** `showPurposePicker` inserted
+its banner as a sibling of the composer, inside the DOM region ChatGPT/Gemini
+re-render on nearly every keystroke or focus change. Their virtual DOM
+doesn't know about our injected node, so it kept getting fought over on
+every re-render. Fix: the picker is now `position: fixed`, appended to
+`document.body`, and positioned near the composer's bounding rect instead of
+living inside its subtree. Also added `isInsideBanner()` guards in
+`content.ts`'s page-wide capture-phase listeners (`onClickCapture`,
+`onKeydownCapture`) so they never mistake the picker's own free-text input
+or Continue button for a real composer edit or submit button.
+
+**2. Sending failed after choosing a purpose, when a file was attached.**
+`attemptSend` and `preprocessFilesBeforeUpload` captured the composer /
+file-input DOM reference *before* awaiting the picker, then reused that same
+reference afterward to write the redacted text and verify it landed.
+Attaching a file is exactly the kind of action that gets these SPAs to
+replace that DOM node, so by the time the picker resolved the reference was
+often stale. The write itself (done in `mainworld.ts`) already had a
+same-page fallback and usually succeeded on a freshly-found element — but
+the isolated-world settle-check kept reading the old, now-detached node, saw
+no change, and failed closed: *"Redaction could not be applied in place.
+Nothing was sent."* Fix: both functions now re-resolve `findComposer(site)` /
+`findFileInput(site)` fresh immediately after the picker resolves, before
+touching the DOM.
+
 ## Files touched
 
 ```
@@ -78,8 +114,12 @@ backend/tests/test_main.py         two-pass + timeout-downgrade integration
 backend/tests/{conftest,test_mocks,test_repos}.py   updated for new fields
 extension/src/types.ts             IF-1/2/3 purpose + require_purpose fields
 extension/src/background.ts        purpose passthrough, timeout redirect
-extension/src/content.ts           two-pass flow, session purpose memory
-extension/src/banner.ts            purpose-picker banner (no window.prompt)
+extension/src/content.ts           two-pass flow, session purpose memory,
+                                    banner-aware listener guards, fresh
+                                    composer/input lookups after the picker
+extension/src/banner.ts            purpose-picker banner (no window.prompt),
+                                    fixed-positioned in document.body,
+                                    isInsideBanner() helper
 dashboard/src/screens/AuditLog.tsx Purpose column + detail view
 dashboard/src/api/types.ts         AuditRecord.purpose
 .env.example                       MOCK_MODULES= (empty), HOLD_TIMEOUT_SECONDS=600
@@ -92,8 +132,13 @@ README.md                          demo-string table, module status, layout
   pre-existing environment gap (no local Tesseract binary), confirmed
   identical on unmodified `main` via `git stash`, unrelated to this work.
 - `dashboard`: `tsc --noEmit` clean, 10/10 vitest passing.
-- `extension`: `tsc --noEmit` and `vite build` clean.
+- `extension`: `tsc --noEmit` and `vite build` clean, both before and after
+  the two follow-up bug fixes.
 - `ENV=demo REPO_BACKEND=memory` boots; `GET /v1/health` → `"mocked": []`.
+- The two extension bugs above were found and diagnosed from live browser
+  use (not automated tests — this repo has no browser-level DOM/interaction
+  test coverage for the extension), then fixed and confirmed only via
+  typecheck/build; re-verify live in Chrome before treating them as closed.
 
 ## Not done / carried forward
 
