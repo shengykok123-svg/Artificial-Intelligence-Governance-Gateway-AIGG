@@ -762,12 +762,17 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
     map_id: str | None = None
     prompt_text_for_audit = req.prompt
 
-    # Hold: prepare the redaction eagerly, exactly like the redact path,
-    # so the lazy timeout downgrade in GET /v1/inspect/{log_id} never has
-    # to run M7 itself. Nothing is exposed to the caller yet -- decision
-    # stays "hold" and computed_redacted_prompt/attachments are withheld
-    # from the response below.
-    if verdict.decision in ("redact", "hold"):
+    # Hold and deny: prepare the redaction eagerly too, not just for redact.
+    # Hold needs it so the lazy timeout downgrade in GET /v1/inspect/{log_id}
+    # never has to run M7 itself. Deny needs it because SD-1 promises the
+    # audit row never holds the raw original -- a denied request still gets
+    # logged, and whatever M2 found (a credential, a MyKad number) must be
+    # masked there even though the request itself is blocked outright and
+    # nothing is ever released to the caller. Nothing is exposed to the
+    # caller yet on either path -- decision stays hold/deny and
+    # computed_redacted_prompt/attachments are withheld from the response
+    # below regardless.
+    if verdict.decision in ("redact", "hold", "deny"):
         computed_redacted_attachments: list[RedactedAttachment] = []
         tokeniser = get_tokeniser(repos.vault)
         # classification.spans (and therefore verdict.spans_to_redact) can
@@ -985,6 +990,14 @@ def get_inspect_status(log_id: str, repos: Repos = Depends(get_repos)) -> dict:
             log_id, approve=True, reviewer=DASHBOARD_ADMIN,
             remark="auto: hold timeout -> redact",
         )
+
+    # rec.prompt_text always holds the PREPARED redaction (see inspect()),
+    # whether this hold was released by a human reviewer approving it in the
+    # dashboard or by the lazy timeout above -- a regex-caught credential or
+    # PII span is masked either way; a reviewer approving the DEPT_CONFIDENTIAL
+    # judgement was never asked to also bless an unrelated leaked secret.
+    # Only "approved" ever has something to forward; "pending"/"denied" don't.
+    if rec.status == "approved":
         return {
             "decision": rec.decision,
             "status": rec.status,

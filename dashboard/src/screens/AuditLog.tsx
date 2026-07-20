@@ -51,8 +51,12 @@ function detectorLabel(department: string | null, confidence: number): string {
 // different sentences -- both are shown so a reviewer can see WHOSE content
 // this is attributed to versus HOW confident M9 is that it's confidential at
 // all. M8 has no second axis: its one score already serves both roles.
-function m9Label(department: string | null, confidence: number, sensitivityConfidence: number): string {
-  return `${detectorLabel(department, confidence)} · confidential ${sensitivityConfidence.toFixed(2)}`;
+function m9Label(department: string | null, confidence: number, sensitivityConfidence: number | undefined): string {
+  // sensitivityConfidence can be missing on rows served by a backend that
+  // predates m9_sensitivity_confidence (an old audit row, a stale process) --
+  // degrade the label rather than crash the whole screen.
+  const severity = sensitivityConfidence === undefined ? "—" : sensitivityConfidence.toFixed(2);
+  return `${detectorLabel(department, confidence)} · confidential ${severity}`;
 }
 
 function ContentDepartmentCell({ row }: { row: AuditRecord }) {

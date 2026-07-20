@@ -527,11 +527,9 @@ def test_hold_approve_unblock_loop(
 ) -> None:
     seed_internal_doc_for_m8_hold(client, monkeypatch)
 
-    r = inspect(
-        client, user_id="wei.eng@acme.my",
-        prompt="Please summarize the HR confidential termination plan "
-               "for employee grievance cases.",
-    )
+    prompt_text = ("Please summarize the HR confidential termination plan "
+                   "for employee grievance cases.")
+    r = inspect(client, user_id="wei.eng@acme.my", prompt=prompt_text)
     body = r.json()
     log_id = body["log_id"]
     assert body["decision"] == "hold"
@@ -549,8 +547,11 @@ def test_hold_approve_unblock_loop(
     assert dec.json()["status"] == "approved"
     assert dec.json()["decision"] == "hold"   # the verdict is a historical fact
 
+    # A human-reviewed approval now returns the prepared redaction too, same
+    # as the lazy timeout downgrade -- this prompt has no M2 span, so nothing
+    # needed masking and redacted_prompt equals the original verbatim.
     unblocked = client.get(f"/v1/inspect/{log_id}", headers=HEADERS).json()
-    assert unblocked == {"decision": "hold", "status": "approved"}
+    assert unblocked == {"decision": "hold", "status": "approved", "redacted_prompt": prompt_text}
 
 
 def test_hold_deny_review_sets_status_denied(

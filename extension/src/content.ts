@@ -518,9 +518,12 @@ function init(site: SiteKey): void {
           return;
         }
 
-        // Lazy hold-timeout downgrade: the server prepared a redaction and
-        // wants it applied before sending. A genuine human-reviewed approval
-        // carries no redacted_prompt and replays the ORIGINAL, unchanged.
+        // The server always returns its prepared redaction on "approved" --
+        // whether a human reviewer approved it in the dashboard or the lazy
+        // hold-timeout downgrade released it unattended (see GET
+        // /v1/inspect/{log_id}). Apply it whenever it actually differs from
+        // what's in the composer; if nothing needed masking, redactedPrompt
+        // equals the original and this is a no-op either way.
         const redactedPrompt = message.redacted_prompt;
         if (redactedPrompt != null && redactedPrompt !== holdSnapshot.prompt) {
           void (async () => {
@@ -528,18 +531,18 @@ function init(site: SiteKey): void {
             const settled = wrote && (await composerSettledOn(composer, redactedPrompt));
             if (!settled) {
               showBanner(composer, "redaction_failed",
-                "The review timed out, but its prepared redaction could not be applied safely.");
+                "The review approved this request, but its prepared redaction could not be applied safely.");
               return;
             }
-            showBanner(composer, "redact", "Review timed out. The prepared protected version is being sent instead.");
+            showBanner(composer, "redact", "Approved. The protected version is being sent.");
             replaySend(composer, { kind: "composer", target: null });
-            removeBannerSoon("sending the prepared redaction now.");
+            removeBannerSoon("sending the approved version now.");
           })();
           return;
         }
 
         showBanner(composer, "approved", "Compliance review approved this request.");
-        replaySend(composer, { kind: "composer", target: null }); // replays the ORIGINAL prompt: hold never touched composer contents
+        replaySend(composer, { kind: "composer", target: null });
         removeBannerSoon("approved -- sending now.");
       }
     } else if (message.status === "denied") {

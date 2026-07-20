@@ -1,9 +1,10 @@
 // M6  Router + hardcoded admin login. Do NOT build real auth.
 
 import { useState } from "react";
-import { NavLink, Navigate, Route, HashRouter, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, HashRouter, Routes, useLocation } from "react-router-dom";
 
 import { useHealthQuery } from "./api/queries";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import ApprovalQueue from "./screens/ApprovalQueue";
 import AuditLog from "./screens/AuditLog";
 import Overview from "./screens/Overview";
@@ -90,6 +91,7 @@ const NAV_ITEMS = [
 ];
 
 function Shell() {
+  const location = useLocation();
   return (
     <div className="flex min-h-screen flex-col">
       <header className="border-b border-gray-200 bg-white">
@@ -115,13 +117,18 @@ function Shell() {
       </header>
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
-        <Routes>
-          <Route path="/" element={<AuditLog />} />
-          <Route path="/approvals" element={<ApprovalQueue />} />
-          <Route path="/overview" element={<Overview />} />
-          <Route path="/policy" element={<PolicyAndTools />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        {/* Keyed by path so a crash on one screen doesn't keep showing after
+            navigating away -- React remounts the boundary, resetting its
+            caught-error state, whenever the route changes. */}
+        <ErrorBoundary key={location.pathname}>
+          <Routes>
+            <Route path="/" element={<AuditLog />} />
+            <Route path="/approvals" element={<ApprovalQueue />} />
+            <Route path="/overview" element={<Overview />} />
+            <Route path="/policy" element={<PolicyAndTools />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </ErrorBoundary>
       </main>
 
       <footer className="border-t border-gray-200 bg-white px-4 py-2">
