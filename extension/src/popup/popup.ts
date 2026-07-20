@@ -85,10 +85,10 @@ function setHealth(ok: boolean, title: string, note: string): void {
   health.classList.toggle("error", !ok);
   el<HTMLDivElement>("healthTitle").textContent = title;
   el<HTMLDivElement>("healthNote").textContent = note;
-  el<HTMLSpanElement>("connectionText").textContent = ok ? "Connected" : "Disconnected";
+  el<HTMLSpanElement>("connectionText").textContent = ok ? "Reachable" : "Needs attention";
 }
 
-async function checkHealth(baseUrl: string, apiKey: string): Promise<void> {
+async function checkHealth(baseUrl: string, apiKey: string, last?: StoredConfig["lastVerdict"]): Promise<void> {
   try {
     const started = performance.now();
     const res = await fetch(`${normalizedBaseUrl(baseUrl)}/v1/health`, { headers: { "X-Api-Key": apiKey } });
@@ -96,7 +96,13 @@ async function checkHealth(baseUrl: string, apiKey: string): Promise<void> {
     const body = (await res.json()) as HealthResponse;
     const latency = Math.round(performance.now() - started);
     const mocked = body.mocked ?? [];
-    setHealth(true, "Gateway connected", mocked.length ? `Connected in ${latency}ms · mock: ${mocked.join(", ")}` : `All configured services operational · ${latency}ms`);
+    // /v1/health proves only that the API process is reachable. It cannot
+    // prove that model loading, M3, or POST /v1/inspect succeeds.
+    if (last?.decision === "error") {
+      setHealth(false, "Gateway reachable — inspection error", last.reason);
+    } else {
+      setHealth(true, "Gateway reachable", mocked.length ? `Health endpoint responded in ${latency}ms · mock: ${mocked.join(", ")}` : `Health endpoint responded in ${latency}ms`);
+    }
     renderModules(body);
   } catch {
     setHealth(false, "Gateway unavailable", "The current MVP fails open when the local gateway cannot be reached.");
@@ -116,7 +122,7 @@ async function load(): Promise<void> {
   el<HTMLSpanElement>("configuredUser").textContent = userId;
   setLinks(baseUrl);
   renderLastDecision(stored.lastVerdict);
-  void checkHealth(baseUrl, apiKey);
+  void checkHealth(baseUrl, apiKey, stored.lastVerdict);
 }
 
 el<HTMLButtonElement>("save").addEventListener("click", () => {
@@ -134,7 +140,11 @@ el<HTMLButtonElement>("save").addEventListener("click", () => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes.lastVerdict) renderLastDecision(changes.lastVerdict.newValue as StoredConfig["lastVerdict"]);
+  if (area === "local" && changes.lastVerdict) {
+    const last = changes.lastVerdict.newValue as StoredConfig["lastVerdict"];
+    renderLastDecision(last);
+    if (last?.decision === "error") setHealth(false, "Gateway reachable — inspection error", last.reason);
+  }
 });
 
 void load();
