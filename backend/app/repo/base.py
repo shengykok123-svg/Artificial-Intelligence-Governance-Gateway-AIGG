@@ -51,7 +51,8 @@ class AuditRecord:
     m8_department: str | None = None       # raw EmbedDetector.classify() output
     m8_confidence: float = 0.0
     m9_department: str | None = None       # raw DebertaDetector.classify() output
-    m9_confidence: float = 0.0
+    m9_confidence: float = 0.0             # department-attribution axis only
+    m9_sensitivity_confidence: float = 0.0 # confidentiality-severity axis; no M8 equivalent
     cross_department_confidence: float | None = None
     # max(m8_confidence, m9_confidence), set only when the fused
     # content_department is known and differs from user_department.

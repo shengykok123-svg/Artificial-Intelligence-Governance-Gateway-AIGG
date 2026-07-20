@@ -46,6 +46,15 @@ function detectorLabel(department: string | null, confidence: number): string {
   return department === null ? "—" : `${department} (${confidence.toFixed(2)})`;
 }
 
+// M11: M9's department axis and confidentiality-severity axis are judged
+// independently (see backend/app/detect/deberta.py) and can point at
+// different sentences -- both are shown so a reviewer can see WHOSE content
+// this is attributed to versus HOW confident M9 is that it's confidential at
+// all. M8 has no second axis: its one score already serves both roles.
+function m9Label(department: string | null, confidence: number, sensitivityConfidence: number): string {
+  return `${detectorLabel(department, confidence)} · confidential ${sensitivityConfidence.toFixed(2)}`;
+}
+
 function ContentDepartmentCell({ row }: { row: AuditRecord }) {
   if (row.content_department === null) {
     return <span className="text-gray-400">—</span>;
@@ -196,7 +205,7 @@ export default function AuditLog() {
                         {detectorLabel(row.m8_department, row.m8_confidence)}
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500">
-                        {detectorLabel(row.m9_department, row.m9_confidence)}
+                        {m9Label(row.m9_department, row.m9_confidence, row.m9_sensitivity_confidence)}
                       </td>
                       <td className="px-4 py-3 text-gray-600">{row.purpose}</td>
                       <td className="px-4 py-3">

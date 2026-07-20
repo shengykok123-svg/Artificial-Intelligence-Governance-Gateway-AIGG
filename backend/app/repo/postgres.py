@@ -69,6 +69,7 @@ def _audit_to_dto(row: AuditLog) -> AuditRecord:
         m8_confidence=row.m8_confidence,
         m9_department=row.m9_department,
         m9_confidence=row.m9_confidence,
+        m9_sensitivity_confidence=row.m9_sensitivity_confidence,
         cross_department_confidence=row.cross_department_confidence,
     )
 
@@ -96,6 +97,7 @@ def _audit_from_dto(rec: AuditRecord) -> AuditLog:
         m8_confidence=rec.m8_confidence,
         m9_department=rec.m9_department,
         m9_confidence=rec.m9_confidence,
+        m9_sensitivity_confidence=rec.m9_sensitivity_confidence,
         cross_department_confidence=rec.cross_department_confidence,
         retention_until=None,  # SD-5: no purge job in the MVP.
     )

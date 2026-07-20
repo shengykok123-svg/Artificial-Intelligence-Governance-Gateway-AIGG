@@ -709,17 +709,20 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
     # detector SEMANTIC_DETECTOR says is actually running.
     classify_debug = getattr(embed_detector, "classify_debug", None)
     if classify_debug is not None:
-        (content_department, department_confidence), m8_raw, m9_raw = classify_debug(classify_doc)
+        (content_department, department_confidence), m8_raw, m9_raw, m9_sensitivity_confidence = classify_debug(classify_doc)
         m8_department, m8_confidence = m8_raw
         m9_department, m9_confidence = m9_raw
     else:
         content_department, department_confidence = embed_detector.classify(classify_doc)
+        classify_sensitivity = getattr(embed_detector, "classify_sensitivity", None)
         if SEMANTIC_DETECTOR == "m9_deberta":
             m8_department, m8_confidence = None, 0.0
             m9_department, m9_confidence = content_department, department_confidence
+            m9_sensitivity_confidence = classify_sensitivity(classify_doc) if classify_sensitivity is not None else 0.0
         else:
             m8_department, m8_confidence = content_department, department_confidence
             m9_department, m9_confidence = None, 0.0
+            m9_sensitivity_confidence = 0.0
 
     cross_department_confidence: float | None = None
     if content_department is not None and content_department != user.department:
@@ -932,6 +935,7 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         m8_confidence=m8_confidence,
         m9_department=m9_department,
         m9_confidence=m9_confidence,
+        m9_sensitivity_confidence=m9_sensitivity_confidence,
         cross_department_confidence=cross_department_confidence,
     ))
 
@@ -949,6 +953,7 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         m8_confidence=m8_confidence,
         m9_department=m9_department,
         m9_confidence=m9_confidence,
+        m9_sensitivity_confidence=m9_sensitivity_confidence,
         debug=InspectDebug(
             policy_layer="M3",
             semantic_detector=SEMANTIC_DETECTOR,

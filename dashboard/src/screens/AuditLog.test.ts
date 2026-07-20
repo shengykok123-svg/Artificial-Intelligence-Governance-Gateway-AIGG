@@ -31,6 +31,7 @@ function rec(overrides: Partial<AuditRecord> = {}): AuditRecord {
     m8_confidence: 0,
     m9_department: null,
     m9_confidence: 0,
+    m9_sensitivity_confidence: 0,
     cross_department_confidence: null,
     ...overrides,
   };

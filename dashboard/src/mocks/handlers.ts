@@ -70,6 +70,7 @@ function row(partial: Partial<AuditRecord> & Pick<AuditRecord, "decision">): Aud
     m8_confidence: 0,
     m9_department: null,
     m9_confidence: 0,
+    m9_sensitivity_confidence: 0,
     cross_department_confidence: null,
     ...partial,
   };

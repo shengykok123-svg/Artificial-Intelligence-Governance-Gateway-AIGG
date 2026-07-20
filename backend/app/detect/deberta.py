@@ -1,8 +1,13 @@
 """Optional M9 two-head DeBERTa semantic detector.
 
-The frozen contracts stay untouched. A sentence becomes a `DEPT_CONFIDENTIAL`
-span only when the sensitivity head says confidential and the department head
-identifies its responsible department.
+The two heads answer two independent questions and are never blended into
+one number: the sensitivity head says how confident M9 is that a sentence is
+confidential (the severity axis -- this is what drives the DEPT_CONFIDENTIAL
+span confidence and, downstream, the allow/hold/deny tier); the department
+head says how confident M9 is about whose content it is (used only for
+department attribution and cross-department escalation). A sentence with a
+low department_confidence but a high sensitivity_confidence is still exactly
+as severe -- it just cannot be pinned to a specific department.
 """
 from __future__ import annotations
 
@@ -26,19 +31,8 @@ class SentencePrediction:
     is_confidential: bool
     sensitivity_confidence: float
 
-    @property
-    def joint_confidence(self) -> float:
-        return min(self.department_confidence, self.sensitivity_confidence)
-
 
 SentencePredictor = Callable[[str], SentencePrediction]
-
-
-def _read_threshold(value: str | None) -> float:
-    threshold = float(value or "0.65")
-    if not 0.0 < threshold < 1.0:
-        raise ValueError("M9_CONFIDENCE_THRESHOLD must be between 0 and 1.")
-    return threshold
 
 
 class DebertaDetector:
@@ -47,16 +41,12 @@ class DebertaDetector:
     def __init__(
         self,
         model_path: Path | None = None,
-        threshold: float | None = None,
         predictor: SentencePredictor | None = None,
         tokenizer: Any | None = None,
         model: Any | None = None,
         torch_module: Any | None = None,
         device: Any | None = None,
     ) -> None:
-        self.threshold = threshold if threshold is not None else _read_threshold(os.getenv("M9_CONFIDENCE_THRESHOLD"))
-        if not 0.0 < self.threshold < 1.0:
-            raise ValueError("M9 confidence threshold must be between 0 and 1.")
         self.model_path = model_path or Path(
             os.getenv("M9_MODEL_DIR", str(Path(__file__).resolve().parents[2] / "artifacts" / "deberta-m9-detector"))
         )
@@ -140,38 +130,45 @@ class DebertaDetector:
             )
         return prediction
 
-    def _is_confident_confidential(self, prediction: SentencePrediction) -> bool:
-        return (
-            prediction.is_confidential
-            and prediction.department != "other"
-            and prediction.joint_confidence >= self.threshold
-        )
-
     def classify(self, doc: Document) -> tuple[str | None, float]:
-        """Return the department of the highest joint-confidence sentence,
-        with no confidentiality or threshold gate -- unlike detect(), which
-        only emits a span once a sentence clears _is_confident_confidential(),
-        classify() always reports M9's raw top opinion so the score is
-        visible even when it never clears that bar."""
+        """Department-attribution axis only: the department of the sentence
+        M9 is most confident about, by department_confidence alone -- no
+        confidentiality or threshold gate, so the score is always visible.
+        See classify_sensitivity() for the orthogonal severity axis."""
         best_label: str | None = None
         best_confidence = 0.0
         for _start, _end, sentence in self._sentences(doc.text):
             prediction = self._predict(sentence)
-            if prediction.joint_confidence > best_confidence:
-                best_label, best_confidence = prediction.department, prediction.joint_confidence
+            if prediction.department_confidence > best_confidence:
+                best_label, best_confidence = prediction.department, prediction.department_confidence
         return best_label, best_confidence
 
+    def classify_sensitivity(self, doc: Document) -> float:
+        """Confidentiality-severity axis only: the highest sensitivity-head
+        confidence among sentences predicted confidential, independent of
+        how confident (or which) department the content was attributed to.
+        0.0 when no sentence is predicted confidential."""
+        best = 0.0
+        for _start, _end, sentence in self._sentences(doc.text):
+            prediction = self._predict(sentence)
+            if prediction.is_confidential and prediction.sensitivity_confidence > best:
+                best = prediction.sensitivity_confidence
+        return best
+
     def detect(self, doc: Document) -> list[Span]:
-        """Convert confidential sentence predictions into offset-correct policy spans."""
+        """Convert confidential sentence predictions into offset-correct
+        policy spans. Span confidence is the sensitivity head's own score
+        (the severity axis) -- gated only on the categorical is_confidential
+        call, independent of the department head's confidence."""
         spans: list[Span] = []
         for start, end, sentence in self._sentences(doc.text):
             prediction = self._predict(sentence)
-            if self._is_confident_confidential(prediction):
+            if prediction.is_confidential:
                 spans.append(Span(
                     start=start,
                     end=end,
                     data_class="DEPT_CONFIDENTIAL",
                     detector="deberta",
-                    confidence=prediction.joint_confidence,
+                    confidence=prediction.sensitivity_confidence,
                 ))
         return spans

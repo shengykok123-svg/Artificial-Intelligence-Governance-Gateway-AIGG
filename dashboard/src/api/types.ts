@@ -26,7 +26,8 @@ export interface AuditRecord {
   m8_department: string | null; // raw EmbedDetector.classify() output
   m8_confidence: number;
   m9_department: string | null; // raw DebertaDetector.classify() output
-  m9_confidence: number;
+  m9_confidence: number; // department-attribution axis only
+  m9_sensitivity_confidence: number; // confidentiality-severity axis; no M8 equivalent
   cross_department_confidence: number | null; // set only when content_department != user_department
 }
 

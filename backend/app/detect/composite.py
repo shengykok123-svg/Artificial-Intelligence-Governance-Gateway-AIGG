@@ -116,21 +116,26 @@ class CompositeSemanticDetector:
         return deduped
 
     def classify(self, doc: Document) -> tuple[str | None, float]:
-        fused, _m8_raw, _m9_raw = self.classify_debug(doc)
+        fused, _m8_raw, _m9_raw, _m9_sensitivity = self.classify_debug(doc)
         return fused
 
     def classify_debug(
         self, doc: Document,
     ) -> tuple[
-        tuple[str | None, float], tuple[str | None, float], tuple[str | None, float],
+        tuple[str | None, float], tuple[str | None, float], tuple[str | None, float], float,
     ]:
-        """(fused, m8_raw, m9_raw). Raw outputs are each sub-detector's
-        classify() verbatim -- audit logging wants what M8 and M9 actually
-        said, not the normalized view fusion uses to compare them. Runs each
+        """(fused, m8_raw, m9_raw, m9_sensitivity_confidence). Raw outputs
+        are each sub-detector's classify() verbatim -- audit logging wants
+        what M8 and M9 actually said, not the normalized view fusion uses to
+        compare them. m9_sensitivity_confidence is M9's orthogonal
+        confidentiality-severity axis (see deberta.py); M8 has no equivalent
+        second axis -- its one score already serves both roles. Runs each
         model exactly once so main.py never pays for a second inference just
         to log what the first one produced."""
         m8_raw = self._embed.classify(doc)
         m9_raw = self._deberta.classify(doc)
+        classify_sensitivity = getattr(self._deberta, "classify_sensitivity", None)
+        m9_sensitivity = classify_sensitivity(doc) if classify_sensitivity is not None else 0.0
 
         m8_dept = _normalize_department(m8_raw[0])
         m9_dept = _normalize_department(m9_raw[0])
@@ -144,7 +149,7 @@ class CompositeSemanticDetector:
         else:
             fused = (None, 0.0)
 
-        return fused, m8_raw, m9_raw
+        return fused, m8_raw, m9_raw, m9_sensitivity
 
 
 __all__ = ["CompositeSemanticDetector", "dedup_overlapping"]

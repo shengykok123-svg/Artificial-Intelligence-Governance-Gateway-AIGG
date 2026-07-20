@@ -134,13 +134,16 @@ def test_dept_confidential_high_confidence_embed_holds_same_department():
 
 # --------------------------------------------------------------------------
 # 6. DEPT_CONFIDENTIAL conf 0.91 via embed, content finance, ctx.department
-#    marketing ⇒ still hold, from the SAME tier row as above, not from any
-#    @cross rule -- M10 deleted the cross-department policy row. Also
-#    asserts no @cross row survives in the seeded rules.
+#    marketing ⇒ deny, one tier stricter than the same-department 0.91 case
+#    (which only holds) -- M11's @cross rows escalate cross-department
+#    mismatch past the same-department band at the SAME confidence, using
+#    the more-specific @cross row (0.85 min_confidence, deny) over the
+#    same-department "*" row (0.85 min_confidence, hold) it would otherwise
+#    match. Also asserts the @cross rows exist in the seeded rules.
 # --------------------------------------------------------------------------
 
-def test_dept_confidential_high_confidence_cross_department_holds_from_tier_row():
-    assert not any(r.content_department == "@cross" for r in RULES)
+def test_dept_confidential_high_confidence_cross_department_escalates_to_deny():
+    assert any(r.content_department == "@cross" for r in RULES)
 
     c, _span = _classification("DEPT_CONFIDENTIAL", 0.91,
                                content_department="finance",
@@ -149,9 +152,25 @@ def test_dept_confidential_high_confidence_cross_department_holds_from_tier_row(
                         ai_tool_tier="PUBLIC_AI", tool_status="approved",
                         purpose="GENERAL", target_host="chatgpt.com")
     verdict = decide(c, ctx, RULES)
+    assert verdict.decision == "deny"
+    assert verdict.require_purpose is False
+    assert verdict.spans_to_redact == []
+
+
+def test_dept_confidential_low_cross_department_confidence_escalates_to_hold():
+    # Same scenario, but confidence 0.60 -- below the same-department hold
+    # band (0.85) but at/above the @cross hold band (0.50), so cross-
+    # department escalates allow+justify -> hold+justify instead of
+    # allow+justify -> allow+justify.
+    c, _span = _classification("DEPT_CONFIDENTIAL", 0.60,
+                               content_department="finance",
+                               department_confidence=0.60, detector="embed")
+    ctx = PolicyContext(user_role="staff", department="marketing",
+                        ai_tool_tier="PUBLIC_AI", tool_status="approved",
+                        purpose="GENERAL", target_host="chatgpt.com")
+    verdict = decide(c, ctx, RULES)
     assert verdict.decision == "hold"
     assert verdict.require_purpose is True
-    assert verdict.spans_to_redact == []
 
 
 # --------------------------------------------------------------------------

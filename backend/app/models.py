@@ -74,6 +74,11 @@ class AuditLog(Base):
     m9_confidence: Mapped[float] = mapped_column(Float, default=0.0)
     cross_department_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # M11: additive, nullable-safe (default 0.0), no backfill needed for the
+    # same reason as the M10 batch above -- ALTER TABLE audit_logs ADD COLUMN
+    # m9_sensitivity_confidence DOUBLE PRECISION DEFAULT 0.0, or reset_db.py.
+    m9_sensitivity_confidence: Mapped[float] = mapped_column(Float, default=0.0)
+
     # SD-5: everything is retained for now and the MVP runs no purge job.
     # The column exists so the retention story is a schedule we have not
     # switched on yet, rather than a position we are defending. The proposal

@@ -9,15 +9,24 @@ from app.detect.composite import CompositeSemanticDetector, dedup_overlapping
 
 
 class StubDetector:
-    def __init__(self, spans=None, classification=(None, 0.0)):
+    def __init__(self, spans=None, classification=(None, 0.0), sensitivity=None):
         self._spans = spans or []
         self._classification = classification
+        self._sensitivity = sensitivity
 
     def detect(self, doc: Document):
         return self._spans
 
     def classify(self, doc: Document):
         return self._classification
+
+
+class StubDebertaDetector(StubDetector):
+    """StubDetector plus classify_sensitivity(), matching DebertaDetector's
+    real shape -- composite.py duck-types this the same way main.py does."""
+
+    def classify_sensitivity(self, doc: Document) -> float:
+        return self._sensitivity or 0.0
 
 
 _DOC = Document(text="x" * 100, source_filename=None, mime="text/plain")
@@ -143,10 +152,12 @@ def test_classify_debug_returns_fused_plus_both_raw_outputs():
         embed=StubDetector(classification=("finance", 0.55)),
         deberta=StubDetector(classification=("hr", 0.99)),
     )
-    fused, m8_raw, m9_raw = composite.classify_debug(_DOC)
+    fused, m8_raw, m9_raw, m9_sensitivity = composite.classify_debug(_DOC)
     assert fused == ("finance", 0.55)          # disagreement -> M8 wins
     assert m8_raw == ("finance", 0.55)          # raw, unmodified
     assert m9_raw == ("hr", 0.99)               # raw, unmodified
+    # Deberta stub has no classify_sensitivity() -- duck-typed fallback is 0.0.
+    assert m9_sensitivity == 0.0
 
 
 def test_classify_debug_raw_outputs_preserve_null_labels_untouched():
@@ -156,10 +167,24 @@ def test_classify_debug_raw_outputs_preserve_null_labels_untouched():
         embed=StubDetector(classification=("other", 0.7)),
         deberta=StubDetector(classification=("legal", 0.66)),
     )
-    fused, m8_raw, m9_raw = composite.classify_debug(_DOC)
+    fused, m8_raw, m9_raw, _m9_sensitivity = composite.classify_debug(_DOC)
     assert fused == ("legal", 0.66)
     assert m8_raw == ("other", 0.7)
     assert m9_raw == ("legal", 0.66)
+
+
+def test_classify_debug_reports_m9_sensitivity_confidence_when_available():
+    # The department axis (m9_raw) and severity axis (m9_sensitivity) are
+    # independent -- a deberta stub can report a weak department opinion
+    # alongside a strong confidentiality opinion, or vice versa.
+    composite = CompositeSemanticDetector(
+        embed=StubDetector(classification=(None, 0.0)),
+        deberta=StubDebertaDetector(classification=("hr", 0.40), sensitivity=0.93),
+    )
+    fused, _m8_raw, m9_raw, m9_sensitivity = composite.classify_debug(_DOC)
+    assert fused == ("hr", 0.40)
+    assert m9_raw == ("hr", 0.40)
+    assert m9_sensitivity == 0.93
 
 
 # --------------------------------------------------------------------------
