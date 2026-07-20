@@ -98,7 +98,11 @@ def test_classifies_from_internal_document_similarity() -> None:
     assert confidence == 0.91
 
 
-def test_low_internal_similarity_returns_none_without_exemplar_fallback() -> None:
+def test_low_internal_similarity_still_reports_its_exact_raw_score() -> None:
+    # classify() no longer gates on a threshold -- it always reports the
+    # closest indexed chunk's department and exact cosine similarity, even
+    # when that similarity is low, so the score is visible in the dashboard
+    # instead of being masked to (None, 0.0).
     detector = EmbedDetector(
         FakeEncoder(),
         internal_docs=FakeInternalDocRepo([
@@ -113,11 +117,11 @@ def test_low_internal_similarity_returns_none_without_exemplar_fallback() -> Non
 
     department, confidence = detector.classify(_doc("Our quarterly revenue is below forecast."))
 
-    assert department is None
-    assert confidence == 0.0
+    assert department == "legal"
+    assert confidence == 0.12
 
 
-def test_returns_none_for_content_below_classification_threshold() -> None:
+def test_returns_none_for_content_with_no_indexed_chunks() -> None:
     detector = EmbedDetector(FakeEncoder(), internal_docs=FakeInternalDocRepo([]))
     assert detector.classify(_doc("Please improve this sentence.")) == (None, 0.0)
 

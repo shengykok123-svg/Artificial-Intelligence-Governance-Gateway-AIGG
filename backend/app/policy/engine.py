@@ -271,29 +271,30 @@ def decide(
     # forwarded to the outgoing document unredacted. This is a structural
     # backstop -- rules.yaml's regex rows already redact at every tier, so
     # this only bites when no row matched (e.g. an unlisted class/tier
-    # combination) yet M2 still fired.
+    # combination) yet M2 still fired. On "allow" the floor also upgrades
+    # the decision itself to "redact". On "hold"/"deny" the decision is left
+    # alone (a human reviewer's call is not weakened by M2 alone), but
+    # spans_to_redact is still populated: hold's redaction is PREPARED eagerly
+    # (see main.py) so that if a reviewer later approves it, or the lazy
+    # timeout downgrades it, whatever M2 found is already masked -- nothing
+    # unredacted can leave once a hold clears.
     regex_spans = [span for span in classification.spans if span.detector == "rules"]
     floor_upgraded = bool(regex_spans) and final_decision == "allow"
     if floor_upgraded:
         final_decision = "redact"
 
-    if final_decision == "redact":
-        redact_spans = [
-            span for span in classification.spans if span.data_class in redact_classes
-        ]
-        seen: set[tuple[int, int, str, str, float]] = set()
-        spans_to_redact: list[Span] = []
-        for span in redact_spans + regex_spans:
-            key = (span.start, span.end, span.data_class, span.detector, span.confidence)
-            if key in seen:
-                continue
-            seen.add(key)
-            spans_to_redact.append(span)
-        spans_to_redact.sort(key=lambda s: (s.start, s.end))
-    else:
-        # hold and deny: nothing is forwarded on those verdicts, so there is
-        # nothing to mask.
-        spans_to_redact = []
+    redact_spans = [
+        span for span in classification.spans if span.data_class in redact_classes
+    ]
+    seen: set[tuple[int, int, str, str, float]] = set()
+    spans_to_redact: list[Span] = []
+    for span in redact_spans + regex_spans:
+        key = (span.start, span.end, span.data_class, span.detector, span.confidence)
+        if key in seen:
+            continue
+        seen.add(key)
+        spans_to_redact.append(span)
+    spans_to_redact.sort(key=lambda s: (s.start, s.end))
 
     reason = _build_reason(
         per_class_winners, best_confs, classification,

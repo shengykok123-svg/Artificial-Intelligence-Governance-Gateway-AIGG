@@ -148,12 +148,16 @@ class DebertaDetector:
         )
 
     def classify(self, doc: Document) -> tuple[str | None, float]:
-        """Return highest-confidence department among confidential sentences only."""
+        """Return the department of the highest joint-confidence sentence,
+        with no confidentiality or threshold gate -- unlike detect(), which
+        only emits a span once a sentence clears _is_confident_confidential(),
+        classify() always reports M9's raw top opinion so the score is
+        visible even when it never clears that bar."""
         best_label: str | None = None
         best_confidence = 0.0
         for _start, _end, sentence in self._sentences(doc.text):
             prediction = self._predict(sentence)
-            if self._is_confident_confidential(prediction) and prediction.joint_confidence > best_confidence:
+            if prediction.joint_confidence > best_confidence:
                 best_label, best_confidence = prediction.department, prediction.joint_confidence
         return best_label, best_confidence
 

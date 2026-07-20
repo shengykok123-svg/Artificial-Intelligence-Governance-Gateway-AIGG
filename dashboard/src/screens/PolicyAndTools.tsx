@@ -1,6 +1,6 @@
 // M6  Screen 4. Rules table (IF-10) + tools table with Approve/Block. Showing the rules IS the point.
 
-import { useState, type FormEvent } from "react";
+import { Fragment, useState, type FormEvent } from "react";
 
 import {
   useInternalDocsQuery,
@@ -9,7 +9,7 @@ import {
   useToolDecisionMutation,
   useToolsQuery,
 } from "../api/queries";
-import type { AiTool, Decision, ToolStatus } from "../api/types";
+import type { AiTool, Decision, InternalDocChunk, ToolStatus } from "../api/types";
 import { EmptyState, ErrorState, SkeletonRows } from "../components/EmptyState";
 import { VerdictBadge } from "../components/VerdictBadge";
 
@@ -116,11 +116,42 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
+interface DocGroup {
+  sourceFile: string;
+  department: string;
+  chunks: InternalDocChunk[];
+  latestCreatedAt: string;
+}
+
+/** One folder per uploaded source file, newest activity first. Grouping is
+ * client-side over whatever page is currently loaded -- the corpus is
+ * expected to be a handful of documents, not thousands, so this is simpler
+ * than teaching the backend a second aggregate endpoint. */
+function groupChunksBySource(items: InternalDocChunk[]): DocGroup[] {
+  const groups = new Map<string, DocGroup>();
+  for (const chunk of items) {
+    const existing = groups.get(chunk.source_file);
+    if (existing) {
+      existing.chunks.push(chunk);
+      if (chunk.created_at > existing.latestCreatedAt) existing.latestCreatedAt = chunk.created_at;
+    } else {
+      groups.set(chunk.source_file, {
+        sourceFile: chunk.source_file,
+        department: chunk.department,
+        chunks: [chunk],
+        latestCreatedAt: chunk.created_at,
+      });
+    }
+  }
+  return Array.from(groups.values()).sort((a, b) => (a.latestCreatedAt < b.latestCreatedAt ? 1 : -1));
+}
+
 function InternalDocsPanel() {
   const docs = useInternalDocsQuery();
   const upload = useInternalDocUploadMutation();
   const [department, setDepartment] = useState("engineering");
   const [file, setFile] = useState<File | null>(null);
+  const [expandedSource, setExpandedSource] = useState<string | null>(null);
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -196,22 +227,47 @@ function InternalDocsPanel() {
             <tr>
               <th className="px-4 py-2 text-left font-medium text-gray-600">Source</th>
               <th className="px-4 py-2 text-left font-medium text-gray-600">Department</th>
-              <th className="px-4 py-2 text-left font-medium text-gray-600">Chunk</th>
-              <th className="px-4 py-2 text-left font-medium text-gray-600">Indexed</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-600">Chunks</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-600">Last indexed</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {docs.isLoading && <SkeletonRows rows={3} columns={INTERNAL_DOC_COLUMNS} />}
-            {!docs.isLoading && docs.data?.items.map((chunk) => (
-              <tr key={chunk.id}>
-                <td className="px-4 py-3 font-medium text-gray-800">{chunk.source_file}</td>
-                <td className="px-4 py-3 text-gray-600">{chunk.department}</td>
-                <td className="max-w-xl px-4 py-3 text-gray-600">
-                  <span className="block max-h-12 overflow-hidden">{chunk.chunk_text}</span>
-                </td>
-                <td className="px-4 py-3 text-gray-600">{formatDate(chunk.created_at)}</td>
-              </tr>
-            ))}
+            {!docs.isLoading &&
+              groupChunksBySource(docs.data?.items ?? []).map((group) => {
+                const expanded = expandedSource === group.sourceFile;
+                return (
+                  <Fragment key={group.sourceFile}>
+                    <tr
+                      className="cursor-pointer hover:bg-gray-50"
+                      onClick={() => setExpandedSource(expanded ? null : group.sourceFile)}
+                    >
+                      <td className="px-4 py-3 font-medium text-gray-800">
+                        <span className="mr-2" aria-hidden="true">{expanded ? "📂" : "📁"}</span>
+                        {group.sourceFile}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">{group.department}</td>
+                      <td className="px-4 py-3 text-gray-600">
+                        {group.chunks.length} chunk{group.chunks.length === 1 ? "" : "s"}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">{formatDate(group.latestCreatedAt)}</td>
+                    </tr>
+                    {expanded &&
+                      group.chunks.map((chunk) => (
+                        <tr key={chunk.id} className="bg-slate-50">
+                          <td colSpan={3} className="px-4 py-3 pl-10 align-top text-gray-600">
+                            <span className="block max-h-24 overflow-y-auto whitespace-pre-wrap text-xs">
+                              {chunk.chunk_text}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 align-top text-xs text-gray-400">
+                            {formatDate(chunk.created_at)}
+                          </td>
+                        </tr>
+                      ))}
+                  </Fragment>
+                );
+              })}
           </tbody>
         </table>
         {!docs.isLoading && docs.isError && (

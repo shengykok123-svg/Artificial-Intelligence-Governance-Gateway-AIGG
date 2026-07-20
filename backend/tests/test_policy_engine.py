@@ -85,10 +85,11 @@ def test_email_and_secret_together_still_only_redact():
     assert verdict.decision == "redact"
 
 
-def test_secret_plus_dept_confidential_deny_band_denies_and_sends_nothing():
+def test_secret_plus_dept_confidential_deny_band_denies_but_still_masks_secret():
     # DEPT_CONFIDENTIAL is the only class that can still push past redact.
-    # When it does, the SECRET regex match is swallowed by deny (nothing is
-    # forwarded at all), not redacted and sent.
+    # The overall decision stays deny (a human call is not weakened by M2
+    # alone), but spans_to_redact still carries the SECRET regex match --
+    # nothing M2 found is ever left unmasked, even on deny.
     secret_span = Span(start=0, end=5, data_class="SECRET",
                        detector="rules", confidence=1.0)
     dept_span = Span(start=10, end=30, data_class="DEPT_CONFIDENTIAL",
@@ -98,7 +99,7 @@ def test_secret_plus_dept_confidential_deny_band_denies_and_sends_nothing():
                        content_department=None, department_confidence=0.93)
     verdict = decide(c, CTX_PUBLIC, RULES)
     assert verdict.decision == "deny"
-    assert verdict.spans_to_redact == []
+    assert verdict.spans_to_redact == [secret_span]
 
 
 # --------------------------------------------------------------------------
@@ -407,7 +408,7 @@ def test_regex_email_plus_embed_060_redacts_with_purpose_and_email_span():
     assert verdict.spans_to_redact == [email_span]
 
 
-def test_regex_email_plus_embed_093_denies_with_no_spans_to_redact():
+def test_regex_email_plus_embed_093_denies_but_still_masks_email():
     email_span = Span(start=0, end=7, data_class="EMAIL",
                       detector="rules", confidence=1.0)
     dept_span = Span(start=20, end=40, data_class="DEPT_CONFIDENTIAL",
@@ -417,7 +418,7 @@ def test_regex_email_plus_embed_093_denies_with_no_spans_to_redact():
                        content_department=None, department_confidence=0.0)
     verdict = decide(c, CTX_PUBLIC, RULES)
     assert verdict.decision == "deny"
-    assert verdict.spans_to_redact == []
+    assert verdict.spans_to_redact == [email_span]
 
 
 def test_secret_on_public_ai_redacts_not_denies():

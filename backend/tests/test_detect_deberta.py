@@ -21,8 +21,11 @@ def test_public_finance_is_not_marked_confidential() -> None:
         predictor=lambda _sentence: SentencePrediction("finance", 0.95, False, 0.98),
     )
     doc = Document(text="Revenue was published in the annual report.", source_filename=None, mime="text/plain")
+    # detect() still gates on confidentiality -- no span, no redaction impact.
     assert detector.detect(doc) == []
-    assert detector.classify(doc) == (None, 0.0)
+    # classify() no longer gates on score/confidentiality -- it always
+    # reports M9's raw top opinion, even for non-confidential content.
+    assert detector.classify(doc) == ("finance", 0.95)
 
 
 def test_deberta_classifier_uses_joint_confidence() -> None:

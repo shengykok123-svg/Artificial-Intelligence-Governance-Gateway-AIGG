@@ -24,11 +24,9 @@ def _read_threshold(value: str | None, default: float, name: str) -> float:
 
 
 # M8's confidence is a cosine similarity -- NOT the same scale as M9's joint
-# head probability (see deberta.py's M9_CONFIDENCE_THRESHOLD). Each detector
-# calibrates its own emission threshold so the rule table's min_confidence
-# tiers mean one thing regardless of which detector emitted the span; see
-# .env.example for the calibration procedure.
-CLASSIFY_THRESHOLD = _read_threshold(os.getenv("M8_CLASSIFY_THRESHOLD"), 0.40, "M8_CLASSIFY_THRESHOLD")
+# head probability. SPAN_THRESHOLD calibrates when M8 emits a redaction span;
+# classify() itself carries no threshold, so the rule table's min_confidence
+# tiers are what decide whether a reported score turns into a verdict.
 SPAN_THRESHOLD = _read_threshold(os.getenv("M8_SPAN_THRESHOLD"), 0.72, "M8_SPAN_THRESHOLD")
 
 
@@ -72,12 +70,16 @@ class EmbedDetector:
         return spans
 
     def classify(self, doc: Document) -> tuple[str | None, float]:
+        """Return the closest indexed chunk's department and raw cosine
+        similarity, with no threshold gate -- unlike detect(), which only
+        emits a span once a sentence clears SPAN_THRESHOLD, classify() always
+        reports M8's exact score so it is visible even when it never clears
+        that bar. None only when there is no indexed chunk to compare against
+        at all (empty corpus or empty text)."""
         if not doc.text.strip():
             return None, 0.0
         department, score = self._best(doc.text)
-        if score < CLASSIFY_THRESHOLD:
-            return None, 0.0
-        return department, score
+        return (department or None), score
 
     def _best(self, text: str) -> tuple[str, float]:
         vector = np.asarray(
@@ -96,8 +98,6 @@ class EmbedDetector:
         if not matches:
             return None
         best = matches[0]
-        if best.similarity < CLASSIFY_THRESHOLD:
-            return None
         return best.department, best.similarity
 
     @staticmethod
