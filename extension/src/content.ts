@@ -277,14 +277,20 @@ function init(site: SiteKey): void {
     const target = e.target as Element | null;
     if (!target) return;
     if (isInsideBanner(target)) return; // the picker's own Continue/select, not a page control
+    // Gemini renders sidebar controls as ordinary buttons. This content
+    // script listens in capture phase, so a false positive here would block
+    // Gemini before its own click handler sees it. Navigation is never a
+    // message submission: explicitly leave it untouched.
+    if (isNavigationControl(target)) return;
     scheduleAttachmentRefreshIfRemoval(target);
 
     const sendBtn = findSendButton(site);
-    if (sendBtn && (target === sendBtn || sendBtn.contains(target))) {
+    const composer = findComposer(site);
+    if (sendBtn && composer && isInComposerRegion(composer, sendBtn) && (target === sendBtn || sendBtn.contains(target))) {
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
-      void attemptSend(findComposer(site), { kind: "composer", target: sendBtn });
+      void attemptSend(composer, { kind: "composer", target: sendBtn });
       return;
     }
 
@@ -296,6 +302,28 @@ function init(site: SiteKey): void {
     e.stopPropagation();
     e.stopImmediatePropagation();
     void attemptSend(editComposer, { kind: "edit", target: editSubmit });
+  }
+
+  function isNavigationControl(target: Element): boolean {
+    const control = target.closest<HTMLElement>('button, [role="button"], a, [aria-label], [title]');
+    if (!control) return false;
+    const label = [
+      control.getAttribute("aria-label"), control.getAttribute("title"), control.textContent,
+    ].join(" ").toLowerCase();
+    return /\b(sidebar|navigation|main menu|new chat|search chats)\b/.test(label)
+      || !!control.closest('aside, nav, [role="navigation"]');
+  }
+
+  /** A send selector is valid only when it shares a local container with the
+   * actual composer. Never treat a same-named button elsewhere in Gemini's
+   * SPA chrome as a send button. */
+  function isInComposerRegion(composer: HTMLElement, button: HTMLElement): boolean {
+    let node: HTMLElement | null = composer.parentElement;
+    for (let depth = 0; node && depth < 7; depth += 1, node = node.parentElement) {
+      if (node.tagName === "BODY" || node.tagName === "HTML") return false;
+      if (node.contains(button)) return true;
+    }
+    return false;
   }
 
   function onKeydownCapture(e: KeyboardEvent): void {
