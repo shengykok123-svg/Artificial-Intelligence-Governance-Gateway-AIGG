@@ -1,4 +1,5 @@
-// M4  Badge showing the last verdict + link to the dashboard.
+// Popup is intentionally a safe operational summary: never render prompt text
+// or matched values here. The in-page debug panel remains the developer view.
 
 interface StoredConfig {
   baseUrl?: string;
@@ -6,6 +7,13 @@ interface StoredConfig {
   apiKey?: string;
   mockMode?: boolean;
   lastVerdict?: { decision: string; reason: string; ts: number };
+}
+
+interface HealthResponse {
+  status: string;
+  semantic_detector?: string;
+  semantic_submodules?: string[];
+  mocked?: string[];
 }
 
 const DEFAULTS = {
@@ -19,55 +27,96 @@ function el<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
 }
 
-function setM9TesterLink(baseUrl: string): void {
-  el<HTMLAnchorElement>("m9TesterLink").href = `${baseUrl.replace(/\/+$/, "")}/m9-tester/`;
+function normalizedBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, "");
 }
 
-async function load(): Promise<void> {
-  const stored = (await chrome.storage.local.get([
-    "baseUrl",
-    "userId",
-    "apiKey",
-    "mockMode",
-    "lastVerdict",
-  ])) as StoredConfig;
-
-  el<HTMLInputElement>("baseUrl").value = stored.baseUrl ?? DEFAULTS.baseUrl;
-  el<HTMLInputElement>("userId").value = stored.userId ?? DEFAULTS.userId;
-  el<HTMLInputElement>("apiKey").value = stored.apiKey ?? DEFAULTS.apiKey;
-  el<HTMLInputElement>("mockMode").checked = stored.mockMode ?? DEFAULTS.mockMode;
-  setM9TesterLink(stored.baseUrl ?? DEFAULTS.baseUrl);
-
-  renderStatus(stored.lastVerdict);
-  void checkHealth(stored.baseUrl ?? DEFAULTS.baseUrl, stored.apiKey ?? DEFAULTS.apiKey);
+function setLinks(baseUrl: string): void {
+  const root = normalizedBaseUrl(baseUrl);
+  el<HTMLAnchorElement>("m9TesterLink").href = `${root}/m9-tester/`;
+  el<HTMLAnchorElement>("dashboardLink").href = `${root.replace(/:8000$/, ":5173")}`;
 }
 
-function renderStatus(lastVerdict: StoredConfig["lastVerdict"]): void {
-  const target = el<HTMLDivElement>("status");
-  if (!lastVerdict) {
-    target.textContent = "no verdict yet";
+function ago(ts: number): string {
+  const seconds = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+  return `${Math.round(seconds / 3600)}h ago`;
+}
+
+function renderLastDecision(last?: StoredConfig["lastVerdict"]): void {
+  const target = el<HTMLDivElement>("lastDecision");
+  if (!last) {
+    target.textContent = "No gateway decision yet.";
     return;
   }
-  const age = Math.max(0, Math.round((Date.now() - lastVerdict.ts) / 1000));
-  target.textContent = `${lastVerdict.decision.toUpperCase()} - ${lastVerdict.reason} (${age}s ago)`;
+  target.textContent = `${last.decision.toUpperCase()} — ${last.reason}`;
+  const age = document.createElement("small");
+  age.textContent = ago(last.ts);
+  target.appendChild(age);
+}
+
+function moduleRow(name: string, state: string, className = ""): HTMLDivElement {
+  const row = document.createElement("div");
+  row.className = "module";
+  const label = document.createElement("span");
+  label.textContent = name;
+  const chip = document.createElement("span");
+  chip.className = `chip ${className}`.trim();
+  chip.textContent = state;
+  row.append(label, chip);
+  return row;
+}
+
+function renderModules(body: HealthResponse): void {
+  const mocked = new Set(body.mocked ?? []);
+  const modules = el<HTMLDivElement>("modules");
+  modules.replaceChildren(
+    moduleRow("Semantic runtime", body.semantic_detector === "both" ? "M8 + M9" : body.semantic_detector ?? "Unknown", "active"),
+    moduleRow("M2 Structured detection", mocked.has("M2") ? "Mock" : "Active", mocked.has("M2") ? "mock" : "active"),
+    moduleRow("M9 NLP classification", body.semantic_detector === "m8" ? "Disabled" : "DeBERTa", body.semantic_detector === "m8" ? "" : "active"),
+    moduleRow("M8 Vector similarity", body.semantic_detector === "m9_deberta" ? "Disabled" : "Active", body.semantic_detector === "m9_deberta" ? "" : "active"),
+    moduleRow("Policy engine (M3)", mocked.has("M3") ? "Mock" : "Active", mocked.has("M3") ? "mock" : "active"),
+  );
+}
+
+function setHealth(ok: boolean, title: string, note: string): void {
+  const health = el<HTMLDivElement>("health");
+  health.classList.toggle("error", !ok);
+  el<HTMLDivElement>("healthTitle").textContent = title;
+  el<HTMLDivElement>("healthNote").textContent = note;
+  el<HTMLSpanElement>("connectionText").textContent = ok ? "Connected" : "Disconnected";
 }
 
 async function checkHealth(baseUrl: string, apiKey: string): Promise<void> {
-  const warn = el<HTMLDivElement>("mockWarning");
   try {
-    const res = await fetch(`${baseUrl}/v1/health`, { headers: { "X-Api-Key": apiKey } });
+    const started = performance.now();
+    const res = await fetch(`${normalizedBaseUrl(baseUrl)}/v1/health`, { headers: { "X-Api-Key": apiKey } });
     if (!res.ok) throw new Error(String(res.status));
-    const body = (await res.json()) as { status: string; mocked: string[] };
-    if (body.mocked?.length) {
-      warn.style.display = "block";
-      warn.textContent = `Backend is mocking: ${body.mocked.join(", ")}. Verdicts only reflect the trigger strings until these land.`;
-    } else {
-      warn.style.display = "none";
-    }
+    const body = (await res.json()) as HealthResponse;
+    const latency = Math.round(performance.now() - started);
+    const mocked = body.mocked ?? [];
+    setHealth(true, "Gateway connected", mocked.length ? `Connected in ${latency}ms · mock: ${mocked.join(", ")}` : `All configured services operational · ${latency}ms`);
+    renderModules(body);
   } catch {
-    warn.style.display = "block";
-    warn.textContent = "Backend unreachable -- the extension fails OPEN (prompts pass through unchecked) until it comes back.";
+    setHealth(false, "Gateway unavailable", "The current MVP fails open when the local gateway cannot be reached.");
+    el<HTMLDivElement>("modules").replaceChildren(moduleRow("Runtime", "Offline", "mock"));
   }
+}
+
+async function load(): Promise<void> {
+  const stored = (await chrome.storage.local.get(["baseUrl", "userId", "apiKey", "mockMode", "lastVerdict"])) as StoredConfig;
+  const baseUrl = stored.baseUrl ?? DEFAULTS.baseUrl;
+  const userId = stored.userId ?? DEFAULTS.userId;
+  const apiKey = stored.apiKey ?? DEFAULTS.apiKey;
+  el<HTMLInputElement>("baseUrl").value = baseUrl;
+  el<HTMLInputElement>("userId").value = userId;
+  el<HTMLInputElement>("apiKey").value = apiKey;
+  el<HTMLInputElement>("mockMode").checked = stored.mockMode ?? DEFAULTS.mockMode;
+  el<HTMLSpanElement>("configuredUser").textContent = userId;
+  setLinks(baseUrl);
+  renderLastDecision(stored.lastVerdict);
+  void checkHealth(baseUrl, apiKey);
 }
 
 el<HTMLButtonElement>("save").addEventListener("click", () => {
@@ -77,15 +126,15 @@ el<HTMLButtonElement>("save").addEventListener("click", () => {
     const apiKey = el<HTMLInputElement>("apiKey").value.trim() || DEFAULTS.apiKey;
     const mockMode = el<HTMLInputElement>("mockMode").checked;
     await chrome.storage.local.set({ baseUrl, userId, apiKey, mockMode });
-    setM9TesterLink(baseUrl);
+    el<HTMLSpanElement>("configuredUser").textContent = userId;
+    setLinks(baseUrl);
+    el<HTMLDivElement>("saveNote").textContent = "Settings saved.";
     void checkHealth(baseUrl, apiKey);
   })();
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes.lastVerdict) {
-    renderStatus(changes.lastVerdict.newValue as StoredConfig["lastVerdict"]);
-  }
+  if (area === "local" && changes.lastVerdict) renderLastDecision(changes.lastVerdict.newValue as StoredConfig["lastVerdict"]);
 });
 
 void load();

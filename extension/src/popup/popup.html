@@ -1,98 +1,53 @@
-<!-- M4  popup markup -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <title>AI Governance Gateway</title>
     <style>
-      body {
-        font-family: system-ui, sans-serif;
-        width: 280px;
-        padding: 12px;
-        font-size: 13px;
-        color: #111827;
-      }
-      h1 {
-        font-size: 14px;
-        margin: 0 0 8px;
-      }
-      label {
-        display: block;
-        margin-top: 8px;
-        font-weight: 600;
-      }
-      input {
-        width: 100%;
-        box-sizing: border-box;
-        padding: 4px 6px;
-        margin-top: 2px;
-        font: inherit;
-      }
-      .row {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-top: 8px;
-      }
-      .row label {
-        margin: 0;
-        font-weight: normal;
-      }
-      #status {
-        padding: 6px 8px;
-        border-radius: 6px;
-        margin-top: 4px;
-        background: #f3f4f6;
-      }
-      #mockWarning {
-        display: none;
-        margin-top: 8px;
-        padding: 6px 8px;
-        border-radius: 6px;
-        background: #fef3c7;
-        color: #92400e;
-      }
-      a {
-        color: #2563eb;
-      }
-      button {
-        margin-top: 10px;
-        width: 100%;
-        padding: 6px;
-        font: inherit;
-        cursor: pointer;
-      }
+      :root { color: #17223b; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+      body { width: 348px; margin: 0; background: #f8fafc; font-size: 13px; }
+      main { padding: 18px; }
+      .brand { display:flex; gap:11px; align-items:center; }
+      .shield { width:38px; height:42px; display:grid; place-items:center; color:#155eef; font-size:28px; border:2px solid #2f6fed; border-radius:14px 14px 18px 18px; }
+      h1 { margin:0; font-size:18px; letter-spacing:-.02em; }
+      .connected { margin-top:3px; color:#15803d; font-weight:700; }
+      .dot { display:inline-block; width:9px; height:9px; background:#22a36a; border-radius:50%; margin-right:6px; }
+      .section { border-top:1px solid #e2e8f0; margin-top:17px; padding-top:15px; }
+      h2 { margin:0 0 9px; font-size:14px; }
+      .health { padding:11px; border:1px solid #bcead3; background:#f0fdf5; border-radius:10px; display:flex; gap:9px; align-items:center; }
+      .health.error { border-color:#fecaca; background:#fef2f2; color:#991b1b; }
+      .check { width:26px; height:26px; border-radius:50%; background:#198754; color:white; display:grid; place-items:center; font-weight:900; }
+      .health.error .check { background:#dc2626; }
+      .health-title { font-weight:800; } .health-note { color:#5b697d; margin-top:2px; font-size:12px; }
+      .module { display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid #edf2f7; }
+      .chip { padding:3px 7px; border-radius:6px; font-weight:750; font-size:11px; background:#eaf2ff; color:#2257bb; }
+      .chip.active { background:#e9f8ef; color:#167346; }.chip.mock { background:#fff5dc; color:#aa5b00; }
+      .context { color:#536176; line-height:1.7; } .context b { color:#17223b; }
+      .last { padding:10px; border-radius:9px; background:#fff8e8; border:1px solid #fde6aa; color:#8b5700; font-weight:700; }
+      .last small { display:block; font-weight:500; color:#6b7280; margin-top:4px; }
+      details { margin-top:13px; } summary { cursor:pointer; color:#315cbd; font-weight:700; }
+      label { display:block; margin-top:9px; font-size:12px; font-weight:700; color:#46556c; }
+      input { box-sizing:border-box; width:100%; margin-top:3px; padding:7px 8px; border:1px solid #cbd5e1; border-radius:6px; font:inherit; }
+      .toggle { display:flex; gap:7px; align-items:center; margin-top:10px; font-size:12px; }.toggle input { width:auto; margin:0; }
+      button, a.action { box-sizing:border-box; display:block; width:100%; border-radius:7px; padding:9px 10px; font:inherit; font-weight:800; text-align:center; cursor:pointer; text-decoration:none; }
+      button { margin-top:12px; background:#155eef; color:white; border:1px solid #155eef; }
+      a.action { margin-top:8px; color:#155eef; border:1px solid #b8c8e8; background:white; }
+      #saveNote { min-height:16px; margin-top:7px; color:#16803f; font-size:12px; text-align:center; }
+      footer { margin-top:15px; color:#8490a4; font-size:11px; display:flex; justify-content:space-between; }
     </style>
   </head>
   <body>
-    <h1>AI Governance Gateway</h1>
-    <div id="status">no verdict yet</div>
-    <div id="mockWarning"></div>
-
-    <label for="baseUrl">Base URL</label>
-    <input id="baseUrl" placeholder="http://localhost:8000" />
-
-    <label for="userId">User ID</label>
-    <input id="userId" list="seededUsers" placeholder="wei.eng@acme.my" />
-    <datalist id="seededUsers">
-      <option value="admin@acme.my"></option>
-      <option value="siti.finance@acme.my"></option>
-      <option value="aiman.hr@acme.my"></option>
-      <option value="wei.eng@acme.my"></option>
-    </datalist>
-
-    <label for="apiKey">API key</label>
-    <input id="apiKey" type="password" placeholder="dev-key-change-me" />
-
-    <div class="row">
-      <input id="mockMode" type="checkbox" />
-      <label for="mockMode">MOCK_MODE (cycle verdicts, no backend)</label>
-    </div>
-
-    <button id="save">Save</button>
-    <p><a href="http://localhost:5173" target="_blank" id="dashboardLink" rel="noopener">Open dashboard</a></p>
-    <p><a href="http://localhost:8000/m9-tester/" target="_blank" id="m9TesterLink" rel="noopener">Open M9 tester</a></p>
-
+    <main>
+      <div class="brand"><div class="shield">✓</div><div><h1>AI Governance Gateway</h1><div class="connected"><span class="dot"></span><span id="connectionText">Checking gateway</span></div></div></div>
+      <section class="section"><h2>Status</h2><div id="health" class="health"><div class="check">✓</div><div><div id="healthTitle" class="health-title">Checking connection</div><div id="healthNote" class="health-note">Contacting the local gateway…</div></div></div></section>
+      <section class="section"><h2>Runtime &amp; Modules</h2><div id="modules"><div class="module"><span>Loading runtime…</span><span class="chip">…</span></div></div></section>
+      <section class="section"><h2>Configured user</h2><div class="context"><div><b>User ID</b> <span id="configuredUser">—</span></div><div>Department and role are resolved by the gateway policy.</div></div></section>
+      <section class="section"><h2>Last decision</h2><div id="lastDecision" class="last">No gateway decision yet.</div></section>
+      <a class="action" href="http://localhost:5173" target="_blank" id="dashboardLink" rel="noopener">Open dashboard ↗</a>
+      <a class="action" href="http://localhost:8000/m9-tester/" target="_blank" id="m9TesterLink" rel="noopener">Open M9 tester ↗</a>
+      <details><summary>Connection settings</summary><label for="baseUrl">Base URL</label><input id="baseUrl" placeholder="http://localhost:8000" /><label for="userId">User ID</label><input id="userId" list="seededUsers" placeholder="wei.eng@acme.my" /><datalist id="seededUsers"><option value="admin@acme.my"></option><option value="siti.finance@acme.my"></option><option value="aiman.hr@acme.my"></option><option value="wei.eng@acme.my"></option></datalist><label for="apiKey">API key</label><input id="apiKey" type="password" placeholder="dev-key-change-me" /><label class="toggle"><input id="mockMode" type="checkbox" />Demo mock mode (cycles verdicts)</label><button id="save">Save settings</button><div id="saveNote"></div></details>
+      <footer><span>v0.9.0 · AIGG-CHROME</span><span>Local MVP</span></footer>
+    </main>
     <script type="module" src="./popup.ts"></script>
   </body>
 </html>

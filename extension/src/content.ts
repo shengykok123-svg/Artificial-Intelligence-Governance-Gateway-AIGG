@@ -127,6 +127,17 @@ function init(site: SiteKey): void {
     }
 
     const chosen = await showPurposePicker(anchor);
+    if (chosen === null) {
+      return {
+        ok: true,
+        result: {
+          ...first.result,
+          decision: "deny",
+          require_purpose: false,
+          reason: "Justification was cancelled. Nothing was sent.",
+        },
+      };
+    }
     sessionPurpose = chosen;
 
     const second = await sendInspect(prompt, files, chosen);

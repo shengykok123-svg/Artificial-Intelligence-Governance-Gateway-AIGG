@@ -142,6 +142,20 @@ the developer debug panel. It always states whether content was sent.
 | GATEWAY UNAVAILABLE / NOT CONFIGURED | Gateway did not inspect the request | Current MVP fails open and sends, clearly labelled |
 | PURPOSE REQUIRED | User selects a purpose and the same request is inspected again | Nothing is sent until the second verdict |
 
+### Justification modal
+
+When M3 returns `require_purpose: true` for a request initially sent with
+`GENERAL`, the extension opens a full-page **Justification required** overlay.
+The user must enter a short business explanation, choose one of the policy
+categories, and accept three responsibility statements. On confirmation the
+extension re-inspects the identical prompt and attachments using the selected
+category (`data_analysis`, `drafting`, `translation`, `debugging`, or `other`).
+Cancelling keeps the request unsent.
+
+The current backend schema persists the selected `purpose` category, but does
+not yet expose a separate `justification` field for audit storage. The modal
+therefore does not claim that its free-text explanation is stored remotely.
+
 ## Live Acceptance Cases
 
 Use a fresh or refreshed ChatGPT tab after reloading the unpacked extension.
