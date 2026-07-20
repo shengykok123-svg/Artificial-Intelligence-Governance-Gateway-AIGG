@@ -358,13 +358,14 @@ def test_rules_yaml_seeds_the_table(repos):
     # does. Changing a rule is a row edit, not a redeploy.
     from app.seed import load_rules_yaml
     rows = load_rules_yaml()
-    assert len(rows) == 17
+    assert len(rows) == 8
     seed_rules(repos, rows)
-    assert len(repos.rules.all()) == 17
-    assert any(r.data_class == "SECRET" and r.decision == "deny"
-               for r in repos.rules.all())
-    assert any(r.data_class == "DEPT_CONFIDENTIAL" and r.decision == "hold"
-               for r in repos.rules.all())
+    all_rows = repos.rules.all()
+    assert len(all_rows) == 8
+    # M2 (regex) classes have no policy voice: they never appear here at
+    # all, and are protected purely by the engine's structural regex floor.
+    assert all(r.data_class == "DEPT_CONFIDENTIAL" for r in all_rows)
+    assert any(r.decision == "hold" for r in all_rows)
 
 
 # --------------------------------------------------------------------------

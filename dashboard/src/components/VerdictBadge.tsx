@@ -8,7 +8,7 @@ import type { Decision, LogStatus } from "../api/types";
 
 export const VERDICT_LABEL: Record<Decision, string> = {
   allow: "Allow",
-  redact: "Redact",
+  redact: "Redact & sent",
   hold: "Hold",
   deny: "Deny",
 };

@@ -725,10 +725,19 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
     if content_department is not None and content_department != user.department:
         cross_department_confidence = max(m8_confidence, m9_confidence)
 
+    # M10 fix: decide()'s per-detector confidence gate (embed/deberta) only
+    # has NO classification.confidence fallback -- unlike "*" rules, it looks
+    # exclusively at classification.spans for that (class, detector) pair. If
+    # spans here were prompt-only, a DEPT_CONFIDENTIAL span found ONLY in an
+    # attachment (no echo in the prompt text) would be invisible to the tier
+    # table and silently default to allow. all_spans (prompt + attachment)
+    # fixes that; spans_to_redact is still filtered back down to prompt-only
+    # spans below before it ever touches req.prompt, so mixing attachment
+    # spans in here cannot corrupt prompt-text slicing.
     classification = Classification(
         data_classes=data_classes,
         confidence=confidence,
-        spans=prompt_spans,
+        spans=all_spans,
         content_department=content_department,
         department_confidence=department_confidence,
     )
@@ -758,7 +767,14 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
     if verdict.decision in ("redact", "hold"):
         computed_redacted_attachments: list[RedactedAttachment] = []
         tokeniser = get_tokeniser(repos.vault)
-        tokenise_inputs: list[tuple[str, list[Span]]] = [(req.prompt, verdict.spans_to_redact)]
+        # classification.spans (and therefore verdict.spans_to_redact) can
+        # now contain attachment-sourced spans too (see the Classification
+        # construction above) -- intersect back down to prompt_spans before
+        # slicing req.prompt, so an attachment's offsets can never be sliced
+        # against a different document's text.
+        prompt_span_set = set(prompt_spans)
+        prompt_spans_to_redact = [s for s in verdict.spans_to_redact if s in prompt_span_set]
+        tokenise_inputs: list[tuple[str, list[Span]]] = [(req.prompt, prompt_spans_to_redact)]
         attachment_redaction_inputs: list[tuple[Attachment, int]] = []
         docx_redaction_inputs: list[
             tuple[Attachment, Any, list[tuple[Any, int]], list[tuple[DocxXmlTextTarget, int]], dict[str, bytes]]

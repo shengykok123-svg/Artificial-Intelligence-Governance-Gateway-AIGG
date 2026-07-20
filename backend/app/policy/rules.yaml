@@ -7,10 +7,10 @@
 # never reads this file -- M1 fetches the rows via RuleRepo.all() and passes
 # them into decide() as an argument.
 #
-# LIVE SYSTEMS: this M10 revision is a full rewrite of the rule set (see PR
-# description). A hosted database seeded from the pre-M10 table does not
-# pick this up automatically -- apply the equivalent row edits to
-# policy_rules by hand, or run reset_db.py if the data is disposable.
+# LIVE SYSTEMS: this revision removes every M2 (regex) row from the table
+# entirely (see below). A hosted database seeded from an older table does
+# not pick this up automatically -- delete those rows from policy_rules by
+# hand, or run reset_db.py if the data is disposable.
 #
 # The reason is the case study's own complaint: if changing "MyKad to a public
 # AI tool" from redact to deny needs a git commit, we have rebuilt the exact
@@ -36,9 +36,9 @@
 #     Classification.content_department is set and differs from the
 #     requester's department; a literal department matches equality. No row
 #     below uses "@cross" -- cross-department mismatch is a logged display
-#     value only now (see M10), not a policy input -- but the engine keeps
-#     the mechanism live so a compliance officer can re-add a cross row
-#     later without a release.
+#     value only, not a policy input -- but the engine keeps the mechanism
+#     live so a compliance officer can re-add a cross row later without a
+#     release.
 #   require_purpose: "state & allow" flag. Defaults to false.
 #   Most specific match wins (most non-wildcard fields, counting a
 #     detector-scoped rule as one more non-wildcard field, higher
@@ -48,39 +48,31 @@
 #
 # decision: allow | redact | hold | deny
 #
-# Design principle: deny is reserved for cases where redaction destroys the
-# task's purpose, the event itself is an incident (credentials), or -- new in
-# M10 -- a detector is confident enough that this IS a specific piece of
-# internal content that redaction cannot un-leak (near-verbatim
-# internal-document exfiltration at M8 similarity >= 0.92 / M9 probability
-# >= 0.95). Every other class gets a path forward -- an unnecessary deny is a
-# shadow-AI conversion. Regex-detected classes (MYKAD, EMAIL, PHONE, PERSON,
-# BANK_ACCT, SALARY) are a redaction floor at every tier: the rows below say
-# so explicitly, and the engine also enforces it structurally, because a
-# regex match is an exact span with zero ambiguity about what it is -- there
-# is never a tier loose enough to let it through unmasked. Unlisted (class,
-# tier) pairs resolve to allow via the no-candidate rule in decide(); the
-# rows below are the complete intended policy.
+# M2 HAS NO POLICY VOICE. MYKAD, EMAIL, PHONE, PERSON, BANK_ACCT, SALARY and
+# SECRET intentionally have NO rows here -- every span M2 (the regex
+# detector) finds is a data_class with no matching rule, which resolves to
+# allow via the no-candidate path in decide(). What actually protects that
+# data is the engine's structural regex redaction floor: ANY span with
+# detector == "rules" forces the decision from allow up to redact,
+# unconditionally, regardless of tier, role, or purpose (see
+# backend/app/policy/engine.py). This means M2 always redacts what it
+# finds, but never gets a vote in whether the request is held or denied --
+# a leaked credential (SECRET) is redacted the same as a MyKad number, not
+# escalated to deny, and no M2 class carries a require_purpose gate any
+# more (the floor doesn't set one).
+#
+# DEPT_CONFIDENTIAL (M8/M9) is therefore the ONLY class with an actual
+# policy row, and the only thing that can push a request to hold or deny.
+# The floor still applies underneath it: if a regex span AND a DEPT_
+# CONFIDENTIAL allow both apply, the request is redact, not allow (the
+# floor upgrades allow -> redact). But if DEPT_CONFIDENTIAL's own tier says
+# hold or deny, that stricter decision wins outright and nothing is sent at
+# all -- the floor only ever upgrades allow, it never overrides hold/deny
+# (see the REGEX FLOOR note in engine.py). Unlisted (class, tier) pairs
+# resolve to allow via the no-candidate rule in decide(); the rows below are
+# the complete intended policy for DEPT_CONFIDENTIAL.
 
 rules:
-  # ---------- REGEX CLASSES: redaction floor at EVERY tier -------------
-  # The engine also enforces this floor structurally (any "rules"-detector
-  # span forces at least redact); these rows make the table read as the
-  # complete intended policy.
-  - {data_class: MYKAD,     ai_tool_tier: "*", user_role: "*", purpose: "*", decision: redact}
-  - {data_class: EMAIL,     ai_tool_tier: "*", user_role: "*", purpose: "*", decision: redact}
-  - {data_class: PHONE,     ai_tool_tier: "*", user_role: "*", purpose: "*", decision: redact}
-  - {data_class: PERSON,    ai_tool_tier: "*", user_role: "*", purpose: "*", decision: redact}
-  - {data_class: BANK_ACCT, ai_tool_tier: "*", user_role: "*", purpose: "*", decision: redact}
-  - {data_class: SALARY,    ai_tool_tier: "*", user_role: "*", purpose: "*",
-     decision: redact, require_purpose: true}
-
-  # SECRET: deny on the external boundary (leaked credential = incident,
-  # rotate the key); redact inside the tenant / internal boundary.
-  - {data_class: SECRET, ai_tool_tier: PUBLIC_AI,     user_role: "*", purpose: "*", decision: deny}
-  - {data_class: SECRET, ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*", decision: redact}
-  - {data_class: SECRET, ai_tool_tier: INTERNAL_AI,   user_role: "*", purpose: "*", decision: redact}
-
   # ---------- DEPT_CONFIDENTIAL, PUBLIC_AI: per-detector tiers ---------
   # M8 = cosine similarity vs indexed internal docs ("is this OUR doc?")
   #   < 0.50 allow (no row) | >=0.50 allow+justify | >=0.85 hold+justify

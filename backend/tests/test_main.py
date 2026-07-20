@@ -356,13 +356,18 @@ def test_allow(client: TestClient) -> None:
     assert any(x["log_id"] == body["log_id"] for x in logs["items"])
 
 
-def test_deny(client: TestClient) -> None:
+def test_secret_is_redacted_not_denied(client: TestClient) -> None:
+    # M2 has no policy voice (see rules.yaml): a leaked credential is
+    # redacted by the structural regex floor exactly like any other regex
+    # class, never escalated to deny. Only DEPT_CONFIDENTIAL (M8/M9) can
+    # push a request to hold/deny now.
     r = inspect(client,
                 prompt="Debug this: OPENAI_API_KEY=sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d")
     body = r.json()
-    assert body["decision"] == "deny"
+    assert body["decision"] == "redact"
     assert "SECRET" in body["data_classes"]
-    assert "SECRET" in body["reason"]
+    assert body["redacted_prompt"] is not None
+    assert "sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d" not in body["redacted_prompt"]
 
 
 def test_redact(client: TestClient) -> None:
@@ -379,7 +384,9 @@ def test_redact(client: TestClient) -> None:
     assert "[MYKAD_1]" in body["redacted_prompt"]
 
 
-def test_salary_is_redacted_with_purpose(client: TestClient) -> None:
+def test_salary_is_redacted_no_purpose_gate(client: TestClient) -> None:
+    # M2 has no policy row any more: no require_purpose gate. It still
+    # always gets redacted via the structural regex floor.
     r = inspect(
         client, user_id="aiman.hr@acme.my",
         prompt="Draft a reply to the payroll query. "
@@ -387,7 +394,7 @@ def test_salary_is_redacted_with_purpose(client: TestClient) -> None:
     )
     body = r.json()
     assert body["decision"] == "redact"
-    assert body["require_purpose"] is True
+    assert body["require_purpose"] is False
     assert "SALARY" in body["data_classes"]
     assert body["debug"]["detections"] == [
         {
@@ -462,6 +469,32 @@ def test_m8_internal_doc_very_high_similarity_denies(
     assert body["require_purpose"] is False
     assert "DEPT_CONFIDENTIAL" in body["data_classes"]
     assert body["redacted_prompt"] is None
+
+
+def test_m8_high_similarity_in_attachment_only_still_denies(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression: a DEPT_CONFIDENTIAL span found ONLY in an attachment (no
+    # echo in the prompt text) must still reach decide()'s per-detector tier
+    # table. Classification.spans used to be prompt-only, so an attachment-
+    # only signal was invisible to embed/deberta-scoped rules (which have no
+    # classification.confidence fallback -- that applies only to "*" rules)
+    # and silently defaulted to allow.
+    seed_internal_doc_for_m8(client, monkeypatch, department="hr", similarity=0.94)
+
+    content = base64.b64encode(
+        b"HR confidential termination plan for employee grievance cases."
+    ).decode("ascii")
+    r = inspect(
+        client, user_id="aiman.hr@acme.my",
+        prompt="see attached, nothing sensitive typed here",
+        attachments=[{
+            "filename": "plan.txt", "mime": "text/plain", "content_b64": content,
+        }],
+    )
+    body = r.json()
+    assert body["decision"] == "deny"
+    assert "DEPT_CONFIDENTIAL" in body["data_classes"]
 
 
 # --------------------------------------------------------------------------
@@ -703,7 +736,7 @@ def test_supported_attachment_contributes_to_verdict(client: TestClient) -> None
                ])
     body = r.json()
     assert body["decision"] == "redact"
-    assert body["require_purpose"] is True
+    assert body["require_purpose"] is False
     assert "SALARY" in body["data_classes"]
     assert body["debug"]["detections"] == [
         {
@@ -733,7 +766,7 @@ def test_docx_attachment_contributes_to_verdict(client: TestClient) -> None:
 
     body = r.json()
     assert body["decision"] == "redact"
-    assert body["require_purpose"] is True
+    assert body["require_purpose"] is False
     assert "SALARY" in body["data_classes"]
     assert len(body["redacted_attachments"]) == 1
 
@@ -1067,12 +1100,19 @@ def test_xlsx_attachment_redaction_returns_redacted_copy(client: TestClient) -> 
 
 
 def test_two_pass_purpose_flow_returns_require_purpose_then_resolves_on_resubmit(
-    client: TestClient,
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    prompt = "Draft a reply to the payroll query. Gaji bulanan RM 8,500 for grade M3."
+    # M2 classes (e.g. SALARY) no longer carry a require_purpose gate --
+    # DEPT_CONFIDENTIAL's allow-band tier is now the only rule left that
+    # demonstrates the "state & allow" two-pass flow. 0.78 clears both
+    # M8_SPAN_THRESHOLD (0.72, needed for a span/data_class to exist at
+    # all) and lands inside the embed allow-band (0.50-0.84).
+    seed_internal_doc_for_m8(client, monkeypatch, department="hr", similarity=0.78)
+    prompt = ("Please summarize the HR confidential termination plan "
+              "for employee grievance cases.")
 
     pass1 = inspect(client, user_id="aiman.hr@acme.my", prompt=prompt).json()
-    assert pass1["decision"] == "redact"
+    assert pass1["decision"] == "allow"
     assert pass1["require_purpose"] is True
 
     logs = client.get("/v1/logs", headers=HEADERS, params={"limit": 200}).json()
@@ -1083,9 +1123,8 @@ def test_two_pass_purpose_flow_returns_require_purpose_then_resolves_on_resubmit
     # asking again, and the attested purpose lands on the audit record.
     pass2 = inspect(client, user_id="aiman.hr@acme.my", prompt=prompt,
                     purpose="drafting").json()
-    assert pass2["decision"] == "redact"
+    assert pass2["decision"] == "allow"
     assert pass2["require_purpose"] is False
-    assert pass2["redacted_prompt"] is not None
 
     logs = client.get("/v1/logs", headers=HEADERS, params={"limit": 200}).json()
     pass2_row = next(x for x in logs["items"] if x["log_id"] == pass2["log_id"])

@@ -9,7 +9,7 @@ import { EmptyState, ErrorState, SkeletonRows } from "../components/EmptyState";
 import { StatusBadge, VerdictBadge } from "../components/VerdictBadge";
 
 const PAGE_SIZE = 20;
-const COLUMN_COUNT = 11; // User, Time, Host, Prompt, Filename, Data classes, User dept, Content dept, Purpose, Verdict, Status
+const COLUMN_COUNT = 13; // User, Time, Host, Prompt, Filename, Data classes, User dept, Content dept, M8, M9, Purpose, Verdict, Status
 
 /**
  * Mirrors backend/app/repo/base.py's cross_department_only predicate
@@ -159,6 +159,8 @@ export default function AuditLog() {
               <th className="px-4 py-2 text-left font-medium text-gray-600">Data classes</th>
               <th className="px-4 py-2 text-left font-medium text-gray-600">User dept</th>
               <th className="px-4 py-2 text-left font-medium text-gray-600">Content dept</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-600">M8</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-600">M9</th>
               <th className="px-4 py-2 text-left font-medium text-gray-600">Purpose</th>
               <th className="px-4 py-2 text-left font-medium text-gray-600">Verdict</th>
               <th className="px-4 py-2 text-left font-medium text-gray-600">Status</th>
@@ -190,6 +192,12 @@ export default function AuditLog() {
                       <td className="px-4 py-3">
                         <ContentDepartmentCell row={row} />
                       </td>
+                      <td className="px-4 py-3 text-xs text-gray-500">
+                        {detectorLabel(row.m8_department, row.m8_confidence)}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-500">
+                        {detectorLabel(row.m9_department, row.m9_confidence)}
+                      </td>
                       <td className="px-4 py-3 text-gray-600">{row.purpose}</td>
                       <td className="px-4 py-3">
                         <VerdictBadge decision={row.decision} />
@@ -205,15 +213,13 @@ export default function AuditLog() {
                             Reason (verbatim) · Purpose: {row.purpose}
                           </p>
                           <p className="mt-1 whitespace-pre-wrap text-sm text-gray-800">{row.reason}</p>
-                          <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-gray-500">
-                            <span>M8 dept@conf: {detectorLabel(row.m8_department, row.m8_confidence)}</span>
-                            <span>M9 dept@conf: {detectorLabel(row.m9_department, row.m9_confidence)}</span>
-                            {row.cross_department_confidence !== null && (
-                              <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100 px-2 py-0.5 font-medium text-indigo-800">
+                          {row.cross_department_confidence !== null && (
+                            <div className="mt-2">
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800">
                                 Cross-department confidence: {row.cross_department_confidence.toFixed(2)}
                               </span>
-                            )}
-                          </div>
+                            </div>
+                          )}
                           {row.reviewer && (
                             <p className="mt-2 text-xs text-gray-500">
                               Reviewed by {row.reviewer}

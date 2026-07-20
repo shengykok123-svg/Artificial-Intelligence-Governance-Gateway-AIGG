@@ -39,12 +39,13 @@ def test_mykad_public_ai_redacts_and_returns_its_spans():
 
 
 # --------------------------------------------------------------------------
-# 2. SECRET @ PUBLIC_AI ⇒ deny, require_purpose False even if another
-#    matched rule set it, spans_to_redact empty.
-#    SALARY @ PUBLIC_AI ⇒ redact + require_purpose True.
+# 2. M2 has no policy voice: SECRET and SALARY together just redact (via the
+#    structural regex floor), never escalate, never gate on a purpose --
+#    even SECRET (a leaked credential) is silently redacted like any other
+#    regex class now.
 # --------------------------------------------------------------------------
 
-def test_secret_denies_and_forces_require_purpose_false_even_with_salary():
+def test_secret_and_salary_together_just_redact_no_escalation_no_purpose():
     secret_span = Span(start=0, end=5, data_class="SECRET",
                        detector="rules", confidence=1.0)
     salary_span = Span(start=10, end=18, data_class="SALARY",
@@ -53,24 +54,26 @@ def test_secret_denies_and_forces_require_purpose_false_even_with_salary():
                        spans=[secret_span, salary_span],
                        content_department=None, department_confidence=0.0)
     verdict = decide(c, CTX_PUBLIC, RULES)
-    assert verdict.decision == "deny"
-    assert verdict.require_purpose is False   # SALARY's row sets it; deny wins
-    assert verdict.spans_to_redact == []
+    assert verdict.decision == "redact"
+    assert verdict.require_purpose is False
+    assert set(verdict.spans_to_redact) == {secret_span, salary_span}
 
 
-def test_salary_public_ai_redacts_with_require_purpose():
+def test_salary_public_ai_redacts_no_purpose_gate():
     c, span = _classification("SALARY", 1.0)
     verdict = decide(c, CTX_PUBLIC, RULES)
     assert verdict.decision == "redact"
-    assert verdict.require_purpose is True
+    assert verdict.require_purpose is False
     assert verdict.spans_to_redact == [span]
 
 
 # --------------------------------------------------------------------------
-# 3. EMAIL + SECRET ⇒ deny (strictest wins).
+# 3. EMAIL + SECRET ⇒ still just redact (strictest of two "no candidate ->
+#    floor" outcomes is still redact; neither is DEPT_CONFIDENTIAL, so
+#    nothing here can escalate past redact).
 # --------------------------------------------------------------------------
 
-def test_email_and_secret_strictest_wins_deny():
+def test_email_and_secret_together_still_only_redact():
     email_span = Span(start=0, end=7, data_class="EMAIL",
                       detector="rules", confidence=1.0)
     secret_span = Span(start=10, end=15, data_class="SECRET",
@@ -79,7 +82,23 @@ def test_email_and_secret_strictest_wins_deny():
                        spans=[email_span, secret_span],
                        content_department=None, department_confidence=0.0)
     verdict = decide(c, CTX_PUBLIC, RULES)
+    assert verdict.decision == "redact"
+
+
+def test_secret_plus_dept_confidential_deny_band_denies_and_sends_nothing():
+    # DEPT_CONFIDENTIAL is the only class that can still push past redact.
+    # When it does, the SECRET regex match is swallowed by deny (nothing is
+    # forwarded at all), not redacted and sent.
+    secret_span = Span(start=0, end=5, data_class="SECRET",
+                       detector="rules", confidence=1.0)
+    dept_span = Span(start=10, end=30, data_class="DEPT_CONFIDENTIAL",
+                     detector="embed", confidence=0.93)
+    c = Classification(data_classes=["SECRET", "DEPT_CONFIDENTIAL"], confidence=1.0,
+                       spans=[secret_span, dept_span],
+                       content_department=None, department_confidence=0.93)
+    verdict = decide(c, CTX_PUBLIC, RULES)
     assert verdict.decision == "deny"
+    assert verdict.spans_to_redact == []
 
 
 # --------------------------------------------------------------------------
@@ -135,19 +154,19 @@ def test_dept_confidential_high_confidence_cross_department_holds_from_tier_row(
 
 
 # --------------------------------------------------------------------------
-# 7. SALARY @ ENTERPRISE_AI, role hr ⇒ redact (M10: the regex floor removed
-#    the hr/finance ENTERPRISE_AI exemptions -- SALARY is now a universal
-#    ai_tool_tier: "*" redact+justify row. Was allow before M10.)
+# 7. SALARY @ ENTERPRISE_AI, role hr ⇒ redact via the structural floor, no
+#    purpose gate. M2 no longer has any policy rows at all, so role/tier
+#    have no bearing on the outcome -- it always just redacts.
 # --------------------------------------------------------------------------
 
-def test_salary_enterprise_ai_hr_role_now_redacts():
+def test_salary_enterprise_ai_hr_role_redacts_via_floor():
     c, span = _classification("SALARY", 1.0)
     ctx = PolicyContext(user_role="hr", department="hr",
                         ai_tool_tier="ENTERPRISE_AI", tool_status="approved",
                         purpose="GENERAL", target_host="enterprise.example")
     verdict = decide(c, ctx, RULES)
     assert verdict.decision == "redact"
-    assert verdict.require_purpose is True
+    assert verdict.require_purpose is False
     assert verdict.spans_to_redact == [span]
 
 
@@ -242,16 +261,19 @@ def test_require_purpose_drops_once_a_purpose_is_attested():
     # "State & allow": pass 1 (purpose GENERAL) asks; pass 2 with any
     # attested purpose is satisfied and must not ask again -- otherwise a
     # purpose:"*" rule would demand one forever and pass 2 would always
-    # look "misconfigured" to the caller.
-    c, _span = _classification("SALARY", 1.0)
+    # look "misconfigured" to the caller. M2 classes no longer carry a
+    # require_purpose gate, so this exercises DEPT_CONFIDENTIAL's
+    # allow-band tier instead.
+    c, _span = _classification("DEPT_CONFIDENTIAL", 0.60, detector="embed")
     pass1 = decide(c, CTX_PUBLIC, RULES)
+    assert pass1.decision == "allow"
     assert pass1.require_purpose is True
 
     ctx_pass2 = PolicyContext(user_role="staff", department="engineering",
                               ai_tool_tier="PUBLIC_AI", tool_status="approved",
                               purpose="drafting", target_host="chatgpt.com")
     pass2 = decide(c, ctx_pass2, RULES)
-    assert pass2.decision == "redact"
+    assert pass2.decision == "allow"
     assert pass2.require_purpose is False
 
 
@@ -350,14 +372,14 @@ def test_mykad_on_enterprise_ai_now_redacts_was_allow_before():
     assert verdict.spans_to_redact == [span]
 
 
-def test_salary_hr_enterprise_ai_redacts_with_purpose():
+def test_salary_hr_enterprise_ai_redacts_no_purpose_gate():
     c, span = _classification("SALARY", 1.0)
     ctx = PolicyContext(user_role="hr", department="hr",
                         ai_tool_tier="ENTERPRISE_AI", tool_status="approved",
                         purpose="GENERAL", target_host="enterprise.example")
     verdict = decide(c, ctx, RULES)
     assert verdict.decision == "redact"
-    assert verdict.require_purpose is True
+    assert verdict.require_purpose is False
     assert verdict.spans_to_redact == [span]
 
 
@@ -398,7 +420,10 @@ def test_regex_email_plus_embed_093_denies_with_no_spans_to_redact():
     assert verdict.spans_to_redact == []
 
 
-def test_secret_on_public_ai_still_denies():
-    c, _span = _classification("SECRET", 1.0)
+def test_secret_on_public_ai_redacts_not_denies():
+    # M2 has no policy voice any more, not even for credentials: SECRET is
+    # redacted by the structural floor exactly like any other regex class.
+    c, span = _classification("SECRET", 1.0)
     verdict = decide(c, CTX_PUBLIC, RULES)
-    assert verdict.decision == "deny"
+    assert verdict.decision == "redact"
+    assert verdict.spans_to_redact == [span]
