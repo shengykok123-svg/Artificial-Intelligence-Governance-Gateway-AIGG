@@ -94,6 +94,22 @@ export function showPurposePicker(_anchor: Element): Promise<string | null> {
       width: "min(620px, calc(100vw - 32px))", maxHeight: "calc(100vh - 32px)", overflowY: "auto",
       background: "#fff", borderRadius: "16px", padding: "26px", color: "#17223b", boxShadow: "0 24px 70px rgba(15, 23, 42, .35)",
     });
+    // Gemini's dark theme applies color-scheme to native controls. Scope a
+    // light control reset to our overlay only; never alter the host page.
+    const reset = document.createElement("style");
+    reset.textContent = `
+      #${BANNER_ID}, #${BANNER_ID} * { color-scheme: light !important; }
+      #${BANNER_ID} textarea, #${BANNER_ID} select {
+        background: #ffffff !important; color: #17223b !important;
+        -webkit-text-fill-color: #17223b !important;
+      }
+      #${BANNER_ID} textarea::placeholder { color: #64748b !important; opacity: 1 !important; }
+      #${BANNER_ID} input[type="checkbox"] {
+        appearance: auto !important; -webkit-appearance: checkbox !important;
+        accent-color: #155eef !important; background: #ffffff !important;
+        filter: none !important;
+      }
+    `;
     const title = document.createElement("h2");
     title.textContent = "Justification required";
     Object.assign(title.style, { margin: "0", fontSize: "22px" });
@@ -145,7 +161,7 @@ export function showPurposePicker(_anchor: Element): Promise<string | null> {
       removeBanner();
       resolve(category.value);
     });
-    panel.append(title, intro, purposeLabel, explanation, categoryLabel, category, notice, checkArea, error, actions);
+    panel.append(reset, title, intro, purposeLabel, explanation, categoryLabel, category, notice, checkArea, error, actions);
     actions.append(cancel, confirm); overlay.appendChild(panel); document.body.appendChild(overlay); explanation.focus();
   });
 }
