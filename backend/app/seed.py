@@ -36,6 +36,7 @@ def load_rules_yaml() -> list[RuleRow]:
             min_confidence=float(r.get("min_confidence", 0.0)),
             content_department=str(r.get("content_department", "*")),
             require_purpose=bool(r.get("require_purpose", False)),
+            detector=str(r.get("detector", "*")),
         )
         for r in data["rules"]
     ]
@@ -224,6 +225,7 @@ def seed_postgres(session) -> None:
             min_confidence=rule.min_confidence,
             content_department=rule.content_department,
             require_purpose=rule.require_purpose,
+            detector=rule.detector,
         ))
 
     for host, tier, status in TOOLS:

@@ -34,13 +34,13 @@ const tools: AiTool[] = [
 ];
 
 const rules: RuleRow[] = [
-  { data_class: "MYKAD", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "redact" },
-  { data_class: "MYKAD", ai_tool_tier: "INTERNAL_AI", user_role: "*", purpose: "*", decision: "allow" },
-  { data_class: "SECRET", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "deny" },
-  { data_class: "SALARY", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "hold" },
-  { data_class: "SALARY", ai_tool_tier: "ENTERPRISE_AI", user_role: "hr", purpose: "*", decision: "allow" },
-  { data_class: "BANK_ACCT", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "redact" },
-  { data_class: "DEPT_CONFIDENTIAL", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "deny" },
+  { data_class: "MYKAD", ai_tool_tier: "*", user_role: "*", purpose: "*", decision: "redact", detector: "*" },
+  { data_class: "SECRET", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "deny", detector: "*" },
+  { data_class: "SALARY", ai_tool_tier: "*", user_role: "*", purpose: "*", decision: "redact", detector: "*" },
+  { data_class: "BANK_ACCT", ai_tool_tier: "*", user_role: "*", purpose: "*", decision: "redact", detector: "*" },
+  { data_class: "DEPT_CONFIDENTIAL", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "hold", detector: "embed" },
+  { data_class: "DEPT_CONFIDENTIAL", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "deny", detector: "embed" },
+  { data_class: "DEPT_CONFIDENTIAL", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "hold", detector: "deberta" },
 ];
 
 const internalDocs: InternalDocChunk[] = [];
@@ -66,6 +66,11 @@ function row(partial: Partial<AuditRecord> & Pick<AuditRecord, "decision">): Aud
     content_department: null,
     department_confidence: 0,
     purpose: "GENERAL",
+    m8_department: null,
+    m8_confidence: 0,
+    m9_department: null,
+    m9_confidence: 0,
+    cross_department_confidence: null,
     ...partial,
   };
 }

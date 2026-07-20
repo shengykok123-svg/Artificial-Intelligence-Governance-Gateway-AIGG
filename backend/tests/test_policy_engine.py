@@ -96,26 +96,32 @@ def test_dept_confidential_mid_confidence_state_and_allow():
 
 
 # --------------------------------------------------------------------------
-# 5. DEPT_CONFIDENTIAL conf 0.91, content_department == ctx.department ⇒
-#    redact + require_purpose True (0.85 tier out-ranks 0.65 tier).
+# 5. DEPT_CONFIDENTIAL conf 0.91 via embed ⇒ M8's own tier table applies
+#    (>=0.85 hold+justify, below the >=0.92 deny band) -- regardless of
+#    content_department, which no longer drives DEPT_CONFIDENTIAL's decision
+#    (M10: cross-department mismatch is display/log only).
 # --------------------------------------------------------------------------
 
-def test_dept_confidential_high_confidence_same_department_redacts():
-    c, span = _classification("DEPT_CONFIDENTIAL", 0.91,
-                              content_department="engineering",
-                              department_confidence=0.91, detector="embed")
+def test_dept_confidential_high_confidence_embed_holds_same_department():
+    c, _span = _classification("DEPT_CONFIDENTIAL", 0.91,
+                               content_department="engineering",
+                               department_confidence=0.91, detector="embed")
     verdict = decide(c, CTX_PUBLIC, RULES)
-    assert verdict.decision == "redact"
+    assert verdict.decision == "hold"
     assert verdict.require_purpose is True
-    assert verdict.spans_to_redact == [span]
+    assert verdict.spans_to_redact == []
 
 
 # --------------------------------------------------------------------------
-# 6. DEPT_CONFIDENTIAL conf 0.91, content finance, ctx.department marketing
-#    ⇒ hold (@cross beats the redact row on specificity).
+# 6. DEPT_CONFIDENTIAL conf 0.91 via embed, content finance, ctx.department
+#    marketing ⇒ still hold, from the SAME tier row as above, not from any
+#    @cross rule -- M10 deleted the cross-department policy row. Also
+#    asserts no @cross row survives in the seeded rules.
 # --------------------------------------------------------------------------
 
-def test_dept_confidential_high_confidence_cross_department_holds():
+def test_dept_confidential_high_confidence_cross_department_holds_from_tier_row():
+    assert not any(r.content_department == "@cross" for r in RULES)
+
     c, _span = _classification("DEPT_CONFIDENTIAL", 0.91,
                                content_department="finance",
                                department_confidence=0.91, detector="embed")
@@ -124,21 +130,25 @@ def test_dept_confidential_high_confidence_cross_department_holds():
                         purpose="GENERAL", target_host="chatgpt.com")
     verdict = decide(c, ctx, RULES)
     assert verdict.decision == "hold"
-    assert verdict.require_purpose is False
+    assert verdict.require_purpose is True
     assert verdict.spans_to_redact == []
 
 
 # --------------------------------------------------------------------------
-# 7. SALARY @ ENTERPRISE_AI, role hr ⇒ allow (specific beats wildcard).
+# 7. SALARY @ ENTERPRISE_AI, role hr ⇒ redact (M10: the regex floor removed
+#    the hr/finance ENTERPRISE_AI exemptions -- SALARY is now a universal
+#    ai_tool_tier: "*" redact+justify row. Was allow before M10.)
 # --------------------------------------------------------------------------
 
-def test_salary_enterprise_ai_hr_role_allows():
-    c, _span = _classification("SALARY", 1.0)
+def test_salary_enterprise_ai_hr_role_now_redacts():
+    c, span = _classification("SALARY", 1.0)
     ctx = PolicyContext(user_role="hr", department="hr",
                         ai_tool_tier="ENTERPRISE_AI", tool_status="approved",
                         purpose="GENERAL", target_host="enterprise.example")
     verdict = decide(c, ctx, RULES)
-    assert verdict.decision == "allow"
+    assert verdict.decision == "redact"
+    assert verdict.require_purpose is True
+    assert verdict.spans_to_redact == [span]
 
 
 # --------------------------------------------------------------------------
@@ -171,15 +181,17 @@ def test_decide_is_pure_and_deterministic():
 # --------------------------------------------------------------------------
 
 def test_unknown_class_for_tier_allows_and_mentions_it():
-    # INTERNAL_AI has no PERSON row -- "everything else: allow, no row
-    # needed" per rules.yaml. This is the no-candidate path, not a match.
-    c, _span = _classification("PERSON", 1.0)
+    # INTERNAL_AI has no DEPT_CONFIDENTIAL row -- "allow, no row needed" per
+    # rules.yaml. This is the no-candidate path, not a match. (M10: PERSON is
+    # no longer usable for this case -- it is now a universal ai_tool_tier:
+    # "*" regex-floor row that matches every tier, INTERNAL_AI included.)
+    c, _span = _classification("DEPT_CONFIDENTIAL", 1.0, detector="embed")
     ctx = PolicyContext(user_role="staff", department="engineering",
                         ai_tool_tier="INTERNAL_AI", tool_status="approved",
                         purpose="GENERAL", target_host="internal.example")
     verdict = decide(c, ctx, RULES)
     assert verdict.decision == "allow"
-    assert "PERSON" in verdict.reason
+    assert "DEPT_CONFIDENTIAL" in verdict.reason
 
 
 # --------------------------------------------------------------------------
@@ -255,3 +267,138 @@ def test_attachment_only_class_falls_back_to_overall_confidence():
     verdict = decide(c, CTX_PUBLIC, rules)
     assert verdict.decision == "redact"
     assert verdict.spans_to_redact == []  # never invents spans
+
+
+# --------------------------------------------------------------------------
+# M10: per-detector DEPT_CONFIDENTIAL tiers, PUBLIC_AI. RULES is the real
+# seeded rules.yaml table.
+# --------------------------------------------------------------------------
+
+def test_embed_049_allows_with_no_purpose():
+    c, _span = _classification("DEPT_CONFIDENTIAL", 0.49, detector="embed")
+    verdict = decide(c, CTX_PUBLIC, RULES)
+    assert verdict.decision == "allow"
+    assert verdict.require_purpose is False
+
+
+def test_embed_050_allows_and_requires_purpose():
+    c, _span = _classification("DEPT_CONFIDENTIAL", 0.50, detector="embed")
+    verdict = decide(c, CTX_PUBLIC, RULES)
+    assert verdict.decision == "allow"
+    assert verdict.require_purpose is True
+
+
+def test_embed_085_boundary_holds_the_stricter_band():
+    c, _span = _classification("DEPT_CONFIDENTIAL", 0.85, detector="embed")
+    verdict = decide(c, CTX_PUBLIC, RULES)
+    assert verdict.decision == "hold"
+    assert verdict.require_purpose is True
+
+
+def test_embed_092_boundary_denies_and_clears_purpose():
+    c, _span = _classification("DEPT_CONFIDENTIAL", 0.92, detector="embed")
+    verdict = decide(c, CTX_PUBLIC, RULES)
+    assert verdict.decision == "deny"
+    assert verdict.require_purpose is False
+
+
+def test_deberta_093_holds_not_denies_own_scale():
+    c, _span = _classification("DEPT_CONFIDENTIAL", 0.93, detector="deberta")
+    verdict = decide(c, CTX_PUBLIC, RULES)
+    assert verdict.decision == "hold"
+
+
+def test_deberta_095_boundary_denies():
+    c, _span = _classification("DEPT_CONFIDENTIAL", 0.95, detector="deberta")
+    verdict = decide(c, CTX_PUBLIC, RULES)
+    assert verdict.decision == "deny"
+
+
+def test_embed_086_and_deberta_096_strictest_wins_deny():
+    embed_span = Span(start=0, end=10, data_class="DEPT_CONFIDENTIAL",
+                      detector="embed", confidence=0.86)
+    deberta_span = Span(start=20, end=30, data_class="DEPT_CONFIDENTIAL",
+                        detector="deberta", confidence=0.96)
+    c = Classification(data_classes=["DEPT_CONFIDENTIAL"], confidence=0.96,
+                       spans=[embed_span, deberta_span],
+                       content_department=None, department_confidence=0.0)
+    verdict = decide(c, CTX_PUBLIC, RULES)
+    assert verdict.decision == "deny"
+
+
+def test_deberta_066_purpose_already_attested_allows_without_asking_again():
+    c, _span = _classification("DEPT_CONFIDENTIAL", 0.66, detector="deberta")
+    ctx = PolicyContext(user_role="staff", department="engineering",
+                        ai_tool_tier="PUBLIC_AI", tool_status="approved",
+                        purpose="drafting", target_host="chatgpt.com")
+    verdict = decide(c, ctx, RULES)
+    assert verdict.decision == "allow"
+    assert verdict.require_purpose is False
+
+
+# --------------------------------------------------------------------------
+# M10: regex redaction floor.
+# --------------------------------------------------------------------------
+
+def test_mykad_on_enterprise_ai_now_redacts_was_allow_before():
+    c, span = _classification("MYKAD", 1.0)   # default detector="rules"
+    ctx = PolicyContext(user_role="staff", department="engineering",
+                        ai_tool_tier="ENTERPRISE_AI", tool_status="approved",
+                        purpose="GENERAL", target_host="enterprise.example")
+    verdict = decide(c, ctx, RULES)
+    assert verdict.decision == "redact"
+    assert verdict.spans_to_redact == [span]
+
+
+def test_salary_hr_enterprise_ai_redacts_with_purpose():
+    c, span = _classification("SALARY", 1.0)
+    ctx = PolicyContext(user_role="hr", department="hr",
+                        ai_tool_tier="ENTERPRISE_AI", tool_status="approved",
+                        purpose="GENERAL", target_host="enterprise.example")
+    verdict = decide(c, ctx, RULES)
+    assert verdict.decision == "redact"
+    assert verdict.require_purpose is True
+    assert verdict.spans_to_redact == [span]
+
+
+def test_mykad_on_internal_ai_redacts():
+    c, span = _classification("MYKAD", 1.0)
+    ctx = PolicyContext(user_role="staff", department="engineering",
+                        ai_tool_tier="INTERNAL_AI", tool_status="approved",
+                        purpose="GENERAL", target_host="internal.example")
+    verdict = decide(c, ctx, RULES)
+    assert verdict.decision == "redact"
+    assert verdict.spans_to_redact == [span]
+
+
+def test_regex_email_plus_embed_060_redacts_with_purpose_and_email_span():
+    email_span = Span(start=0, end=7, data_class="EMAIL",
+                      detector="rules", confidence=1.0)
+    dept_span = Span(start=20, end=40, data_class="DEPT_CONFIDENTIAL",
+                     detector="embed", confidence=0.60)
+    c = Classification(data_classes=["EMAIL", "DEPT_CONFIDENTIAL"], confidence=1.0,
+                       spans=[email_span, dept_span],
+                       content_department=None, department_confidence=0.0)
+    verdict = decide(c, CTX_PUBLIC, RULES)
+    assert verdict.decision == "redact"
+    assert verdict.require_purpose is True
+    assert verdict.spans_to_redact == [email_span]
+
+
+def test_regex_email_plus_embed_093_denies_with_no_spans_to_redact():
+    email_span = Span(start=0, end=7, data_class="EMAIL",
+                      detector="rules", confidence=1.0)
+    dept_span = Span(start=20, end=40, data_class="DEPT_CONFIDENTIAL",
+                     detector="embed", confidence=0.93)
+    c = Classification(data_classes=["EMAIL", "DEPT_CONFIDENTIAL"], confidence=1.0,
+                       spans=[email_span, dept_span],
+                       content_department=None, department_confidence=0.0)
+    verdict = decide(c, CTX_PUBLIC, RULES)
+    assert verdict.decision == "deny"
+    assert verdict.spans_to_redact == []
+
+
+def test_secret_on_public_ai_still_denies():
+    c, _span = _classification("SECRET", 1.0)
+    verdict = decide(c, CTX_PUBLIC, RULES)
+    assert verdict.decision == "deny"

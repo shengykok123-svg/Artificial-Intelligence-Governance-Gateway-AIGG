@@ -42,6 +42,10 @@ function formatTs(ts: string): string {
   });
 }
 
+function detectorLabel(department: string | null, confidence: number): string {
+  return department === null ? "—" : `${department} (${confidence.toFixed(2)})`;
+}
+
 function ContentDepartmentCell({ row }: { row: AuditRecord }) {
   if (row.content_department === null) {
     return <span className="text-gray-400">—</span>;
@@ -201,6 +205,15 @@ export default function AuditLog() {
                             Reason (verbatim) · Purpose: {row.purpose}
                           </p>
                           <p className="mt-1 whitespace-pre-wrap text-sm text-gray-800">{row.reason}</p>
+                          <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-gray-500">
+                            <span>M8 dept@conf: {detectorLabel(row.m8_department, row.m8_confidence)}</span>
+                            <span>M9 dept@conf: {detectorLabel(row.m9_department, row.m9_confidence)}</span>
+                            {row.cross_department_confidence !== null && (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100 px-2 py-0.5 font-medium text-indigo-800">
+                                Cross-department confidence: {row.cross_department_confidence.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
                           {row.reviewer && (
                             <p className="mt-2 text-xs text-gray-500">
                               Reviewed by {row.reviewer}

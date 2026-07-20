@@ -13,7 +13,7 @@ import type { AiTool, Decision, ToolStatus } from "../api/types";
 import { EmptyState, ErrorState, SkeletonRows } from "../components/EmptyState";
 import { VerdictBadge } from "../components/VerdictBadge";
 
-const RULES_COLUMNS = 5;
+const RULES_COLUMNS = 6;
 const INTERNAL_DOC_COLUMNS = 4;
 const TOOLS_COLUMNS = 6;
 
@@ -249,6 +249,7 @@ export default function PolicyAndTools() {
                 <th className="px-4 py-2 text-left font-medium text-gray-600">AI tool tier</th>
                 <th className="px-4 py-2 text-left font-medium text-gray-600">User role</th>
                 <th className="px-4 py-2 text-left font-medium text-gray-600">Purpose</th>
+                <th className="px-4 py-2 text-left font-medium text-gray-600">Detector</th>
                 <th className="px-4 py-2 text-left font-medium text-gray-600">Verdict</th>
               </tr>
             </thead>
@@ -256,11 +257,12 @@ export default function PolicyAndTools() {
               {rules.isLoading && <SkeletonRows rows={5} columns={RULES_COLUMNS} />}
               {!rules.isLoading &&
                 rules.data?.map((rule, i) => (
-                  <tr key={`${rule.data_class}-${rule.ai_tool_tier}-${rule.user_role}-${rule.purpose}-${i}`}>
+                  <tr key={`${rule.data_class}-${rule.ai_tool_tier}-${rule.user_role}-${rule.purpose}-${rule.detector}-${i}`}>
                     <td className="px-4 py-3 font-medium text-gray-800">{rule.data_class}</td>
                     <td className="px-4 py-3 text-gray-600">{rule.ai_tool_tier}</td>
                     <td className="px-4 py-3 text-gray-600">{rule.user_role}</td>
                     <td className="px-4 py-3 text-gray-600">{rule.purpose}</td>
+                    <td className="px-4 py-3 text-gray-600">{rule.detector}</td>
                     <td className="px-4 py-3">
                       {isDecision(rule.decision) ? (
                         <VerdictBadge decision={rule.decision} />

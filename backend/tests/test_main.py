@@ -283,7 +283,14 @@ def inspect(client: TestClient, **overrides):
     return client.post("/v1/inspect", headers=HEADERS, json=body)
 
 
-def seed_internal_doc_for_m8_hold(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def seed_internal_doc_for_m8(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, *,
+    department: str = "hr", similarity: float = 0.88,
+) -> None:
+    """M10: EmbedDetector._best is stubbed to a fixed (department, score)
+    pair so tests can land precisely inside a policy tier band -- real
+    cosine similarity from two identical constant vectors is always exactly
+    1.0 and cannot express "0.88, in the hold band but below deny"."""
     class FakeEncoder:
         def encode(self, texts: list[str], *, normalize_embeddings: bool) -> np.ndarray:
             assert normalize_embeddings is True
@@ -294,6 +301,10 @@ def seed_internal_doc_for_m8_hold(client: TestClient, monkeypatch: pytest.Monkey
         "app.detect.embed.EmbedDetector._load_default_encoder",
         staticmethod(lambda: FakeEncoder()),
     )
+    monkeypatch.setattr(
+        "app.detect.embed.EmbedDetector._best",
+        lambda self, text: (department, similarity),
+    )
 
     content = base64.b64encode(
         b"HR confidential termination plan for employee grievance cases."
@@ -302,7 +313,7 @@ def seed_internal_doc_for_m8_hold(client: TestClient, monkeypatch: pytest.Monkey
         "/v1/internal-docs",
         headers=HEADERS,
         json={
-            "department": "hr",
+            "department": department,
             "attachment": {
                 "filename": "hr-termination-plan.txt",
                 "mime": "text/plain",
@@ -311,6 +322,13 @@ def seed_internal_doc_for_m8_hold(client: TestClient, monkeypatch: pytest.Monkey
         },
     )
     assert r.status_code == 200
+
+
+def seed_internal_doc_for_m8_hold(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Backwards-compatible name for the hold/approve/deny/timeout review
+    workflow tests below, which only need SOME hold verdict and do not care
+    about the exact similarity band."""
+    seed_internal_doc_for_m8(client, monkeypatch, similarity=0.88)
 
 
 # --------------------------------------------------------------------------
@@ -384,12 +402,13 @@ def test_salary_is_redacted_with_purpose(client: TestClient) -> None:
     assert "[SALARY_1]" in body["redacted_prompt"]
 
 
-def test_m8_internal_doc_high_similarity_same_department_redacts_with_purpose(
+def test_m8_internal_doc_mid_high_similarity_holds_with_purpose(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Same department as the indexed content: high-confidence DEPT_CONFIDENTIAL
-    # auto-redacts and still asks for a purpose (state & allow).
-    seed_internal_doc_for_m8_hold(client, monkeypatch)
+    # M10: DEPT_CONFIDENTIAL never redacts on PUBLIC_AI any more -- M8's
+    # tiers are allow+justify / hold+justify / deny. 0.88 similarity lands
+    # in the hold band regardless of department (same department here).
+    seed_internal_doc_for_m8(client, monkeypatch, department="hr", similarity=0.88)
 
     r = inspect(
         client, user_id="aiman.hr@acme.my",
@@ -397,18 +416,21 @@ def test_m8_internal_doc_high_similarity_same_department_redacts_with_purpose(
                "for employee grievance cases.",
     )
     body = r.json()
-    assert body["decision"] == "redact"
+    assert body["decision"] == "hold"
     assert body["require_purpose"] is True
     assert "DEPT_CONFIDENTIAL" in body["data_classes"]
-    assert body["redacted_prompt"] is not None
+    assert body["redacted_prompt"] is None
 
 
-def test_m8_internal_doc_high_similarity_cross_department_holds(
+def test_m8_internal_doc_cross_department_holds_from_the_same_tier_row(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Cross department (engineer reading HR-indexed content): the @cross
-    # sentinel outranks the plain high-confidence redact row -- hold only.
-    seed_internal_doc_for_m8_hold(client, monkeypatch)
+    # M10 deleted the @cross policy row -- cross-department mismatch (an
+    # engineer reading HR-indexed content) is display/log only now. This
+    # lands on the exact same hold band, from the same tier row, as the
+    # same-department case above; the department mismatch changes nothing
+    # about the decision.
+    seed_internal_doc_for_m8(client, monkeypatch, department="hr", similarity=0.88)
 
     r = inspect(
         client, user_id="wei.eng@acme.my",
@@ -417,6 +439,26 @@ def test_m8_internal_doc_high_similarity_cross_department_holds(
     )
     body = r.json()
     assert body["decision"] == "hold"
+    assert body["require_purpose"] is True
+    assert "DEPT_CONFIDENTIAL" in body["data_classes"]
+    assert body["redacted_prompt"] is None
+    assert body["content_department"] == "hr"
+
+
+def test_m8_internal_doc_very_high_similarity_denies(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # M10: near-verbatim internal-document exfiltration (M8 similarity
+    # >= 0.92) is a deny -- redaction cannot un-leak an exact-match document.
+    seed_internal_doc_for_m8(client, monkeypatch, department="hr", similarity=0.94)
+
+    r = inspect(
+        client, user_id="aiman.hr@acme.my",
+        prompt="Please summarize the HR confidential termination plan "
+               "for employee grievance cases.",
+    )
+    body = r.json()
+    assert body["decision"] == "deny"
     assert body["require_purpose"] is False
     assert "DEPT_CONFIDENTIAL" in body["data_classes"]
     assert body["redacted_prompt"] is None

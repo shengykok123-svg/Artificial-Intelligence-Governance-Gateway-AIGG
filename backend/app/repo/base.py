@@ -40,13 +40,22 @@ class AuditRecord:
     remark: str | None
     map_id: str | None             # set when decision == "redact"
     user_department: str | None    # from the users table. Who the person is.
-    content_department: str | None # from M8. What the prompt is about.
+    content_department: str | None # from fused classify(). What the prompt
+                                   # is about (M8 > M9 > null precedence).
     department_confidence: float
     # The two are orthogonal. user != content is cross-department data
     # contact, and that is the column worth looking at.
     purpose: str = "GENERAL"       # what the employee attested. IF-2's
                                    # purpose, stored verbatim on the record
                                    # that resulted from it.
+    m8_department: str | None = None       # raw EmbedDetector.classify() output
+    m8_confidence: float = 0.0
+    m9_department: str | None = None       # raw DebertaDetector.classify() output
+    m9_confidence: float = 0.0
+    cross_department_confidence: float | None = None
+    # max(m8_confidence, m9_confidence), set only when the fused
+    # content_department is known and differs from user_department.
+    # Display/analytics only -- M3 never reads this field.
 
 
 @dataclass
@@ -66,6 +75,10 @@ class RuleRow:
                                        # confidence for this class >= it
     content_department: str = "*"      # "*" | "@cross" | a literal department
     require_purpose: bool = False      # "state & allow" flag
+    detector: str = "*"                # "*" | "embed" | "deberta" -- "*" is
+                                       # detector-agnostic (existing behaviour);
+                                       # "embed"/"deberta" match only spans that
+                                       # detector itself emitted for this class.
 
 
 @dataclass

@@ -64,6 +64,16 @@ class AuditLog(Base):
     content_department: Mapped[str | None] = mapped_column(String(32), nullable=True)
     department_confidence: Mapped[float] = mapped_column(Float, default=0.0)
 
+    # M10: additive, nullable, no backfill. A hosted database that predates
+    # this change needs these columns added by hand (no Alembic here, see
+    # SD-6) -- ALTER TABLE audit_logs ADD COLUMN ... for each of the five
+    # below, or run reset_db.py if the data is disposable.
+    m8_department: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    m8_confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    m9_department: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    m9_confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    cross_department_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+
     # SD-5: everything is retained for now and the MVP runs no purge job.
     # The column exists so the retention story is a schedule we have not
     # switched on yet, rather than a position we are defending. The proposal
@@ -121,6 +131,9 @@ class PolicyRule(Base):
     # literal department, matched against Classification.content_department.
     content_department: Mapped[str] = mapped_column(String(32), default="*")
     require_purpose: Mapped[bool] = mapped_column(Boolean, default=False)
+    detector: Mapped[str] = mapped_column(String(16), default="*")
+    # "*" | "embed" | "deberta". M10: additive, nullable-equivalent via
+    # default="*", so existing rows keep their exact current semantics.
     # Seeded from rules.yaml on first run. After that this table is the
     # only source of truth. M3 receives these rows as an argument.
 

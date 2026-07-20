@@ -7,6 +7,11 @@
 # never reads this file -- M1 fetches the rows via RuleRepo.all() and passes
 # them into decide() as an argument.
 #
+# LIVE SYSTEMS: this M10 revision is a full rewrite of the rule set (see PR
+# description). A hosted database seeded from the pre-M10 table does not
+# pick this up automatically -- apply the equivalent row edits to
+# policy_rules by hand, or run reset_db.py if the data is disposable.
+#
 # The reason is the case study's own complaint: if changing "MyKad to a public
 # AI tool" from redact to deny needs a git commit, we have rebuilt the exact
 # governance gap we are supposed to be closing. A compliance officer cannot
@@ -15,72 +20,95 @@
 # Matching (M3's job, stated here only so the rows read sensibly):
 #   data_class must match exactly.
 #   ai_tool_tier, user_role, purpose accept "*" as a wildcard.
+#   detector: "*" (default) matches regardless of which detector produced a
+#     span; "embed" or "deberta" matches only that detector's own spans for
+#     this class, with its OWN best-confidence and min_confidence gate. M8's
+#     confidence is a cosine similarity and M9's is a joint softmax
+#     probability -- they are not the same scale, so a class judged by both
+#     detectors needs two separate tables, not one shared min_confidence.
+#     Per data_class, a winner is picked independently within each detector
+#     group present; the class's outcome is the STRICTEST of those winners.
 #   min_confidence: rule matches only if the best span confidence for this
-#     class is >= it. Defaults to 0.0 (always satisfied) when absent.
+#     class (from that rule's detector, or overall for "*") is >= it.
+#     Defaults to 0.0 (always satisfied) when absent. All thresholds in this
+#     file are ">=": an exact boundary value resolves to the stricter band.
 #   content_department: "*" (default) always matches; "@cross" matches iff
 #     Classification.content_department is set and differs from the
-#     requester's department; a literal department matches equality.
+#     requester's department; a literal department matches equality. No row
+#     below uses "@cross" -- cross-department mismatch is a logged display
+#     value only now (see M10), not a policy input -- but the engine keeps
+#     the mechanism live so a compliance officer can re-add a cross row
+#     later without a release.
 #   require_purpose: "state & allow" flag. Defaults to false.
-#   Most specific match wins (most non-wildcard fields, higher min_confidence
-#     breaking a tie); ties break toward the stricter verdict
-#     (deny > hold > redact > allow).
+#   Most specific match wins (most non-wildcard fields, counting a
+#     detector-scoped rule as one more non-wildcard field, higher
+#     min_confidence breaking a tie); ties break toward the stricter verdict
+#     (deny > hold > redact > allow). This tie-break is evaluated separately
+#     within each detector's own candidate group.
 #
 # decision: allow | redact | hold | deny
 #
 # Design principle: deny is reserved for cases where redaction destroys the
-# task's purpose or the event itself is an incident (credentials). Every
-# other class gets a path forward -- an unnecessary deny is a shadow-AI
-# conversion. Unlisted (class, tier) pairs resolve to allow via the
-# no-candidate rule in decide(); the rows below are the complete intended
-# policy.
+# task's purpose, the event itself is an incident (credentials), or -- new in
+# M10 -- a detector is confident enough that this IS a specific piece of
+# internal content that redaction cannot un-leak (near-verbatim
+# internal-document exfiltration at M8 similarity >= 0.92 / M9 probability
+# >= 0.95). Every other class gets a path forward -- an unnecessary deny is a
+# shadow-AI conversion. Regex-detected classes (MYKAD, EMAIL, PHONE, PERSON,
+# BANK_ACCT, SALARY) are a redaction floor at every tier: the rows below say
+# so explicitly, and the engine also enforces it structurally, because a
+# regex match is an exact span with zero ambiguity about what it is -- there
+# is never a tier loose enough to let it through unmasked. Unlisted (class,
+# tier) pairs resolve to allow via the no-candidate rule in decide(); the
+# rows below are the complete intended policy.
 
 rules:
-  # ---------- PUBLIC_AI (ChatGPT, Gemini -- external boundary) ----------
-  # Tokenisable PII: reversible redaction, zero friction. PDPA answered.
-  - {data_class: MYKAD,  ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*", decision: redact}
-  - {data_class: EMAIL,  ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*", decision: redact}
-  - {data_class: PHONE,  ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*", decision: redact}
-  - {data_class: PERSON, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*", decision: redact}
-
-  # SECRET: the one true deny. A leaked credential is an incident to
-  # surface (rotate the key), not a field to mask. Purpose never overrides.
-  - {data_class: SECRET, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*", decision: deny}
-
-  # SALARY: maskable and legitimate in real work (budgets, job ads).
-  # Masked amount + attested purpose instead of a blanket block.
-  - {data_class: SALARY, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
+  # ---------- REGEX CLASSES: redaction floor at EVERY tier -------------
+  # The engine also enforces this floor structurally (any "rules"-detector
+  # span forces at least redact); these rows make the table read as the
+  # complete intended policy.
+  - {data_class: MYKAD,     ai_tool_tier: "*", user_role: "*", purpose: "*", decision: redact}
+  - {data_class: EMAIL,     ai_tool_tier: "*", user_role: "*", purpose: "*", decision: redact}
+  - {data_class: PHONE,     ai_tool_tier: "*", user_role: "*", purpose: "*", decision: redact}
+  - {data_class: PERSON,    ai_tool_tier: "*", user_role: "*", purpose: "*", decision: redact}
+  - {data_class: BANK_ACCT, ai_tool_tier: "*", user_role: "*", purpose: "*", decision: redact}
+  - {data_class: SALARY,    ai_tool_tier: "*", user_role: "*", purpose: "*",
      decision: redact, require_purpose: true}
 
-  # BANK_ACCT: structured, exact-span, perfectly maskable.
-  - {data_class: BANK_ACCT, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*", decision: redact}
-
-  # DEPT_CONFIDENTIAL: confidence-tiered (see section 5.3 of the proposal).
-  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
-     min_confidence: 0.65, content_department: "*",
-     decision: allow, require_purpose: true}          # mid: state & allow
-  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
-     min_confidence: 0.85, content_department: "*",
-     decision: redact, require_purpose: true}         # high: auto-redact + state
-  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
-     min_confidence: 0.85, content_department: "@cross",
-     decision: hold}                                  # high + cross-dept: ONLY hold
-     # "@cross" sentinel: content_department is set AND != ctx.department
-
-  # ---------- ENTERPRISE_AI (tenant agreement -- one notch looser) ------
-  - {data_class: MYKAD,  ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*", decision: allow}
-  - {data_class: EMAIL,  ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*", decision: allow}
-  - {data_class: PHONE,  ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*", decision: allow}
-  - {data_class: PERSON, ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*", decision: allow}
+  # SECRET: deny on the external boundary (leaked credential = incident,
+  # rotate the key); redact inside the tenant / internal boundary.
+  - {data_class: SECRET, ai_tool_tier: PUBLIC_AI,     user_role: "*", purpose: "*", decision: deny}
   - {data_class: SECRET, ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*", decision: redact}
-  - {data_class: SALARY, ai_tool_tier: ENTERPRISE_AI, user_role: hr,      purpose: "*", decision: allow}
-  - {data_class: SALARY, ai_tool_tier: ENTERPRISE_AI, user_role: finance, purpose: "*", decision: allow}
-  - {data_class: SALARY, ai_tool_tier: ENTERPRISE_AI, user_role: "*",     purpose: "*", decision: redact}
-  - {data_class: BANK_ACCT, ai_tool_tier: ENTERPRISE_AI, user_role: finance, purpose: "*", decision: allow}
-  - {data_class: BANK_ACCT, ai_tool_tier: ENTERPRISE_AI, user_role: "*",     purpose: "*", decision: redact}
-  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*",
-     min_confidence: 0.65, content_department: "*",
-     decision: allow, require_purpose: true}          # state & allow even at high conf
+  - {data_class: SECRET, ai_tool_tier: INTERNAL_AI,   user_role: "*", purpose: "*", decision: redact}
 
-  # ---------- INTERNAL_AI (our own tool -- trust it with our data) ------
-  - {data_class: SECRET, ai_tool_tier: INTERNAL_AI, user_role: "*", purpose: "*", decision: redact}
-  # everything else on INTERNAL_AI: allow (no row needed)
+  # ---------- DEPT_CONFIDENTIAL, PUBLIC_AI: per-detector tiers ---------
+  # M8 = cosine similarity vs indexed internal docs ("is this OUR doc?")
+  #   < 0.50 allow (no row) | >=0.50 allow+justify | >=0.85 hold+justify
+  #   | >=0.92 deny
+  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
+     detector: embed, min_confidence: 0.50, decision: allow, require_purpose: true}
+  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
+     detector: embed, min_confidence: 0.85, decision: hold,  require_purpose: true}
+  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
+     detector: embed, min_confidence: 0.92, decision: deny}
+
+  # M9 = joint sensitivity+department probability ("confidential in nature?")
+  #   < 0.65 allow (no row) | >=0.65 allow+justify | >=0.90 hold+justify
+  #   | >=0.95 deny
+  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
+     detector: deberta, min_confidence: 0.65, decision: allow, require_purpose: true}
+  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
+     detector: deberta, min_confidence: 0.90, decision: hold,  require_purpose: true}
+  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
+     detector: deberta, min_confidence: 0.95, decision: deny}
+
+  # ---------- DEPT_CONFIDENTIAL, ENTERPRISE_AI: one notch looser -------
+  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*",
+     detector: embed,   min_confidence: 0.50, decision: allow, require_purpose: true}
+  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*",
+     detector: deberta, min_confidence: 0.65, decision: allow, require_purpose: true}
+
+  # NO cross-department rule: cross-dept mismatch is display/log only.
+  # The @cross mechanism stays in the engine so a row can re-enable it
+  # without a release.
+  # INTERNAL_AI DEPT_CONFIDENTIAL: allow (no row needed).

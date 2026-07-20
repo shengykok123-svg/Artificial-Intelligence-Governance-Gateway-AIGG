@@ -20,9 +20,14 @@ export interface AuditRecord {
   remark: string | null;
   map_id: string | null;
   user_department: string | null; // who the person IS
-  content_department: string | null; // what the prompt is ABOUT (M8)
+  content_department: string | null; // what the prompt is ABOUT (fused M8 > M9 > null)
   department_confidence: number; // 0.0 - 1.0
   purpose: string; // what the employee attested; "GENERAL" by default
+  m8_department: string | null; // raw EmbedDetector.classify() output
+  m8_confidence: number;
+  m9_department: string | null; // raw DebertaDetector.classify() output
+  m9_confidence: number;
+  cross_department_confidence: number | null; // set only when content_department != user_department
 }
 
 export interface LogsPage {
@@ -59,6 +64,7 @@ export interface RuleRow {
   user_role: string;
   purpose: string;
   decision: string;
+  detector: string; // "*" | "embed" | "deberta"
 }
 
 export type ToolTier = "PUBLIC_AI" | "ENTERPRISE_AI" | "INTERNAL_AI";

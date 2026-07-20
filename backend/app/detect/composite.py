@@ -74,10 +74,26 @@ def _pick_winner(cluster: list[Span]) -> Span:
     return max(cluster, key=lambda s: (s.confidence, s.end - s.start))
 
 
+# classify() fusion no longer picks "whichever confidence is higher" -- M8's
+# cosine similarity and M9's joint softmax probability are different scales,
+# so a raw confidence race silently favours whichever detector happens to run
+# hotter. Fusion is explainability-precedence instead: agreement -> the
+# higher confidence of the two (they already agree, so take the stronger
+# signal); disagreement -> M8 wins, because "this resembles indexed document
+# X" points a reviewer at a concrete artefact while a bare softmax label does
+# not; M8 null/general -> adopt M9 so a document with no indexed match can
+# still be flagged confidential in nature.
+_NULL_DEPARTMENTS = {None, "", "other", "general"}
+
+
+def _normalize_department(department: str | None) -> str | None:
+    return None if department in _NULL_DEPARTMENTS else department
+
+
 class CompositeSemanticDetector:
     """M8 + M9 in parallel behind the single semantic-detector protocol.
-    Union of spans with overlap dedup; classify() = the opinion with the
-    higher confidence."""
+    Union of spans with overlap dedup; classify() = explainability-precedence
+    fusion (see classify_debug)."""
 
     def __init__(self, embed: _SemanticSubDetector, deberta: _SemanticSubDetector) -> None:
         self._embed = embed
@@ -100,11 +116,35 @@ class CompositeSemanticDetector:
         return deduped
 
     def classify(self, doc: Document) -> tuple[str | None, float]:
-        embed_result = self._embed.classify(doc)
-        deberta_result = self._deberta.classify(doc)
-        # (None, 0.0) always loses to any real department: 0.0 is the floor
-        # of the confidence range, so max() by confidence alone is enough.
-        return max(embed_result, deberta_result, key=lambda t: t[1])
+        fused, _m8_raw, _m9_raw = self.classify_debug(doc)
+        return fused
+
+    def classify_debug(
+        self, doc: Document,
+    ) -> tuple[
+        tuple[str | None, float], tuple[str | None, float], tuple[str | None, float],
+    ]:
+        """(fused, m8_raw, m9_raw). Raw outputs are each sub-detector's
+        classify() verbatim -- audit logging wants what M8 and M9 actually
+        said, not the normalized view fusion uses to compare them. Runs each
+        model exactly once so main.py never pays for a second inference just
+        to log what the first one produced."""
+        m8_raw = self._embed.classify(doc)
+        m9_raw = self._deberta.classify(doc)
+
+        m8_dept = _normalize_department(m8_raw[0])
+        m9_dept = _normalize_department(m9_raw[0])
+
+        if m8_dept is not None and m8_dept == m9_dept:
+            fused = (m8_dept, max(m8_raw[1], m9_raw[1]))
+        elif m8_dept is not None:
+            fused = (m8_dept, m8_raw[1])
+        elif m9_dept is not None:
+            fused = (m9_dept, m9_raw[1])
+        else:
+            fused = (None, 0.0)
+
+        return fused, m8_raw, m9_raw
 
 
 __all__ = ["CompositeSemanticDetector", "dedup_overlapping"]

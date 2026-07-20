@@ -72,6 +72,7 @@ def seed_rules(bundle, rows):
             min_confidence=r.min_confidence,
             content_department=r.content_department,
             require_purpose=r.require_purpose,
+            detector=r.detector,
         ))
     bundle.rules.s.commit()
 

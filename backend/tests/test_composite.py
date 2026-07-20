@@ -93,23 +93,73 @@ def test_different_data_class_spans_never_merge_even_if_overlapping():
 
 
 # --------------------------------------------------------------------------
-# 5. classify(): higher confidence wins; (None, 0.0) loses to any real dept.
+# 5. classify(): M10 explainability-precedence fusion.
+#    agreement -> max confidence; disagreement -> M8 wins; M8 null/general
+#    -> adopt M9; both null -> (None, 0.0).
 # --------------------------------------------------------------------------
 
-def test_classify_picks_higher_confidence_department():
+def test_classify_agreement_takes_the_higher_confidence():
+    composite = CompositeSemanticDetector(
+        embed=StubDetector(classification=("finance", 0.6)),
+        deberta=StubDetector(classification=("finance", 0.9)),
+    )
+    assert composite.classify(_DOC) == ("finance", 0.9)
+
+
+def test_classify_disagreement_m8_wins_even_at_lower_confidence():
     composite = CompositeSemanticDetector(
         embed=StubDetector(classification=("finance", 0.55)),
-        deberta=StubDetector(classification=("hr", 0.80)),
+        deberta=StubDetector(classification=("hr", 0.99)),
     )
-    assert composite.classify(_DOC) == ("hr", 0.80)
+    assert composite.classify(_DOC) == ("finance", 0.55)
 
 
-def test_classify_none_loses_to_any_real_department():
+def test_classify_m8_none_adopts_m9():
     composite = CompositeSemanticDetector(
         embed=StubDetector(classification=(None, 0.0)),
-        deberta=StubDetector(classification=("legal", 0.45)),
+        deberta=StubDetector(classification=("hr", 0.8)),
     )
-    assert composite.classify(_DOC) == ("legal", 0.45)
+    assert composite.classify(_DOC) == ("hr", 0.8)
+
+
+def test_classify_m8_other_is_treated_as_null_and_m9_is_adopted():
+    composite = CompositeSemanticDetector(
+        embed=StubDetector(classification=("other", 0.7)),
+        deberta=StubDetector(classification=("legal", 0.66)),
+    )
+    assert composite.classify(_DOC) == ("legal", 0.66)
+
+
+def test_classify_both_null_is_none_zero():
+    composite = CompositeSemanticDetector(
+        embed=StubDetector(classification=(None, 0.0)),
+        deberta=StubDetector(classification=(None, 0.0)),
+    )
+    assert composite.classify(_DOC) == (None, 0.0)
+
+
+def test_classify_debug_returns_fused_plus_both_raw_outputs():
+    composite = CompositeSemanticDetector(
+        embed=StubDetector(classification=("finance", 0.55)),
+        deberta=StubDetector(classification=("hr", 0.99)),
+    )
+    fused, m8_raw, m9_raw = composite.classify_debug(_DOC)
+    assert fused == ("finance", 0.55)          # disagreement -> M8 wins
+    assert m8_raw == ("finance", 0.55)          # raw, unmodified
+    assert m9_raw == ("hr", 0.99)               # raw, unmodified
+
+
+def test_classify_debug_raw_outputs_preserve_null_labels_untouched():
+    # "other" is normalized to None for fusion purposes only -- the raw
+    # tuple audit logging reads must show exactly what M8 said.
+    composite = CompositeSemanticDetector(
+        embed=StubDetector(classification=("other", 0.7)),
+        deberta=StubDetector(classification=("legal", 0.66)),
+    )
+    fused, m8_raw, m9_raw = composite.classify_debug(_DOC)
+    assert fused == ("legal", 0.66)
+    assert m8_raw == ("other", 0.7)
+    assert m9_raw == ("legal", 0.66)
 
 
 # --------------------------------------------------------------------------
@@ -141,6 +191,8 @@ def test_deduped_span_still_lands_in_the_correct_policy_tier():
     ctx = PolicyContext(user_role="staff", department="engineering", ai_tool_tier="PUBLIC_AI",
                         tool_status="approved", purpose="GENERAL", target_host="chatgpt.com")
     verdict = decide(classification, ctx, load_rules_yaml())
-    # 0.91 >= the 0.85 tier: redact + require_purpose, not the 0.65 allow tier.
-    assert verdict.decision == "redact"
+    # The surviving span is detector="deberta" (dedup kept the higher
+    # confidence one): M9's own tiers apply (>=0.90 hold+justify), not M8's
+    # -- 0.91 is below M9's 0.95 deny band.
+    assert verdict.decision == "hold"
     assert verdict.require_purpose is True

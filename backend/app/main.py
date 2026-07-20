@@ -699,9 +699,31 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
     confidence = max((s.confidence for s in all_spans), default=0.0)
 
     combined_text = "\n".join(doc.text for doc in documents)
-    content_department, department_confidence = embed_detector.classify(
-        Document(text=combined_text, source_filename=None, mime="text/plain")
-    )
+    classify_doc = Document(text=combined_text, source_filename=None, mime="text/plain")
+
+    # M10: CompositeSemanticDetector exposes classify_debug() so the audit
+    # trail can carry M8's and M9's raw opinions alongside the fused one,
+    # without running either model twice. Anything that only implements the
+    # plain classify() (a lone EmbedDetector/DebertaDetector, a mock, a test
+    # stub) falls back to attributing that single result to whichever
+    # detector SEMANTIC_DETECTOR says is actually running.
+    classify_debug = getattr(embed_detector, "classify_debug", None)
+    if classify_debug is not None:
+        (content_department, department_confidence), m8_raw, m9_raw = classify_debug(classify_doc)
+        m8_department, m8_confidence = m8_raw
+        m9_department, m9_confidence = m9_raw
+    else:
+        content_department, department_confidence = embed_detector.classify(classify_doc)
+        if SEMANTIC_DETECTOR == "m9_deberta":
+            m8_department, m8_confidence = None, 0.0
+            m9_department, m9_confidence = content_department, department_confidence
+        else:
+            m8_department, m8_confidence = content_department, department_confidence
+            m9_department, m9_confidence = None, 0.0
+
+    cross_department_confidence: float | None = None
+    if content_department is not None and content_department != user.department:
+        cross_department_confidence = max(m8_confidence, m9_confidence)
 
     classification = Classification(
         data_classes=data_classes,
@@ -890,6 +912,11 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         content_department=content_department,
         department_confidence=department_confidence,
         purpose=req.purpose,
+        m8_department=m8_department,
+        m8_confidence=m8_confidence,
+        m9_department=m9_department,
+        m9_confidence=m9_confidence,
+        cross_department_confidence=cross_department_confidence,
     ))
 
     return InspectResponse(
@@ -902,6 +929,10 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         require_purpose=verdict.require_purpose,
         content_department=content_department,
         department_confidence=department_confidence,
+        m8_department=m8_department,
+        m8_confidence=m8_confidence,
+        m9_department=m9_department,
+        m9_confidence=m9_confidence,
         debug=InspectDebug(
             policy_layer="M3",
             semantic_detector=SEMANTIC_DETECTOR,

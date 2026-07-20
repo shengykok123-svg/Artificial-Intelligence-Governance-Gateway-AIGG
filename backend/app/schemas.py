@@ -52,9 +52,13 @@ class InspectResponse(BaseModel):
     redacted_attachments: list[RedactedAttachment] = []
     reason: str                   # one human-readable sentence
     require_purpose: bool = False  # "state & allow": ask, then resubmit with purpose
-    # M9 explainability metadata. These do not affect the policy verdict.
-    content_department: str | None
+    # Explainability metadata. These do not affect the policy verdict.
+    content_department: str | None    # fused: M8 > M9 > null precedence
     department_confidence: float
+    m8_department: str | None = None  # raw EmbedDetector.classify() output
+    m8_confidence: float = 0.0
+    m9_department: str | None = None  # raw DebertaDetector.classify() output
+    m9_confidence: float = 0.0
     debug: InspectDebug
 
 
