@@ -33,13 +33,13 @@ export function isInsideBanner(node: Node | null): boolean {
 }
 
 /** Compact feedback card for a verdict. It never includes raw prompt text. */
-export function showBanner(anchor: Element, kind: BannerKind, text: string): void {
+export function showBanner(_anchor: Element, kind: BannerKind, text: string): void {
   removeBanner();
   const palette = STYLE[kind];
   const card = document.createElement("div");
   card.id = BANNER_ID;
   Object.assign(card.style, {
-    position: "relative", zIndex: "2147483647", padding: "12px 14px", margin: "8px 0",
+    position: "fixed", right: "24px", bottom: "24px", zIndex: "2147483647", padding: "12px 14px", margin: "0",
     borderRadius: "10px", minWidth: "280px", maxWidth: "560px", fontSize: "13px",
     fontFamily: "system-ui, sans-serif", lineHeight: "1.4", background: palette.bg, color: palette.fg,
     border: `1px solid ${palette.fg}55`, boxShadow: "0 4px 16px rgba(15, 23, 42, 0.10)",
@@ -58,7 +58,10 @@ export function showBanner(anchor: Element, kind: BannerKind, text: string): voi
   Object.assign(close.style, { position: "absolute", right: "8px", top: "5px", border: "0", background: "transparent", color: palette.fg, cursor: "pointer", fontSize: "18px" });
   close.addEventListener("click", removeBanner);
   card.append(heading, detail, outcome, close);
-  anchor.parentElement?.insertBefore(card, anchor);
+  // Do not attach this to ChatGPT/Gemini's composer. Those SPA frameworks
+  // frequently replace the composer tree, and a fixed body-level toast is
+  // stable and stays out of the typing area at the lower-right of the page.
+  document.body.appendChild(card);
 }
 
 function buttonStyle(button: HTMLButtonElement, primary: boolean): void {
