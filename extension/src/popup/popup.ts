@@ -119,7 +119,6 @@ async function load(): Promise<void> {
   el<HTMLInputElement>("userId").value = userId;
   el<HTMLInputElement>("apiKey").value = apiKey;
   el<HTMLInputElement>("mockMode").checked = stored.mockMode ?? DEFAULTS.mockMode;
-  el<HTMLSpanElement>("configuredUser").textContent = userId;
   setLinks(baseUrl);
   renderLastDecision(stored.lastVerdict);
   void checkHealth(baseUrl, apiKey, stored.lastVerdict);
@@ -132,7 +131,6 @@ el<HTMLButtonElement>("save").addEventListener("click", () => {
     const apiKey = el<HTMLInputElement>("apiKey").value.trim() || DEFAULTS.apiKey;
     const mockMode = el<HTMLInputElement>("mockMode").checked;
     await chrome.storage.local.set({ baseUrl, userId, apiKey, mockMode });
-    el<HTMLSpanElement>("configuredUser").textContent = userId;
     setLinks(baseUrl);
     el<HTMLDivElement>("saveNote").textContent = "Settings saved.";
     void checkHealth(baseUrl, apiKey);
