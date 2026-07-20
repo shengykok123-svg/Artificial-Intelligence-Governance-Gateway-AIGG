@@ -48,6 +48,10 @@ class AuditRecord:
     purpose: str = "GENERAL"       # what the employee attested. IF-2's
                                    # purpose, stored verbatim on the record
                                    # that resulted from it.
+    justification: str | None = None  # the employee's free-text explanation
+                                       # from the justification picker --
+                                       # distinct from purpose (the category
+                                       # dropdown). Display only.
     m8_department: str | None = None       # raw EmbedDetector.classify() output
     m8_confidence: float = 0.0
     m9_department: str | None = None       # raw DebertaDetector.classify() output
@@ -63,6 +67,19 @@ class AuditRecord:
 class TokenEntry:
     token: str                     # "[MYKAD_1]"
     ciphertext: bytes
+
+
+@dataclass
+class AttachmentBlob:
+    filename: str
+    mime: str
+    content_b64: str
+    # The file actually attached to an audit record, for later download. This
+    # is the REDACTED copy whenever redaction happened (same SD-1 principle
+    # as prompt_text: the audit trail never holds the raw original once
+    # something needed masking), or the original bytes unchanged when
+    # nothing in that attachment needed redaction. One per audit record --
+    # AuditRecord.filename is already singular, so this mirrors that.
 
 
 @dataclass
@@ -150,6 +167,13 @@ class AuditRepo(Protocol):
              ) -> tuple[list[AuditRecord], int]: ...
     def set_decision(self, log_id: str, *, approve: bool,
                      reviewer: str, remark: str) -> AuditRecord: ...
+    def update_pending(self, log_id: str, rec: AuditRecord) -> AuditRecord | None: ...
+    def save_attachment(self, log_id: str, blob: AttachmentBlob) -> None: ...
+    def get_attachment(self, log_id: str) -> AttachmentBlob | None: ...
+    # "State & allow" pass 2: overwrite a still-pending record's content
+    # fields in place (log_id, ts, and review-lifecycle fields untouched) --
+    # None if the record is gone or already reviewed, so the caller falls
+    # back to create() rather than losing the resubmission.
     def stats(self) -> StatsSummary: ...
 
 

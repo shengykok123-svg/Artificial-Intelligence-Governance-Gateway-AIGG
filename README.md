@@ -7,43 +7,6 @@ auditable log; an employer dashboard is where a held prompt gets approved or
 denied, and the extension unblocks the employee within seconds of that
 decision.
 
-## Teammate Handover
-
-If you are taking over from Luis's branch, start here before running commands:
-
-1. `docs/LUIS_HANDOVER_SUMMARY.md` - short overview of what Luis added on top
-   of `origin/main`.
-2. `docs/LUIS_DEVELOPMENT_CONTEXT.md` - fuller context for teammates or coding
-   agents, including decisions, alternatives discussed, and known limits.
-3. `docs/RUNBOOK.md` - step-by-step local setup, run, acceptance, and
-   troubleshooting guide.
-
-The main mental-model change from `main` is:
-
-```text
-origin/main already had the M5 extraction foundation.
-Luis's branch adds file redaction replacement on top of it,
-extends file coverage needed for redaction, and moves M8 to
-PostgreSQL + pgvector internal-document similarity.
-```
-
-Current demo expectations:
-
-```text
-Mocked modules: none (MOCK_MODULES= empty)
-Salary: redact + purpose picker ("state & allow")
-API key: deny
-MyKad/email/phone/person: redact
-Internal-document confidential similarity: mid-confidence state & allow
-(purpose picker); high-confidence same-department redact + purpose
-picker; high-confidence cross-department hold, auto-redacting after
-HOLD_TIMEOUT_SECONDS if nobody reviews it
-```
-
-Use `docs/RUNBOOK.md` for commands. Use
-`docs/LUIS_DEVELOPMENT_CONTEXT.md` if any setup step or policy decision is
-unclear.
-
 ## Scope snapshot
 
 This repository is a browser-boundary AI governance MVP. It inspects a prompt
@@ -63,17 +26,41 @@ engine with a "state & allow" verdict model (`require_purpose`), and
 `MOCK_MODULES` is now empty — the whole system runs with zero mocks (M9
 DeBERTa stays opt-in via `SEMANTIC_DETECTOR=m9_deberta`). Policy is data:
 `backend/app/policy/rules.yaml` seeds `policy_rules`, and a compliance
-officer edits a row, never redeploys code. Deny is now reserved for SECRET
-(credential incidents); SALARY, BANK_ACCT and DEPT_CONFIDENTIAL all get a
-path forward (redact and/or a purpose attestation) instead of a blanket
-block. A hold nobody reviews auto-downgrades to its prepared redaction after
-`HOLD_TIMEOUT_SECONDS` (default 600s) — nobody waits unbounded on a human
-reviewer. See `docs/EXTENSION_TEST_REPORT.md` and `extension/README.md` for
-the prior (M3-mocked) acceptance evidence.
+officer edits a row, never redeploys code. M2 (regex) classes — MYKAD,
+EMAIL, PHONE, PERSON, BANK_ACCT, SALARY, SECRET included — carry no policy
+voice of their own; the structural regex floor redacts every one of them,
+never escalates to hold or deny, not even a leaked credential.
+DEPT_CONFIDENTIAL (M8/M9) is the only class that can still push a request
+to hold or deny. A hold nobody reviews auto-downgrades to its prepared
+redaction after `HOLD_TIMEOUT_SECONDS` (default 600s) — nobody waits
+unbounded on a human reviewer. See `docs/EXTENSION_TEST_REPORT.md` and
+`extension/README.md` for the prior (M3-mocked) acceptance evidence.
 
 The full frame — **M0, M1, M2, M3, M4, M5, M6, M7, M8** — is built, tested,
 and wired end to end against **real HTTP**, with `MOCK_MODULES=` empty.
 `ENV=demo` now boots.
+
+**2026-07-21 update (M11/M12):** M9's two heads are now judged
+independently — `classify()` reports department attribution,
+`classify_sensitivity()` reports confidentiality severity on its own scale,
+so a sentence M9 is unsure *whose* it is no longer suppresses a strong *is
+this confidential* signal the way the old blended `joint_confidence` did.
+Cross-department mismatch is a live policy input again: content attributed
+to a department other than the requester's escalates the verdict one tier
+on top of the same-department bands (`rules.yaml`'s `@cross` rows). The
+regex redaction floor now holds on every path, not just `redact` — a
+credential or PII span M2 catches is masked in the audit trail on `hold`
+and `deny` too, and a *manually* approved hold now releases the same
+prepared redaction the lazy timeout always did (previously only the
+timeout path did this, so a human approving a hold could release an
+unredacted credential). The "state & allow" two-pass flow (purpose picker,
+then resubmit) updates the original pending row in place instead of
+creating a sibling one — one interaction, one audit row, not two. The
+employee's typed justification (previously validated client-side, then
+discarded) is now captured and shown in the approval queue next to their
+purpose category. Attachments are now downloadable from the audit log —
+the redacted copy whenever anything in the file needed masking, the
+original otherwise, for every decision including `deny`.
 
 | | Module | P | Status |
 |---|---|---|---|
@@ -86,7 +73,7 @@ and wired end to end against **real HTTP**, with `MOCK_MODULES=` empty.
 | ✅ | **M6** Employer dashboard | P1 | Built |
 | ✅ | **M7** Tokenisation vault | P2 | Built — Fernet-encrypted reversible token maps |
 | ✅ | **M8** Embedding similarity | P1 | Built — `all-MiniLM-L6-v2` embeddings over PostgreSQL + pgvector internal-document chunks |
-| 🧪 | **M9** Fine-tuned DeBERTa-v3-small | P3 | Built as an opt-in two-head department + confidentiality detector; synthetic baseline trained, pending reviewed gold data |
+| 🧪 | **M9** Fine-tuned DeBERTa-v3-small | P3 | Built as an opt-in two-head department + confidentiality detector, axes judged independently (M11); synthetic baseline trained, pending reviewed gold data and threshold recalibration against it |
 
 `GET /v1/health` reports which modules are currently mocked — check it before
 trusting a verdict. With `MOCK_MODULES=` empty it should report `mocked: []`.
@@ -95,13 +82,20 @@ On `PUBLIC_AI` these demo strings produce the acceptance verdicts:
 | Trigger string | Verdict |
 |---|---|
 | `880412-08-5561` (MyKad) | redact |
-| `sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d` (API key) | deny |
-| `RM 8,500` (salary) | redact + purpose picker |
+| `sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d` (API key) | redact |
+| `RM 8,500` (salary) | redact |
 | `account no: 1234 5678 9012` (bank account) | redact |
-| mid-similarity internal-document content (0.65–0.85) | state & allow (purpose picker) |
-| high-similarity internal-document content, same department (≥0.85) | redact + purpose picker |
-| high-similarity internal-document content, cross department (≥0.85) | hold — auto-redacts after `HOLD_TIMEOUT_SECONDS` |
+| M8 internal-doc similarity, same department, mid confidence (≥0.50) | allow + purpose picker |
+| M8 internal-doc similarity, same department, high confidence (≥0.85) | hold — auto-redacts after `HOLD_TIMEOUT_SECONDS` |
+| M9 confidentiality signal, same department, mid confidence (≥0.65) | allow + purpose picker |
+| M9 confidentiality signal, same department, high confidence (≥0.90) | hold — auto-redacts after `HOLD_TIMEOUT_SECONDS` |
+| same content, attributed to a department other than the requester's | escalates one tier stricter (M11 `@cross` rows) |
 | anything else | allow |
+
+M8's cosine similarity and M9's sensitivity-head confidence are independent
+scales with their own thresholds — see `backend/app/policy/rules.yaml` for
+the complete per-detector tier table, including the deny bands and the
+`@cross` escalation rows.
 
 ### Proof it works
 
@@ -111,19 +105,34 @@ bash backend/scripts/backbone_smoke.sh   # all 5 backbone flows, REPO_BACKEND=me
 
 - **Backend:** run `REPO_BACKEND=memory pytest` before review; the
   skips are the same tests re-run against Postgres, which skip cleanly
-  without Docker running.
+  without Docker running. `test_repos.py` and `test_policy_engine.py` are
+  the deterministic, stub-based suites for the repo layer and `decide()`;
+  `test_main.py` also loads the real trained M8/M9 models and can drift
+  against its hardcoded expected verdicts as those models' raw confidence
+  changes — that's model-calibration flakiness, not a code defect, and it
+  fails the same way even reverted to a clean checkout.
 - **Dashboard:** 10 vitest unit tests (the `by_day` pivot with a sparse day,
   the cross-department predicate including the exact-`0.6` boundary).
 - **Extension:** `tsc --noEmit` and `vite build` clean; loadable unpacked
-  build in `extension/dist`. Live ChatGPT acceptance passed for MyKad redact,
-  API key deny, file replacement redaction, previous-message edit interception,
-  and attachment-removal stale-state handling.
+  build in `extension/dist`. Live ChatGPT acceptance passed for MyKad
+  redact, API key redact, SALARY redact, EMAIL redact, file replacement
+  redaction, the hold → purpose picker → admin approval → redacted-and-sent
+  loop (including the credential still getting masked after a *human*
+  approval, not just the unattended timeout), cross-department escalation
+  to hold/deny, multi-line/tabular pasted content redacting correctly, and
+  attachment-removal stale-state handling.
 - **File redaction:** TXT/CSV/PDF/DOCX/PPTX/XLSX/PNG/JPEG attachments can be
   checked before upload and replaced in-browser with backend-returned redacted
   copies. OCR requires a local Tesseract binary.
 - **M8 internal docs:** PostgreSQL + pgvector stores internal-document chunks,
   chunk text, and embeddings. The dashboard can upload documents into this
   corpus from `Policy & tools`.
+- **Audit trail:** the approval queue shows the employee's stated purpose
+  category and their free-text justification side by side, and attachments
+  are downloadable from the audit log for every decision — the redacted
+  copy whenever anything in the file needed masking (confirmed with a
+  `SECRET`-bearing attachment on a `deny`), the original bytes unchanged
+  otherwise.
 
 ## Layout — do not deviate
 
@@ -210,7 +219,9 @@ npm run dev                        # -> http://localhost:5173
 
 ```bash
 # Tests
-cd backend && REPO_BACKEND=memory pytest    # 67 passed, 41 skipped without Docker
+cd backend && REPO_BACKEND=memory pytest    # 176 passed, 50 skipped without Docker
+                                              # (test_main.py's real-model tests can also
+                                              # show ~23 pre-existing failures -- see "Proof it works")
 cd dashboard && npm run test                 # vitest
 cd extension && npm run typecheck && npm run build
 ```

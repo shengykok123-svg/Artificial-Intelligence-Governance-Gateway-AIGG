@@ -23,8 +23,26 @@ interface ReplayContext {
   target: HTMLElement | null;
 }
 
+// Chrome re-injects this content script into an already-open matching tab
+// when the extension reloads, without tearing down the previous injection's
+// JS first -- the isolated world (and therefore `window`) is shared across
+// re-injections into the SAME page. Without this guard, two independent
+// sets of document-level capture listeners end up alive at once, so a
+// single click/Enter gets intercepted twice: two POST /v1/inspect calls for
+// one prompt, and later, two pollers racing to write the same composer once
+// both holds resolve -- which looks exactly like a flaky redaction write,
+// but isn't.
+declare global {
+  interface Window {
+    __aiggContentScriptActive?: boolean;
+  }
+}
+
 const site = siteKeyFor(location.hostname);
-if (site) init(site);
+if (site && !window.__aiggContentScriptActive) {
+  window.__aiggContentScriptActive = true;
+  init(site);
+}
 
 function init(site: SiteKey): void {
   let isReplaying = false;
@@ -93,7 +111,7 @@ function init(site: SiteKey): void {
   }
 
   async function sendInspect(
-    prompt: string, files: AttachmentPayload[], purpose: string,
+    prompt: string, files: AttachmentPayload[], purpose: string, existingLogId?: string, justification?: string,
   ): Promise<InspectOutcome> {
     return chrome.runtime.sendMessage<InspectMessage, InspectOutcome>({
       type: "INSPECT",
@@ -101,14 +119,18 @@ function init(site: SiteKey): void {
       files,
       targetHost: location.hostname,
       purpose,
+      existingLogId,
+      justification,
     });
   }
 
   /** "State & allow": pass 1 with the remembered purpose. If the policy
    * requires an attested purpose we do not have yet, show the picker banner
-   * and resubmit the IDENTICAL prompt+files once. A rule that still demands
-   * a purpose after a real one was given is misconfigured -- never loop,
-   * treat it as a deny instead. */
+   * and resubmit the IDENTICAL prompt+files once, carrying pass 1's log_id
+   * so the backend updates that record in place rather than creating a
+   * sibling pending row for what is one interaction. A rule that still
+   * demands a purpose after a real one was given is misconfigured -- never
+   * loop, treat it as a deny instead. */
   async function inspectWithPurpose(
     prompt: string, files: AttachmentPayload[], anchor: HTMLElement | null,
   ): Promise<InspectOutcome> {
@@ -138,9 +160,9 @@ function init(site: SiteKey): void {
         },
       };
     }
-    sessionPurpose = chosen;
+    sessionPurpose = chosen.category;
 
-    const second = await sendInspect(prompt, files, chosen);
+    const second = await sendInspect(prompt, files, chosen.category, first.result.log_id, chosen.justification);
     if (second.ok && second.result.require_purpose) {
       return {
         ok: true,
@@ -530,6 +552,10 @@ function init(site: SiteKey): void {
             const wrote = await setComposerViaMainWorld(redactedPrompt, composer);
             const settled = wrote && (await composerSettledOn(composer, redactedPrompt));
             if (!settled) {
+              console.warn(
+                "[aigg] redaction write did not settle:",
+                { wrote, expected: redactedPrompt, actual: getComposerText(composer) },
+              );
               showBanner(composer, "redaction_failed",
                 "The review approved this request, but its prepared redaction could not be applied safely.");
               return;
@@ -722,13 +748,31 @@ function isVisible(el: HTMLElement): boolean {
 /** True once the composer reads `expected` AND KEEPS reading it. A single read
  *  is not enough: if ProseMirror's internal model still holds the original, it
  *  re-renders the DOM back and the check must catch that revert. */
+/** el.innerText renders each ProseMirror paragraph boundary with more
+ * consecutive newlines than the source text actually has -- confirmed
+ * live, a single \n\n paragraph break in the pasted text reads back as
+ * \n\n\n\n\n. This is a rendering artefact of how the editor lays out
+ * paragraph spacing, not a content difference, so collapsing runs of 2+
+ * newlines to a canonical form before comparing treats them as equal
+ * without papering over an actual text mismatch (a single newline still
+ * has to match exactly). */
+function normalizeParagraphBreaks(text: string): string {
+  return text.replace(/\n{2,}/g, "\n\n");
+}
+
 async function composerSettledOn(el: HTMLElement, expected: string): Promise<boolean> {
-  const want = expected.trim();
-  const deadline = Date.now() + 1500;
+  const want = normalizeParagraphBreaks(expected.trim());
+  // 3000ms, not 1500ms: getComposerText() reads el.innerText, a layout-
+  // dependent property that can lag a beat behind the DOM write while the
+  // page's own framework (ProseMirror on ChatGPT) reconciles the input,
+  // especially under real page load. A too-tight budget can time out a
+  // moment before the text actually settles, reporting "redaction failed"
+  // for a redaction that in fact landed -- and worse, skipping the send.
+  const deadline = Date.now() + 3000;
   let stableSince = 0;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 30));
-    if (getComposerText(el).trim() === want) {
+    if (normalizeParagraphBreaks(getComposerText(el).trim()) === want) {
       if (stableSince === 0) stableSince = Date.now();
       if (Date.now() - stableSince >= 120) return true;
     } else {
@@ -748,11 +792,15 @@ function setComposerViaMainWorld(text: string, target?: HTMLElement): Promise<bo
   return new Promise((resolve) => {
     const nonce = Math.random().toString(36).slice(2);
     target?.setAttribute("data-aigg-write-target", nonce);
+    // 2500ms: this is normally a fast round-trip, but the main thread can be
+    // busy with the same page reconciliation work that makes
+    // composerSettledOn's budget matter -- a little extra headroom here
+    // costs nothing on the common fast path.
     const timeout = setTimeout(() => {
       window.removeEventListener("message", onResponse);
       target?.removeAttribute("data-aigg-write-target");
       resolve(false);
-    }, 1500);
+    }, 2500);
 
     function onResponse(e: MessageEvent): void {
       if (e.source !== window) return;

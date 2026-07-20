@@ -8,7 +8,7 @@ import { DataClassPills } from "../components/DataClassPills";
 import { EmptyState, ErrorState, SkeletonRows } from "../components/EmptyState";
 import { VerdictBadge } from "../components/VerdictBadge";
 
-const COLUMN_COUNT = 6;
+const COLUMN_COUNT = 8;
 
 function formatTs(ts: string): string {
   return new Date(ts).toLocaleString(undefined, {
@@ -42,6 +42,10 @@ function PendingRow({ row }: { row: AuditRecord }) {
       <td className="px-4 py-3">
         <VerdictBadge decision={row.decision} />
         <p className="mt-1 text-xs text-gray-500">{row.reason}</p>
+      </td>
+      <td className="px-4 py-3 text-gray-600">{row.purpose}</td>
+      <td className="max-w-xs px-4 py-3 text-gray-600">
+        {row.justification ?? <span className="text-gray-400">—</span>}
       </td>
       <td className="px-4 py-3">
         <input
@@ -102,6 +106,8 @@ export default function ApprovalQueue() {
               <th className="px-4 py-2 text-left font-medium text-gray-600">Prompt</th>
               <th className="px-4 py-2 text-left font-medium text-gray-600">Data classes</th>
               <th className="px-4 py-2 text-left font-medium text-gray-600">Verdict &amp; reason</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-600">Purpose</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-600">Justification</th>
               <th className="px-4 py-2 text-left font-medium text-gray-600">Remark</th>
               <th className="px-4 py-2 text-left font-medium text-gray-600">Decision</th>
             </tr>

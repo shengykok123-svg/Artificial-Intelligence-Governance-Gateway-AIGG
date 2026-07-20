@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.repo.base import AuditRecord, RuleRow, TokenEntry, UserRow
+from app.repo.base import AttachmentBlob, AuditRecord, RuleRow, TokenEntry, UserRow
 from tests.conftest import seed_internal_docs, seed_rules, seed_users
 
 NOW = datetime(2026, 7, 17, 9, 0, tzinfo=timezone.utc)
@@ -240,6 +240,100 @@ def test_set_decision_deny(repos):
 def test_set_decision_unknown_raises(repos):
     with pytest.raises(KeyError):
         repos.audit.set_decision("nope", approve=True, reviewer="a", remark="")
+
+
+# --------------------------------------------------------------------------
+# AuditRepo.update_pending -- "state & allow" pass 2 updates the pass-1 row
+# in place instead of creating a sibling, so one interaction produces one
+# audit row even when the employee is asked to state a purpose before hold.
+# --------------------------------------------------------------------------
+
+def test_update_pending_overwrites_content_fields_keeps_log_id_and_ts(repos):
+    repos.audit.create(rec(
+        log_id="up-1", decision="hold", status="pending", purpose="GENERAL",
+        reason="DEPT_CONFIDENTIAL detected via deberta (confidence 0.84) -> hold. "
+               "purpose attestation required.",
+    ))
+    updated = repos.audit.update_pending("up-1", rec(
+        log_id="ignored", ts=NOW + timedelta(hours=1), decision="hold",
+        status="pending", purpose="drafting",
+        reason="DEPT_CONFIDENTIAL detected via deberta (confidence 0.84) -> hold.",
+    ))
+    assert updated is not None
+    assert updated.log_id == "up-1"
+    assert updated.ts == NOW               # NOT the ts passed in -- pinned to pass 1
+    assert updated.purpose == "drafting"
+    assert updated.reason == "DEPT_CONFIDENTIAL detected via deberta (confidence 0.84) -> hold."
+    assert updated.status == "pending"     # still needs a human reviewer
+
+    stored = repos.audit.get("up-1")
+    assert stored.purpose == "drafting"
+    assert stored.ts == NOW
+
+
+def test_update_pending_preserves_review_lifecycle_fields(repos):
+    # Reviewer/remark/reviewed_at belong to the human decision, never to a
+    # content resubmission -- update_pending must not touch them even though
+    # the caller's rec() has them at their create-time defaults (None).
+    repos.audit.create(rec(log_id="up-2", decision="hold", status="approved"))
+    repos.audit.set_decision("up-2", approve=True, reviewer="admin@acme.my", remark="ok")
+
+    # approved is not "pending" -- update_pending refuses and returns None,
+    # matching the caller's fall-back-to-create() contract.
+    assert repos.audit.update_pending("up-2", rec(decision="hold", status="pending")) is None
+    assert repos.audit.get("up-2").reviewer == "admin@acme.my"
+
+
+def test_update_pending_returns_none_for_unknown_log_id(repos):
+    assert repos.audit.update_pending("nope", rec(decision="hold", status="pending")) is None
+
+
+def test_update_pending_dedupes_data_classes(repos):
+    repos.audit.create(rec(log_id="up-3", decision="hold", status="pending",
+                           data_classes=["DEPT_CONFIDENTIAL"]))
+    updated = repos.audit.update_pending("up-3", rec(
+        decision="hold", status="pending",
+        data_classes=["DEPT_CONFIDENTIAL", "DEPT_CONFIDENTIAL", "SECRET"],
+    ))
+    assert updated is not None
+    assert sorted(updated.data_classes) == ["DEPT_CONFIDENTIAL", "SECRET"]
+
+
+# --------------------------------------------------------------------------
+# AuditRepo.save_attachment / get_attachment -- the downloadable copy of an
+# audit record's file, independent of AuditRecord.filename (which is just a
+# display string).
+# --------------------------------------------------------------------------
+
+def test_save_and_get_attachment_round_trips(repos):
+    repos.audit.create(rec(log_id="att-1"))
+    repos.audit.save_attachment("att-1", AttachmentBlob(
+        filename="payroll.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        content_b64="aGVsbG8=",  # "hello"
+    ))
+    blob = repos.audit.get_attachment("att-1")
+    assert blob is not None
+    assert blob.filename == "payroll.xlsx"
+    assert blob.content_b64 == "aGVsbG8="
+
+
+def test_get_attachment_returns_none_when_unset(repos):
+    repos.audit.create(rec(log_id="att-2"))
+    assert repos.audit.get_attachment("att-2") is None
+
+
+def test_save_attachment_overwrites_a_previous_one(repos):
+    repos.audit.create(rec(log_id="att-3"))
+    repos.audit.save_attachment("att-3", AttachmentBlob(
+        filename="v1.txt", mime="text/plain", content_b64="MQ==",  # "1"
+    ))
+    repos.audit.save_attachment("att-3", AttachmentBlob(
+        filename="v2.txt", mime="text/plain", content_b64="Mg==",  # "2"
+    ))
+    blob = repos.audit.get_attachment("att-3")
+    assert blob is not None
+    assert blob.filename == "v2.txt"
+    assert blob.content_b64 == "Mg=="
 
 
 def test_mutating_a_returned_record_does_not_touch_storage(repos):

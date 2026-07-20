@@ -25,6 +25,15 @@ class InspectRequest(BaseModel):
     prompt: str
     purpose: str = "GENERAL"
     attachments: list[Attachment] = []
+    # "State & allow" pass 2: the log_id of the pass-1 submission this one
+    # resubmits with an attested purpose. When set and that record is still
+    # "pending", the pass-1 row is updated in place instead of a sibling row
+    # being created -- one interaction, one pending row, not two.
+    existing_log_id: str | None = None
+    # The employee's free-text explanation from the justification picker --
+    # distinct from `purpose` (the business-category dropdown). Shown to the
+    # reviewer in the approval queue; never used by decide() itself.
+    justification: str | None = None
 
 
 class DetectionDebug(BaseModel):

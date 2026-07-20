@@ -23,6 +23,9 @@ export interface AuditRecord {
   content_department: string | null; // what the prompt is ABOUT (fused M8 > M9 > null)
   department_confidence: number; // 0.0 - 1.0
   purpose: string; // what the employee attested; "GENERAL" by default
+  justification: string | null; // free-text explanation from the justification
+                                 // picker -- distinct from purpose (the category
+                                 // dropdown); null until the employee has stated one
   m8_department: string | null; // raw EmbedDetector.classify() output
   m8_confidence: number;
   m9_department: string | null; // raw DebertaDetector.classify() output

@@ -79,6 +79,12 @@ class AuditLog(Base):
     # m9_sensitivity_confidence DOUBLE PRECISION DEFAULT 0.0, or reset_db.py.
     m9_sensitivity_confidence: Mapped[float] = mapped_column(Float, default=0.0)
 
+    # M12: additive, nullable, no backfill -- ALTER TABLE audit_logs ADD
+    # COLUMN justification TEXT, or reset_db.py. The employee's free-text
+    # explanation from the justification picker, distinct from `purpose`
+    # (the category dropdown above).
+    justification: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # SD-5: everything is retained for now and the MVP runs no purge job.
     # The column exists so the retention story is a schedule we have not
     # switched on yet, rather than a position we are defending. The proposal
@@ -106,6 +112,26 @@ class AuditDataClass(Base):
     # only to_dto()/from_dto() know this table exists.       -- SD-3
 
     log: Mapped[AuditLog] = relationship(back_populates="data_classes")
+
+
+class AuditAttachment(Base):
+    __tablename__ = "audit_attachments"
+
+    # One per audit record -- AuditRecord.filename is already singular, so
+    # this mirrors that rather than supporting multiple files per log entry.
+    # Not wired into AuditLog's relationships/eager-loading on purpose: this
+    # can be arbitrarily large file content, fetched only when a reviewer
+    # actually clicks download, never as part of a routine list/get query.
+    audit_log_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("audit_logs.id", ondelete="CASCADE"), primary_key=True
+    )
+    filename: Mapped[str] = mapped_column(String(512))
+    mime: Mapped[str] = mapped_column(String(128))
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    # The REDACTED copy whenever redaction happened, or the original bytes
+    # unchanged when nothing in it needed redaction -- see save_attachment()
+    # call sites in main.py. Never the raw pre-redaction original once
+    # something was masked, same SD-1 principle as prompt_text.
 
 
 class TokenMap(Base):

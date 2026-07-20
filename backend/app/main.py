@@ -17,7 +17,7 @@ from typing import Any, Callable
 
 from dotenv import load_dotenv
 from docx import Document as DocxDocument
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -33,7 +33,7 @@ from app.extract.pptx_ooxml import PptxXmlTextTarget, iter_pptx_ooxml_text_targe
 from app.extract.xlsx import XlsxTextTarget, iter_xlsx_text_targets, redact_xlsx_bytes
 from app.policy.engine import PolicyContext, Verdict
 from app.repo import Repos, get_repos
-from app.repo.base import AuditRecord
+from app.repo.base import AttachmentBlob, AuditRecord
 from app.schemas import (
     Attachment,
     DetectionDebug,
@@ -917,7 +917,7 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
 
     status = "pending" if verdict.decision == "hold" else "auto"
 
-    log_id = repos.audit.create(AuditRecord(
+    audit_record = AuditRecord(
         log_id="",
         user_id=req.user_id,
         ts=datetime.now(timezone.utc),
@@ -936,13 +936,45 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         content_department=content_department,
         department_confidence=department_confidence,
         purpose=req.purpose,
+        justification=req.justification,
         m8_department=m8_department,
         m8_confidence=m8_confidence,
         m9_department=m9_department,
         m9_confidence=m9_confidence,
         m9_sensitivity_confidence=m9_sensitivity_confidence,
         cross_department_confidence=cross_department_confidence,
-    ))
+    )
+
+    # "State & allow" pass 2: this request carries the pass-1 log_id it
+    # resubmits with an attested purpose. Overwrite that record in place
+    # (same log_id, same original ts) instead of creating a sibling row --
+    # one interaction, one pending row. Falls back to create() if the
+    # pass-1 record is gone or a reviewer already resolved it while the
+    # purpose picker was open.
+    updated = (
+        repos.audit.update_pending(req.existing_log_id, audit_record)
+        if req.existing_log_id else None
+    )
+    log_id = updated.log_id if updated else repos.audit.create(audit_record)
+
+    # Persist a downloadable copy of the attachment on every audit record
+    # that has one, regardless of decision -- the REDACTED copy when
+    # something in it needed masking (same SD-1 principle as prompt_text:
+    # the audit trail never holds the raw original once anything was
+    # redacted), otherwise the original bytes unchanged. Only the first
+    # attachment, matching AuditRecord.filename's existing single-file
+    # convention.
+    if req.attachments:
+        attachment_for_audit = (
+            computed_redacted_attachments[0]
+            if verdict.decision in ("redact", "hold", "deny") and computed_redacted_attachments
+            else req.attachments[0]
+        )
+        repos.audit.save_attachment(log_id, AttachmentBlob(
+            filename=attachment_for_audit.filename,
+            mime=attachment_for_audit.mime,
+            content_b64=attachment_for_audit.content_b64,
+        ))
 
     return InspectResponse(
         decision=verdict.decision,       # type: ignore[arg-type]
@@ -1035,6 +1067,18 @@ def decide_log(
         )
     except KeyError:
         raise HTTPException(status_code=404, detail="unknown log_id")
+
+
+@app.get("/v1/logs/{log_id}/attachment")
+def get_log_attachment(log_id: str, repos: Repos = Depends(get_repos)) -> Response:
+    blob = repos.audit.get_attachment(log_id)
+    if blob is None:
+        raise HTTPException(status_code=404, detail="no attachment for this log_id")
+    return Response(
+        content=base64.b64decode(blob.content_b64),
+        media_type=blob.mime,
+        headers={"Content-Disposition": f'attachment; filename="{blob.filename}"'},
+    )
 
 
 @app.get("/v1/stats")

@@ -161,6 +161,8 @@ async function handleInspect(
       prompt: message.prompt,
       purpose: message.purpose ?? "GENERAL",
       attachments: message.files,
+      existing_log_id: message.existingLogId ?? null,
+      justification: message.justification ?? null,
     });
   } catch (err) {
     if (err instanceof UnconfiguredError) {

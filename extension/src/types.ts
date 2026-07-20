@@ -19,6 +19,14 @@ export interface InspectMessage {
   files: AttachmentPayload[];
   targetHost: string;
   purpose?: string; // defaults to "GENERAL" in background.ts when absent
+  // "State & allow" pass 2: the log_id of the pass-1 submission this one
+  // resubmits with an attested purpose, so the backend updates that record
+  // in place instead of creating a sibling pending row.
+  existingLogId?: string;
+  // The employee's free-text explanation from the justification picker --
+  // distinct from `purpose` (the business-category dropdown). Only set on
+  // pass 2, once they've actually typed something.
+  justification?: string;
 }
 
 export interface CheckHoldStatusMessage {
@@ -34,9 +42,10 @@ export interface HoldResolvedMessage {
   type: "HOLD_RESOLVED";
   log_id: string;
   status: LogStatus; // "pending" here means the poll window timed out
-  // Set only for the lazy hold-timeout downgrade (status becomes "approved"
-  // with a prepared redaction attached). Absent for a genuine human review
-  // decision -- that case replays the ORIGINAL composer contents, unchanged.
+  // Set whenever status is "approved" -- whether a human reviewer approved
+  // it in the dashboard or the lazy hold-timeout downgrade released it
+  // unattended, the server's prepared redaction is always returned (see
+  // GET /v1/inspect/{log_id}).
   redacted_prompt?: string | null;
 }
 
@@ -51,6 +60,8 @@ export interface InspectRequest {
   prompt: string;
   purpose: string;
   attachments: AttachmentPayload[];
+  existing_log_id?: string | null;
+  justification?: string | null;
 }
 
 export interface InspectResponse {
@@ -83,8 +94,8 @@ export interface InspectResponse {
 export interface InspectStatusResponse {
   decision: Decision;
   status: LogStatus;
-  // Set only when this poll triggered the lazy hold-timeout downgrade
-  // (status flips pending -> approved server-side with a prepared redaction).
+  // Set whenever status is "approved" (human reviewer or lazy hold-timeout
+  // downgrade alike) -- the server's prepared redaction.
   redacted_prompt?: string | null;
 }
 

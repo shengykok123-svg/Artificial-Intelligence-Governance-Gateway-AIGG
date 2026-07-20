@@ -7,6 +7,7 @@ change. That is the whole trade this layer buys us.
 
 from __future__ import annotations
 
+import base64
 import uuid
 from datetime import datetime, timezone
 
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
     AiToolRow,
+    AuditAttachment,
     AuditDataClass,
     AuditLog,
     PolicyRule,
@@ -23,6 +25,7 @@ from app.models import (
 )
 from app.repo.base import (
     AiTool,
+    AttachmentBlob,
     AuditRecord,
     InternalDocChunk,
     InternalDocMatch,
@@ -65,6 +68,7 @@ def _audit_to_dto(row: AuditLog) -> AuditRecord:
         content_department=row.content_department,
         department_confidence=row.department_confidence,
         purpose=row.purpose,
+        justification=row.justification,
         m8_department=row.m8_department,
         m8_confidence=row.m8_confidence,
         m9_department=row.m9_department,
@@ -93,6 +97,7 @@ def _audit_from_dto(rec: AuditRecord) -> AuditLog:
         content_department=rec.content_department,
         department_confidence=rec.department_confidence,
         purpose=rec.purpose,
+        justification=rec.justification,
         m8_department=rec.m8_department,
         m8_confidence=rec.m8_confidence,
         m9_department=rec.m9_department,
@@ -217,6 +222,58 @@ class PgAuditRepo:
         self.s.commit()
         self.s.refresh(row)
         return _audit_to_dto(row)
+
+    def update_pending(self, log_id: str, rec: AuditRecord) -> AuditRecord | None:
+        row = self.s.get(
+            AuditLog, log_id, options=[selectinload(AuditLog.data_classes)]
+        )
+        if row is None or row.status != "pending":
+            return None
+        row.prompt_text = rec.prompt_text
+        row.filename = rec.filename
+        row.decision = rec.decision
+        row.reason = rec.reason
+        row.map_id = rec.map_id
+        row.user_department = rec.user_department
+        row.content_department = rec.content_department
+        row.department_confidence = rec.department_confidence
+        row.purpose = rec.purpose
+        row.justification = rec.justification
+        row.m8_department = rec.m8_department
+        row.m8_confidence = rec.m8_confidence
+        row.m9_department = rec.m9_department
+        row.m9_confidence = rec.m9_confidence
+        row.m9_sensitivity_confidence = rec.m9_sensitivity_confidence
+        row.cross_department_confidence = rec.cross_department_confidence
+        row.data_classes = [
+            AuditDataClass(audit_log_id=log_id, data_class=dc)
+            for dc in sorted(set(rec.data_classes))
+        ]
+        self.s.commit()
+        self.s.refresh(row)
+        return _audit_to_dto(row)
+
+    def save_attachment(self, log_id: str, blob: AttachmentBlob) -> None:
+        content = base64.b64decode(blob.content_b64)
+        existing = self.s.get(AuditAttachment, log_id)
+        if existing is not None:
+            existing.filename = blob.filename
+            existing.mime = blob.mime
+            existing.content = content
+        else:
+            self.s.add(AuditAttachment(
+                audit_log_id=log_id, filename=blob.filename, mime=blob.mime, content=content,
+            ))
+        self.s.commit()
+
+    def get_attachment(self, log_id: str) -> AttachmentBlob | None:
+        row = self.s.get(AuditAttachment, log_id)
+        if row is None:
+            return None
+        return AttachmentBlob(
+            filename=row.filename, mime=row.mime,
+            content_b64=base64.b64encode(row.content).decode("ascii"),
+        )
 
     def stats(self) -> StatsSummary:
         """Aggregated in SQL, not in Python. M6 polls this every 3 seconds."""

@@ -66,6 +66,7 @@ function row(partial: Partial<AuditRecord> & Pick<AuditRecord, "decision">): Aud
     content_department: null,
     department_confidence: 0,
     purpose: "GENERAL",
+    justification: null,
     m8_department: null,
     m8_confidence: 0,
     m9_department: null,

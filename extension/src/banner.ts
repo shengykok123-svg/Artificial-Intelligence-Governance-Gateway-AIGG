@@ -77,7 +77,12 @@ function buttonStyle(button: HTMLButtonElement, primary: boolean): void {
  * purpose matching. The explanatory text is deliberately not sent because
  * the current API/audit schema has no `justification` field yet.
  */
-export function showPurposePicker(_anchor: Element): Promise<string | null> {
+export interface PurposePickerResult {
+  category: string;       // PURPOSE_OPTIONS value, e.g. "data_analysis" -- sent as "purpose"
+  justification: string;  // the free-text explanation the employee typed
+}
+
+export function showPurposePicker(_anchor: Element): Promise<PurposePickerResult | null> {
   return new Promise((resolve) => {
     removeBanner();
     const overlay = document.createElement("div");
@@ -159,7 +164,7 @@ export function showPurposePicker(_anchor: Element): Promise<string | null> {
       if (!explanation.value.trim()) { error.textContent = "Enter a short authorised business purpose."; explanation.focus(); return; }
       if (!checks.every((check) => check.checked)) { error.textContent = "Confirm all three acknowledgements before continuing."; return; }
       removeBanner();
-      resolve(category.value);
+      resolve({ category: category.value, justification: explanation.value.trim() });
     });
     panel.append(reset, title, intro, purposeLabel, explanation, categoryLabel, category, notice, checkArea, error, actions);
     actions.append(cancel, confirm); overlay.appendChild(panel); document.body.appendChild(overlay); explanation.focus();

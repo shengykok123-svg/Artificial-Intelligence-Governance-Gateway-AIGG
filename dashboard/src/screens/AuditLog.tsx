@@ -1,7 +1,8 @@
 // M6  Screen 1. Verdict/status filters, 'cross-department only' toggle (user dept != content dept AND confidence > 0.6). Row expands to M3's reason verbatim.
 
-import { Fragment, useState } from "react";
+import { Fragment, useState, type MouseEvent } from "react";
 
+import { downloadAttachment } from "../api/client";
 import { useLogsQuery } from "../api/queries";
 import type { AuditRecord, Decision, LogStatus } from "../api/types";
 import { DataClassPills } from "../components/DataClassPills";
@@ -57,6 +58,41 @@ function m9Label(department: string | null, confidence: number, sensitivityConfi
   // degrade the label rather than crash the whole screen.
   const severity = sensitivityConfidence === undefined ? "—" : sensitivityConfidence.toFixed(2);
   return `${detectorLabel(department, confidence)} · confidential ${severity}`;
+}
+
+function FilenameCell({ row }: { row: AuditRecord }) {
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState(false);
+
+  if (row.filename === null) return <span className="text-gray-400">—</span>;
+
+  async function handleDownload(e: MouseEvent) {
+    e.stopPropagation(); // don't also toggle the row's expanded detail
+    setDownloading(true);
+    setError(false);
+    try {
+      await downloadAttachment(row.log_id);
+    } catch {
+      setError(true);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={handleDownload}
+        disabled={downloading}
+        title={`Download ${row.filename}`}
+        className="text-blue-600 hover:underline disabled:opacity-50"
+      >
+        {row.filename}
+      </button>
+      {error && <p className="text-xs text-red-600">Download failed</p>}
+    </div>
+  );
 }
 
 function ContentDepartmentCell({ row }: { row: AuditRecord }) {
@@ -197,7 +233,9 @@ export default function AuditLog() {
                       <td className="px-4 py-3 text-gray-800" title={row.prompt_text}>
                         {excerpt(row.prompt_text)}
                       </td>
-                      <td className="px-4 py-3 text-gray-500">{row.filename ?? "—"}</td>
+                      <td className="px-4 py-3 text-gray-500">
+                        <FilenameCell row={row} />
+                      </td>
                       <td className="px-4 py-3">
                         <DataClassPills dataClasses={row.data_classes} />
                       </td>

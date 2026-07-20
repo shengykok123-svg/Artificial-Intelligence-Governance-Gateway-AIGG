@@ -18,6 +18,7 @@ from math import sqrt
 
 from app.repo.base import (
     AiTool,
+    AttachmentBlob,
     AuditRecord,
     InternalDocChunk,
     InternalDocMatch,
@@ -55,6 +56,7 @@ def _is_cross_department(r: AuditRecord) -> bool:
 class InMemoryAuditRepo:
     def __init__(self) -> None:
         self._rows: dict[str, AuditRecord] = {}
+        self._attachments: dict[str, AttachmentBlob] = {}
 
     def create(self, rec: AuditRecord) -> str:
         rec = deepcopy(rec)
@@ -100,6 +102,28 @@ class InMemoryAuditRepo:
         rec.remark = remark
         rec.reviewed_at = _now()
         return deepcopy(rec)
+
+    def update_pending(self, log_id: str, rec: AuditRecord) -> AuditRecord | None:
+        existing = self._rows.get(log_id)
+        if existing is None or existing.status != "pending":
+            return None
+        updated = deepcopy(rec)
+        updated.log_id = log_id
+        updated.ts = existing.ts
+        updated.status = existing.status
+        updated.reviewer = existing.reviewer
+        updated.reviewed_at = existing.reviewed_at
+        updated.remark = existing.remark
+        updated.data_classes = sorted(set(updated.data_classes))
+        self._rows[log_id] = updated
+        return deepcopy(updated)
+
+    def save_attachment(self, log_id: str, blob: AttachmentBlob) -> None:
+        self._attachments[log_id] = deepcopy(blob)
+
+    def get_attachment(self, log_id: str) -> AttachmentBlob | None:
+        blob = self._attachments.get(log_id)
+        return deepcopy(blob) if blob else None
 
     def stats(self) -> StatsSummary:
         by_decision: Counter[str] = Counter()
