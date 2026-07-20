@@ -65,6 +65,7 @@ function row(partial: Partial<AuditRecord> & Pick<AuditRecord, "decision">): Aud
     user_department: null,
     content_department: null,
     department_confidence: 0,
+    purpose: "GENERAL",
     ...partial,
   };
 }

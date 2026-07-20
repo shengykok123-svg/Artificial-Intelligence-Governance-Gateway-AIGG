@@ -33,6 +33,9 @@ def load_rules_yaml() -> list[RuleRow]:
             user_role=str(r["user_role"]),
             purpose=str(r["purpose"]),
             decision=r["decision"],
+            min_confidence=float(r.get("min_confidence", 0.0)),
+            content_department=str(r.get("content_department", "*")),
+            require_purpose=bool(r.get("require_purpose", False)),
         )
         for r in data["rules"]
     ]
@@ -218,6 +221,9 @@ def seed_postgres(session) -> None:
             user_role=rule.user_role,
             purpose=rule.purpose,
             decision=rule.decision,
+            min_confidence=rule.min_confidence,
+            content_department=rule.content_department,
+            require_purpose=rule.require_purpose,
         ))
 
     for host, tier, status in TOOLS:

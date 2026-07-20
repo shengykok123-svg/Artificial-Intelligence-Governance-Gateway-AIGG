@@ -2,7 +2,7 @@
 #
 # THIS IS SEED DATA, NOT RUNTIME CONFIG.
 #
-# It is how policy_rules gets its first fifteen rows and nothing more. After
+# It is how policy_rules gets its first rows and nothing more. After
 # reset_db.py has run once, the table is the only source of truth and M3
 # never reads this file -- M1 fetches the rows via RuleRepo.all() and passes
 # them into decide() as an argument.
@@ -15,96 +15,72 @@
 # Matching (M3's job, stated here only so the rows read sensibly):
 #   data_class must match exactly.
 #   ai_tool_tier, user_role, purpose accept "*" as a wildcard.
-#   Most specific match wins; ties break toward the stricter verdict.
+#   min_confidence: rule matches only if the best span confidence for this
+#     class is >= it. Defaults to 0.0 (always satisfied) when absent.
+#   content_department: "*" (default) always matches; "@cross" matches iff
+#     Classification.content_department is set and differs from the
+#     requester's department; a literal department matches equality.
+#   require_purpose: "state & allow" flag. Defaults to false.
+#   Most specific match wins (most non-wildcard fields, higher min_confidence
+#     breaking a tie); ties break toward the stricter verdict
+#     (deny > hold > redact > allow).
 #
 # decision: allow | redact | hold | deny
+#
+# Design principle: deny is reserved for cases where redaction destroys the
+# task's purpose or the event itself is an incident (credentials). Every
+# other class gets a path forward -- an unnecessary deny is a shadow-AI
+# conversion. Unlisted (class, tier) pairs resolve to allow via the
+# no-candidate rule in decide(); the rows below are the complete intended
+# policy.
 
 rules:
-  # --- MYKAD: Malaysian NRIC. PDPA 2010 personal data, the headline class.
-  - data_class: MYKAD
-    ai_tool_tier: PUBLIC_AI
-    user_role: "*"
-    purpose: "*"
-    decision: redact
-  - data_class: MYKAD
-    ai_tool_tier: ENTERPRISE_AI
-    user_role: "*"
-    purpose: "*"
-    decision: redact
-  - data_class: MYKAD
-    ai_tool_tier: INTERNAL_AI
-    user_role: "*"
-    purpose: "*"
-    decision: allow
+  # ---------- PUBLIC_AI (ChatGPT, Gemini -- external boundary) ----------
+  # Tokenisable PII: reversible redaction, zero friction. PDPA answered.
+  - {data_class: MYKAD,  ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*", decision: redact}
+  - {data_class: EMAIL,  ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*", decision: redact}
+  - {data_class: PHONE,  ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*", decision: redact}
+  - {data_class: PERSON, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*", decision: redact}
 
-  # --- SALARY: direct block on public AI per the meeting policy frame.
-  - data_class: SALARY
-    ai_tool_tier: PUBLIC_AI
-    user_role: "*"
-    purpose: "*"
-    decision: deny
-  - data_class: SALARY
-    ai_tool_tier: ENTERPRISE_AI
-    user_role: hr
-    purpose: "*"
-    decision: allow
-  - data_class: SALARY
-    ai_tool_tier: ENTERPRISE_AI
-    user_role: "*"
-    purpose: "*"
-    decision: redact
+  # SECRET: the one true deny. A leaked credential is an incident to
+  # surface (rotate the key), not a field to mask. Purpose never overrides.
+  - {data_class: SECRET, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*", decision: deny}
 
-  # --- SECRET: an API key in a prompt is a credential leak, full stop.
-  #     The only class where deny is the default at every tier.
-  - data_class: SECRET
-    ai_tool_tier: PUBLIC_AI
-    user_role: "*"
-    purpose: "*"
-    decision: deny
-  - data_class: SECRET
-    ai_tool_tier: ENTERPRISE_AI
-    user_role: "*"
-    purpose: "*"
-    decision: deny
-  - data_class: SECRET
-    ai_tool_tier: INTERNAL_AI
-    user_role: "*"
-    purpose: "*"
-    decision: redact
+  # SALARY: maskable and legitimate in real work (budgets, job ads).
+  # Masked amount + attested purpose instead of a blanket block.
+  - {data_class: SALARY, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
+     decision: redact, require_purpose: true}
 
-  # --- BANK_ACCT: direct block on public AI per the meeting policy frame.
-  - data_class: BANK_ACCT
-    ai_tool_tier: PUBLIC_AI
-    user_role: "*"
-    purpose: "*"
-    decision: deny
-  - data_class: BANK_ACCT
-    ai_tool_tier: ENTERPRISE_AI
-    user_role: finance
-    purpose: "*"
-    decision: allow
+  # BANK_ACCT: structured, exact-span, perfectly maskable.
+  - {data_class: BANK_ACCT, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*", decision: redact}
 
-  # --- Contactable personal data: redact on the way out, allow inside.
-  - data_class: EMAIL
-    ai_tool_tier: PUBLIC_AI
-    user_role: "*"
-    purpose: "*"
-    decision: redact
-  - data_class: PHONE
-    ai_tool_tier: PUBLIC_AI
-    user_role: "*"
-    purpose: "*"
-    decision: redact
-  - data_class: PERSON
-    ai_tool_tier: PUBLIC_AI
-    user_role: "*"
-    purpose: "*"
-    decision: redact
+  # DEPT_CONFIDENTIAL: confidence-tiered (see section 5.3 of the proposal).
+  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
+     min_confidence: 0.65, content_department: "*",
+     decision: allow, require_purpose: true}          # mid: state & allow
+  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
+     min_confidence: 0.85, content_department: "*",
+     decision: redact, require_purpose: true}         # high: auto-redact + state
+  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
+     min_confidence: 0.85, content_department: "@cross",
+     decision: hold}                                  # high + cross-dept: ONLY hold
+     # "@cross" sentinel: content_department is set AND != ctx.department
 
-  # --- DEPT_CONFIDENTIAL: what M8 catches and regex cannot. A human looks
-  #     at it rather than a pattern guessing.
-  - data_class: DEPT_CONFIDENTIAL
-    ai_tool_tier: PUBLIC_AI
-    user_role: "*"
-    purpose: "*"
-    decision: hold
+  # ---------- ENTERPRISE_AI (tenant agreement -- one notch looser) ------
+  - {data_class: MYKAD,  ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*", decision: allow}
+  - {data_class: EMAIL,  ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*", decision: allow}
+  - {data_class: PHONE,  ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*", decision: allow}
+  - {data_class: PERSON, ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*", decision: allow}
+  - {data_class: SECRET, ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*", decision: redact}
+  - {data_class: SALARY, ai_tool_tier: ENTERPRISE_AI, user_role: hr,      purpose: "*", decision: allow}
+  - {data_class: SALARY, ai_tool_tier: ENTERPRISE_AI, user_role: finance, purpose: "*", decision: allow}
+  - {data_class: SALARY, ai_tool_tier: ENTERPRISE_AI, user_role: "*",     purpose: "*", decision: redact}
+  - {data_class: BANK_ACCT, ai_tool_tier: ENTERPRISE_AI, user_role: finance, purpose: "*", decision: allow}
+  - {data_class: BANK_ACCT, ai_tool_tier: ENTERPRISE_AI, user_role: "*",     purpose: "*", decision: redact}
+  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*",
+     min_confidence: 0.65, content_department: "*",
+     decision: allow, require_purpose: true}          # state & allow even at high conf
+
+  # ---------- INTERNAL_AI (our own tool -- trust it with our data) ------
+  - {data_class: SECRET, ai_tool_tier: INTERNAL_AI, user_role: "*", purpose: "*", decision: redact}
+  # everything else on INTERNAL_AI: allow (no row needed)

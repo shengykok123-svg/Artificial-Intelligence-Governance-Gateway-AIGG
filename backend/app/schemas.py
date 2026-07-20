@@ -51,6 +51,7 @@ class InspectResponse(BaseModel):
     redacted_prompt: str | None   # populated only when decision == "redact"
     redacted_attachments: list[RedactedAttachment] = []
     reason: str                   # one human-readable sentence
+    require_purpose: bool = False  # "state & allow": ask, then resubmit with purpose
     # M9 explainability metadata. These do not affect the policy verdict.
     content_department: str | None
     department_confidence: float

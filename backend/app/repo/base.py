@@ -44,6 +44,9 @@ class AuditRecord:
     department_confidence: float
     # The two are orthogonal. user != content is cross-department data
     # contact, and that is the column worth looking at.
+    purpose: str = "GENERAL"       # what the employee attested. IF-2's
+                                   # purpose, stored verbatim on the record
+                                   # that resulted from it.
 
 
 @dataclass
@@ -59,6 +62,10 @@ class RuleRow:
     user_role: str
     purpose: str
     decision: str
+    min_confidence: float = 0.0        # rule matches only if best span
+                                       # confidence for this class >= it
+    content_department: str = "*"      # "*" | "@cross" | a literal department
+    require_purpose: bool = False      # "state & allow" flag
 
 
 @dataclass

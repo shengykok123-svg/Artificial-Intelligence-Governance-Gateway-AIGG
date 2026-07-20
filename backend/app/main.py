@@ -52,13 +52,15 @@ load_dotenv()
 ENV = os.getenv("ENV", "dev")
 API_KEY = os.getenv("API_KEY", "dev-key-change-me")
 MOCK_MODULES: set[str] = {
-    m.strip() for m in os.getenv("MOCK_MODULES", "M3").split(",")
+    m.strip() for m in os.getenv("MOCK_MODULES", "").split(",")
     if m.strip()
 }
 SEMANTIC_DETECTOR = os.getenv("SEMANTIC_DETECTOR", "m8").strip().lower()
 VALID_DEPARTMENTS = {"finance", "hr", "legal", "engineering"}
 INTERNAL_DOC_CHUNK_CHARS = 900
 INTERNAL_DOC_CHUNK_OVERLAP = 120
+# Anti-shadow-AI: nobody waits unbounded on a hold. 0 disables the downgrade.
+HOLD_TIMEOUT_SECONDS = int(os.getenv("HOLD_TIMEOUT_SECONDS", "600"))
 
 # The default admin identity behind the dashboard's hardcoded login. Neither
 # POST /v1/logs/{id}/decision nor POST /v1/tools/{host}/decision carries a
@@ -125,9 +127,6 @@ def get_extractor() -> Callable[[str, str, str], Document]:
 
 
 def get_decider() -> Callable[[Classification, PolicyContext, list], Verdict]:
-    if "M3" in MOCK_MODULES:
-        from app.mocks import mock_decide
-        return mock_decide
     from app.policy.engine import decide
     return decide
 
@@ -678,7 +677,13 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
     map_id: str | None = None
     prompt_text_for_audit = req.prompt
 
-    if verdict.decision == "redact":
+    # Hold: prepare the redaction eagerly, exactly like the redact path,
+    # so the lazy timeout downgrade in GET /v1/inspect/{log_id} never has
+    # to run M7 itself. Nothing is exposed to the caller yet -- decision
+    # stays "hold" and computed_redacted_prompt/attachments are withheld
+    # from the response below.
+    if verdict.decision in ("redact", "hold"):
+        computed_redacted_attachments: list[RedactedAttachment] = []
         tokeniser = get_tokeniser(repos.vault)
         tokenise_inputs: list[tuple[str, list[Span]]] = [(req.prompt, verdict.spans_to_redact)]
         attachment_redaction_inputs: list[tuple[Attachment, int]] = []
@@ -782,30 +787,36 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
                     xlsx_redaction_inputs.append((att, targets))
 
         redacted_items, map_id = tokeniser.tokenise_many(tokenise_inputs)
-        redacted_prompt = redacted_items[0]
+        computed_redacted_prompt = redacted_items[0]
         for att, redacted_index in attachment_redaction_inputs:
-            redacted_attachments.append(_redacted_attachment(att, redacted_items[redacted_index]))
+            computed_redacted_attachments.append(_redacted_attachment(att, redacted_items[redacted_index]))
         for att, docx, targets, xml_targets, embedded_replacements in docx_redaction_inputs:
             for target, redacted_index in targets:
                 target.text = redacted_items[redacted_index]
             xml_replacements = {target: redacted_items[redacted_index] for target, redacted_index in xml_targets}
-            redacted_attachments.append(_redacted_docx_attachment(att, docx, xml_replacements, embedded_replacements))
+            computed_redacted_attachments.append(_redacted_docx_attachment(att, docx, xml_replacements, embedded_replacements))
         for att, deck, targets, xml_targets, embedded_replacements in pptx_redaction_inputs:
             for target, redacted_index in targets:
                 target.text = redacted_items[redacted_index]
             xml_replacements = {target: redacted_items[redacted_index] for target, redacted_index in xml_targets}
-            redacted_attachments.append(_redacted_pptx_attachment(att, deck, xml_replacements, embedded_replacements))
+            computed_redacted_attachments.append(_redacted_pptx_attachment(att, deck, xml_replacements, embedded_replacements))
         for att, redacted_index in pdf_redaction_inputs:
-            redacted_attachments.append(_redacted_pdf_attachment(att, redacted_items[redacted_index]))
+            computed_redacted_attachments.append(_redacted_pdf_attachment(att, redacted_items[redacted_index]))
         for att, result, target_spans in image_redaction_inputs:
-            redacted_attachments.append(_redacted_image_attachment(att, result, target_spans))
+            computed_redacted_attachments.append(_redacted_image_attachment(att, result, target_spans))
         for att, targets in xlsx_redaction_inputs:
             replacements = {target: redacted_items[redacted_index] for target, redacted_index in targets}
-            redacted_attachments.append(_redacted_xlsx_attachment(att, replacements))
+            computed_redacted_attachments.append(_redacted_xlsx_attachment(att, replacements))
 
         # SD-1: the audit row holds the REDACTED text; the original lives
-        # only in the vault.
-        prompt_text_for_audit = redacted_prompt
+        # only in the vault. For hold, this is a PREPARED redaction: the
+        # response below still withholds it (decision stays "hold") until
+        # either an admin approves or the lazy timeout in
+        # GET /v1/inspect/{log_id} releases it.
+        prompt_text_for_audit = computed_redacted_prompt
+        if verdict.decision == "redact":
+            redacted_prompt = computed_redacted_prompt
+            redacted_attachments = computed_redacted_attachments
 
     status = "pending" if verdict.decision == "hold" else "auto"
 
@@ -827,6 +838,7 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         user_department=user.department,
         content_department=content_department,
         department_confidence=department_confidence,
+        purpose=req.purpose,
     ))
 
     return InspectResponse(
@@ -836,6 +848,7 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         redacted_prompt=redacted_prompt,
         redacted_attachments=redacted_attachments,
         reason=verdict.reason,
+        require_purpose=verdict.require_purpose,
         content_department=content_department,
         department_confidence=department_confidence,
         debug=InspectDebug(
@@ -856,6 +869,25 @@ def get_inspect_status(log_id: str, repos: Repos = Depends(get_repos)) -> dict:
     rec = repos.audit.get(log_id)
     if rec is None:
         raise HTTPException(status_code=404, detail="unknown log_id")
+
+    # Lazy timeout downgrade: no scheduler, evaluated the next time anyone
+    # asks. prompt_text already holds the PREPARED redaction from inspect
+    # time (see inspect()) -- nobody waits unbounded on a human reviewer.
+    if (
+        rec.status == "pending"
+        and HOLD_TIMEOUT_SECONDS > 0
+        and (datetime.now(timezone.utc) - rec.ts).total_seconds() > HOLD_TIMEOUT_SECONDS
+    ):
+        rec = repos.audit.set_decision(
+            log_id, approve=True, reviewer=DASHBOARD_ADMIN,
+            remark="auto: hold timeout -> redact",
+        )
+        return {
+            "decision": rec.decision,
+            "status": rec.status,
+            "redacted_prompt": rec.prompt_text,
+        }
+
     return {"decision": rec.decision, "status": rec.status}
 
 

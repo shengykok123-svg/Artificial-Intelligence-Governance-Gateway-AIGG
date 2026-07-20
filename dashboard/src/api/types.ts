@@ -22,6 +22,7 @@ export interface AuditRecord {
   user_department: string | null; // who the person IS
   content_department: string | null; // what the prompt is ABOUT (M8)
   department_confidence: number; // 0.0 - 1.0
+  purpose: string; // what the employee attested; "GENERAL" by default
 }
 
 export interface LogsPage {

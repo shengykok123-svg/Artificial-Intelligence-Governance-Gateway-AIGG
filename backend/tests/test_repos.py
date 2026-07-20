@@ -358,9 +358,9 @@ def test_rules_yaml_seeds_the_table(repos):
     # does. Changing a rule is a row edit, not a redeploy.
     from app.seed import load_rules_yaml
     rows = load_rules_yaml()
-    assert len(rows) == 15
+    assert len(rows) == 22
     seed_rules(repos, rows)
-    assert len(repos.rules.all()) == 15
+    assert len(repos.rules.all()) == 22
     assert any(r.data_class == "SECRET" and r.decision == "deny"
                for r in repos.rules.all())
     assert any(r.data_class == "DEPT_CONFIDENTIAL" and r.decision == "hold"

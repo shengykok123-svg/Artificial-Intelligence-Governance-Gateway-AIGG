@@ -1,4 +1,4 @@
-# M1  Mocks for modules not yet built (M2/M3/M7/M8). Selected by MOCK_MODULES env. DELETE each mock as its module lands.
+# M1  Mocks for modules not yet built (M2/M7/M8). Selected by MOCK_MODULES env. DELETE each mock as its module lands.
 #
 # Each mock below carries its own "DELETE WHEN <module> LANDS" header. When a
 # module lands, its owner removes the ID from MOCK_MODULES and deletes the
@@ -9,10 +9,9 @@ from __future__ import annotations
 import base64
 import uuid
 
-from app.detect.base import Classification, DataClass, Document, Span
+from app.detect.base import DataClass, Document, Span
 from app.errors import Forbidden
-from app.policy.engine import PolicyContext, Verdict
-from app.repo.base import RuleRow, TokenEntry, VaultRepo
+from app.repo.base import TokenEntry, VaultRepo
 
 # --------------------------------------------------------------------------
 # DELETE WHEN M2 LANDS
@@ -66,52 +65,6 @@ class MockEmbedDetector:
 
     def classify(self, doc: Document) -> tuple[str | None, float]:
         return None, 0.0
-
-
-# --------------------------------------------------------------------------
-# DELETE WHEN M3 LANDS
-# --------------------------------------------------------------------------
-
-# Strictest-wins over a hardcoded data_class -> decision table.
-_MOCK_TABLE: dict[DataClass, str] = {
-    "SECRET": "deny",
-    "SALARY": "deny",
-    "DEPT_CONFIDENTIAL": "hold",
-    "MYKAD": "redact",
-    "BANK_ACCT": "deny",
-    "EMAIL": "redact",
-    "PHONE": "redact",
-    "PERSON": "redact",
-}
-_STRICTNESS = {"deny": 3, "hold": 2, "redact": 1, "allow": 0}
-
-
-def mock_decide(c: Classification, ctx: PolicyContext,
-                 rules: list[RuleRow]) -> Verdict:
-    """Stand-in for app/policy/engine.py:decide(). Strictest-wins over a
-    hardcoded data_class -> decision table. IGNORES rules, tier, role and
-    purpose. This is deliberately NOT M3's logic -- M3 resolves the rule
-    table, which is the whole "policy is data" claim. `rules` is still a
-    real parameter, fetched by the caller from repos.rules.all(), so the
-    call site is finished and M3 is a one-line import swap.
-    """
-    del rules  # deliberately unused -- see docstring
-
-    decision = "allow"
-    for data_class in c.data_classes:
-        candidate = _MOCK_TABLE.get(data_class, "allow")
-        if _STRICTNESS[candidate] > _STRICTNESS[decision]:
-            decision = candidate
-
-    if decision == "allow":
-        return Verdict(decision="allow",
-                       reason="No sensitive data class detected.",
-                       spans_to_redact=[])
-
-    reason = f"{', '.join(sorted(c.data_classes))} detected (mock policy)."
-    spans_to_redact = list(c.spans) if decision == "redact" else []
-    return Verdict(decision=decision, reason=reason,
-                   spans_to_redact=spans_to_redact)
 
 
 # --------------------------------------------------------------------------
@@ -176,6 +129,6 @@ class MockTokeniser:
 
 
 __all__ = [
-    "MockRulesDetector", "MockEmbedDetector", "mock_decide",
+    "MockRulesDetector", "MockEmbedDetector",
     "MockTokeniser",
 ]

@@ -18,6 +18,7 @@ export interface InspectMessage {
   prompt: string;
   files: AttachmentPayload[];
   targetHost: string;
+  purpose?: string; // defaults to "GENERAL" in background.ts when absent
 }
 
 export interface CheckHoldStatusMessage {
@@ -33,6 +34,10 @@ export interface HoldResolvedMessage {
   type: "HOLD_RESOLVED";
   log_id: string;
   status: LogStatus; // "pending" here means the poll window timed out
+  // Set only for the lazy hold-timeout downgrade (status becomes "approved"
+  // with a prepared redaction attached). Absent for a genuine human review
+  // decision -- that case replays the ORIGINAL composer contents, unchanged.
+  redacted_prompt?: string | null;
 }
 
 export type ExtensionMessage = InspectMessage | CheckHoldStatusMessage;
@@ -55,6 +60,9 @@ export interface InspectResponse {
   redacted_prompt: string | null; // populated only when decision == "redact"
   redacted_attachments: RedactedAttachmentPayload[];
   reason: string;
+  // "State & allow": true means resubmit with an attested purpose before
+  // this can proceed. See background.ts/content.ts for the two-pass flow.
+  require_purpose?: boolean;
   // Additive M9 explainability metadata; it does not alter the policy verdict.
   content_department: string | null;
   department_confidence: number;
@@ -75,7 +83,20 @@ export interface InspectResponse {
 export interface InspectStatusResponse {
   decision: Decision;
   status: LogStatus;
+  // Set only when this poll triggered the lazy hold-timeout downgrade
+  // (status flips pending -> approved server-side with a prepared redaction).
+  redacted_prompt?: string | null;
 }
+
+// Fixed purpose options for the "state & allow" picker banner. "other" pairs
+// with a free-text field; every other value is sent to the API as-is.
+export const PURPOSE_OPTIONS = [
+  { value: "data_analysis", label: "Data analysis" },
+  { value: "drafting", label: "Drafting" },
+  { value: "translation", label: "Translation" },
+  { value: "debugging", label: "Debugging" },
+  { value: "other", label: "Other" },
+] as const;
 
 // -- Response the background sends back for IF-1 ----------------------------
 

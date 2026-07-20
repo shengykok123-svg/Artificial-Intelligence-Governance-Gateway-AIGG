@@ -109,22 +109,30 @@ async function fetchStatus(config: Config, logId: string): Promise<InspectStatus
 }
 
 /** Poll IF-3 every 3s for up to 5 minutes. Returns "pending" on timeout. */
-async function pollUntilResolved(config: Config, logId: string): Promise<LogStatus> {
+async function pollUntilResolved(
+  config: Config, logId: string,
+): Promise<{ status: LogStatus; redactedPrompt?: string | null }> {
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     try {
       const status = await fetchStatus(config, logId);
-      if (status.status !== "pending") return status.status;
+      if (status.status !== "pending") {
+        return { status: status.status, redactedPrompt: status.redacted_prompt };
+      }
     } catch {
       // transient network hiccup mid-poll -- keep trying until the deadline
     }
   }
-  return "pending"; // still pending when the window ran out
+  return { status: "pending" }; // still pending when the window ran out
 }
 
-function notifyHoldResolved(tabId: number, logId: string, status: LogStatus): void {
-  const message: BackgroundMessage = { type: "HOLD_RESOLVED", log_id: logId, status };
+function notifyHoldResolved(
+  tabId: number, logId: string, status: LogStatus, redactedPrompt?: string | null,
+): void {
+  const message: BackgroundMessage = {
+    type: "HOLD_RESOLVED", log_id: logId, status, redacted_prompt: redactedPrompt,
+  };
   chrome.tabs.sendMessage(tabId, message).catch(() => {
     // tab navigated away or closed while we were polling -- nothing to unblock
   });
@@ -151,7 +159,7 @@ async function handleInspect(
       user_id: config.userId,
       target_host: message.targetHost,
       prompt: message.prompt,
-      purpose: "GENERAL",
+      purpose: message.purpose ?? "GENERAL",
       attachments: message.files,
     });
   } catch (err) {
@@ -174,8 +182,8 @@ async function handleInspect(
   await setLastVerdict({ decision: result.decision, reason: result.reason, ts: Date.now() });
 
   if (result.decision === "hold" && tabId !== undefined) {
-    pollUntilResolved(config, result.log_id).then((status) =>
-      notifyHoldResolved(tabId, result.log_id, status),
+    pollUntilResolved(config, result.log_id).then(({ status, redactedPrompt }) =>
+      notifyHoldResolved(tabId, result.log_id, status, redactedPrompt),
     );
   }
 

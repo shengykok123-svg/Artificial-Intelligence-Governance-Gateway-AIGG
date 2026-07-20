@@ -8,7 +8,7 @@
 // let the prompt through" -- there is no separate error path to forget.
 
 import { findComposer, findFileInput, findSendButton, siteKeyFor, type SiteKey } from "./selectors";
-import { removeBanner, showBanner } from "./banner";
+import { isInsideBanner, removeBanner, showBanner, showPurposePicker } from "./banner";
 import { showDebugFailure, showInspectDebug } from "./debug-panel";
 import type {
   AttachmentPayload,
@@ -33,6 +33,9 @@ function init(site: SiteKey): void {
   let activeLogId: string | null = null;
   let activeHoldSnapshot: { logId: string; prompt: string; replayMode: "composer" | "edit" } | null = null;
   let holdPollTimer: number | null = null;
+  // "State & allow": remembered for the life of this composer session so a
+  // second message in the same conversation does not re-prompt.
+  let sessionPurpose = "GENERAL";
 
   window.addEventListener("change", onFileInputChange, true);
   document.addEventListener("input", onComposerMutation, true);
@@ -89,6 +92,57 @@ function init(site: SiteKey): void {
     }, 0);
   }
 
+  async function sendInspect(
+    prompt: string, files: AttachmentPayload[], purpose: string,
+  ): Promise<InspectOutcome> {
+    return chrome.runtime.sendMessage<InspectMessage, InspectOutcome>({
+      type: "INSPECT",
+      prompt,
+      files,
+      targetHost: location.hostname,
+      purpose,
+    });
+  }
+
+  /** "State & allow": pass 1 with the remembered purpose. If the policy
+   * requires an attested purpose we do not have yet, show the picker banner
+   * and resubmit the IDENTICAL prompt+files once. A rule that still demands
+   * a purpose after a real one was given is misconfigured -- never loop,
+   * treat it as a deny instead. */
+  async function inspectWithPurpose(
+    prompt: string, files: AttachmentPayload[], anchor: HTMLElement | null,
+  ): Promise<InspectOutcome> {
+    const first = await sendInspect(prompt, files, sessionPurpose);
+    if (!first.ok || !first.result.require_purpose) return first;
+
+    if (sessionPurpose !== "GENERAL" || !anchor) {
+      return {
+        ok: true,
+        result: {
+          ...first.result,
+          decision: "deny",
+          reason: `Policy requires a purpose that was not honoured: ${first.result.reason}`,
+        },
+      };
+    }
+
+    const chosen = await showPurposePicker(anchor);
+    sessionPurpose = chosen;
+
+    const second = await sendInspect(prompt, files, chosen);
+    if (second.ok && second.result.require_purpose) {
+      return {
+        ok: true,
+        result: {
+          ...second.result,
+          decision: "deny",
+          reason: `Policy requires a purpose that was not honoured: ${second.result.reason}`,
+        },
+      };
+    }
+    return second;
+  }
+
   async function preprocessFilesBeforeUpload(input: HTMLInputElement, files: File[]): Promise<void> {
     const composer = findComposer(site);
     const encoded = await encodeFiles(files);
@@ -97,12 +151,7 @@ function init(site: SiteKey): void {
 
     let outcome: InspectOutcome;
     try {
-      outcome = await chrome.runtime.sendMessage<InspectMessage, InspectOutcome>({
-        type: "INSPECT",
-        prompt: "",
-        files: encoded,
-        targetHost: location.hostname,
-      });
+      outcome = await inspectWithPurpose("", encoded, composer);
     } catch (err) {
       console.warn("[aigg] pre-upload inspection failed:", err);
       if (composer) showBanner(composer, "deny", "attachment could not be checked -- not attached.");
@@ -114,26 +163,33 @@ function init(site: SiteKey): void {
       return;
     }
 
+    // Same staleness concern as attemptSend: the purpose picker can wait on
+    // a human for a while, and attaching a file is exactly the kind of
+    // action that gets these SPAs to replace the file input / composer
+    // chrome. Re-resolve both fresh before touching the DOM.
+    const liveInput = findFileInput(site) ?? input;
+    const liveComposer = findComposer(site);
+
     const result = outcome.result;
     switch (result.decision) {
       case "allow":
-        injectFiles(input, files);
+        injectFiles(liveInput, files);
         capturedAttachments = encoded;
         removeBanner();
         return;
 
       case "redact": {
         if (result.redacted_attachments.length !== files.length) {
-          if (composer) showBanner(composer, "deny", "redacted attachment was not available. Nothing was attached.");
+          if (liveComposer) showBanner(liveComposer, "deny", "redacted attachment was not available. Nothing was attached.");
           return;
         }
 
         const redactedFiles = result.redacted_attachments.map(payloadToFile);
-        injectFiles(input, redactedFiles);
+        injectFiles(liveInput, redactedFiles);
         capturedAttachments = result.redacted_attachments;
-        if (composer) {
+        if (liveComposer) {
           showBanner(
-            composer,
+            liveComposer,
             "redact",
             `redacted attachment before upload (${result.data_classes.join(", ") || "sensitive data"}).`,
           );
@@ -143,12 +199,12 @@ function init(site: SiteKey): void {
       }
 
       case "hold":
-        if (composer) showBanner(composer, "hold", "attachment held for compliance review -- not attached yet.");
+        if (liveComposer) showBanner(liveComposer, "hold", "attachment held for compliance review -- not attached yet.");
         capturedAttachments = [];
         return;
 
       case "deny":
-        if (composer) showBanner(composer, "deny", `blocked attachment: ${result.reason}`);
+        if (liveComposer) showBanner(liveComposer, "deny", `blocked attachment: ${result.reason}`);
         capturedAttachments = [];
         return;
     }
@@ -206,6 +262,7 @@ function init(site: SiteKey): void {
     if (isReplaying) return;
     const target = e.target as Element | null;
     if (!target) return;
+    if (isInsideBanner(target)) return; // the picker's own Continue/select, not a page control
     scheduleAttachmentRefreshIfRemoval(target);
 
     const sendBtn = findSendButton(site);
@@ -231,6 +288,7 @@ function init(site: SiteKey): void {
     if (isReplaying) return;
     if (e.key !== "Enter" || e.shiftKey) return;
     const target = e.target as Node | null;
+    if (isInsideBanner(target)) return; // the picker's own free-text field, not a composer edit
     const composer = findComposer(site);
     const editable = findEditableTarget(target);
     if (!editable) return;
@@ -289,11 +347,9 @@ function init(site: SiteKey): void {
     const files = capturedAttachments;
     capturedAttachments = [];
 
-    const message: InspectMessage = { type: "INSPECT", prompt, files, targetHost: location.hostname };
-
     let outcome: InspectOutcome;
     try {
-      outcome = await chrome.runtime.sendMessage<InspectMessage, InspectOutcome>(message);
+      outcome = await inspectWithPurpose(prompt, files, composer);
     } catch (err) {
       // Messaging layer itself failed (e.g. service worker briefly gone).
       // Same policy as an unreachable backend: fail OPEN.
@@ -310,9 +366,20 @@ function init(site: SiteKey): void {
 
     const result = outcome.result;
     showInspectDebug(result);
+
+    // inspectWithPurpose can now include an arbitrarily long HUMAN wait (the
+    // purpose picker), not just a network round-trip. Both target sites are
+    // SPAs that routinely replace the composer node during that wait (e.g.
+    // attaching a file re-renders the composer chrome) -- the `composer`
+    // reference captured before the picker opened can be stale by the time
+    // we get here. Re-resolve it fresh rather than writing to / reading back
+    // from a detached node, which would fail the settle-check below even
+    // when mainworld.ts's own write succeeded on the live element.
+    const liveComposer = findComposer(site) ?? composer;
+
     switch (result.decision) {
       case "allow":
-        replaySend(composer, replay);
+        replaySend(liveComposer, replay);
         return;
 
       case "redact": {
@@ -326,20 +393,20 @@ function init(site: SiteKey): void {
         const redacted = result.redacted_prompt ?? prompt;
         removeBanner();
 
-        const wrote = await setComposerViaMainWorld(redacted, composer);
-        const settled = wrote && (await composerSettledOn(composer, redacted));
+        const wrote = await setComposerViaMainWorld(redacted, liveComposer);
+        const settled = wrote && (await composerSettledOn(liveComposer, redacted));
         if (!settled) {
-          showBanner(composer, "deny",
+          showBanner(liveComposer, "deny",
             "Redaction could not be applied in place. Nothing was sent.");
           return; // FAIL CLOSED. Never ship the original.
         }
 
         showBanner(
-          composer,
+          liveComposer,
           "redact",
           `redacted before sending (${result.data_classes.join(", ") || "sensitive data"}).`,
         );
-        replaySend(composer, replay);
+        replaySend(liveComposer, replay);
         removeBannerSoon("redacted before sending");
         return;
       }
@@ -347,12 +414,12 @@ function init(site: SiteKey): void {
       case "hold":
         activeLogId = result.log_id;
         activeHoldSnapshot = { logId: result.log_id, prompt, replayMode: replay.kind };
-        showBanner(composer, "hold", "held for compliance review -- waiting for approval.");
+        showBanner(liveComposer, "hold", "held for compliance review -- waiting for approval.");
         startHoldPolling(result.log_id);
         return;
 
       case "deny":
-        showBanner(composer, "deny", `blocked: ${result.reason}`);
+        showBanner(liveComposer, "deny", `blocked: ${result.reason}`);
         return;
     }
   }
@@ -401,6 +468,27 @@ function init(site: SiteKey): void {
           showBanner(composer, "hold", "approved request changed -- not sent. Click Send again to re-check.");
           return;
         }
+
+        // Lazy hold-timeout downgrade: the server prepared a redaction and
+        // wants it applied before sending. A genuine human-reviewed approval
+        // carries no redacted_prompt and replays the ORIGINAL, unchanged.
+        const redactedPrompt = message.redacted_prompt;
+        if (redactedPrompt != null && redactedPrompt !== holdSnapshot.prompt) {
+          void (async () => {
+            const wrote = await setComposerViaMainWorld(redactedPrompt, composer);
+            const settled = wrote && (await composerSettledOn(composer, redactedPrompt));
+            if (!settled) {
+              showBanner(composer, "deny",
+                "Held request timed out and its prepared redaction could not be applied. Nothing was sent.");
+              return;
+            }
+            showBanner(composer, "redact", "held request timed out -- sending the prepared redaction now.");
+            replaySend(composer, { kind: "composer", target: null });
+            removeBannerSoon("sending the prepared redaction now.");
+          })();
+          return;
+        }
+
         showBanner(composer, "hold", "approved -- sending now.");
         replaySend(composer, { kind: "composer", target: null }); // replays the ORIGINAL prompt: hold never touched composer contents
         removeBannerSoon("approved -- sending now.");
@@ -427,7 +515,10 @@ function init(site: SiteKey): void {
         })
         .then((status) => {
           if (status.status === "pending") return;
-          onBackgroundMessage({ type: "HOLD_RESOLVED", log_id: logId, status: status.status });
+          onBackgroundMessage({
+            type: "HOLD_RESOLVED", log_id: logId, status: status.status,
+            redacted_prompt: status.redacted_prompt,
+          });
         })
         .catch((err) => {
           console.warn("[aigg] hold status message failed:", err);

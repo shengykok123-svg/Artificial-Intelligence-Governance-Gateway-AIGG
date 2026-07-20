@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import io
 import zipfile
+from datetime import datetime, timedelta, timezone
 from xml.sax.saxutils import escape
 
 import numpy as np
@@ -360,14 +361,15 @@ def test_redact(client: TestClient) -> None:
     assert "[MYKAD_1]" in body["redacted_prompt"]
 
 
-def test_salary_is_denied(client: TestClient) -> None:
+def test_salary_is_redacted_with_purpose(client: TestClient) -> None:
     r = inspect(
         client, user_id="aiman.hr@acme.my",
         prompt="Draft a reply to the payroll query. "
                "Gaji bulanan RM 8,500 for grade M3.",
     )
     body = r.json()
-    assert body["decision"] == "deny"
+    assert body["decision"] == "redact"
+    assert body["require_purpose"] is True
     assert "SALARY" in body["data_classes"]
     assert body["debug"]["detections"] == [
         {
@@ -377,12 +379,16 @@ def test_salary_is_denied(client: TestClient) -> None:
             "source": "prompt",
         }
     ]
-    assert body["redacted_prompt"] is None
+    assert body["redacted_prompt"] is not None
+    assert "RM 8,500" not in body["redacted_prompt"]
+    assert "[SALARY_1]" in body["redacted_prompt"]
 
 
-def test_m8_internal_doc_similarity_is_held(
+def test_m8_internal_doc_high_similarity_same_department_redacts_with_purpose(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Same department as the indexed content: high-confidence DEPT_CONFIDENTIAL
+    # auto-redacts and still asks for a purpose (state & allow).
     seed_internal_doc_for_m8_hold(client, monkeypatch)
 
     r = inspect(
@@ -391,7 +397,27 @@ def test_m8_internal_doc_similarity_is_held(
                "for employee grievance cases.",
     )
     body = r.json()
+    assert body["decision"] == "redact"
+    assert body["require_purpose"] is True
+    assert "DEPT_CONFIDENTIAL" in body["data_classes"]
+    assert body["redacted_prompt"] is not None
+
+
+def test_m8_internal_doc_high_similarity_cross_department_holds(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Cross department (engineer reading HR-indexed content): the @cross
+    # sentinel outranks the plain high-confidence redact row -- hold only.
+    seed_internal_doc_for_m8_hold(client, monkeypatch)
+
+    r = inspect(
+        client, user_id="wei.eng@acme.my",
+        prompt="Please summarize the HR confidential termination plan "
+               "for employee grievance cases.",
+    )
+    body = r.json()
     assert body["decision"] == "hold"
+    assert body["require_purpose"] is False
     assert "DEPT_CONFIDENTIAL" in body["data_classes"]
     assert body["redacted_prompt"] is None
 
@@ -427,7 +453,7 @@ def test_hold_approve_unblock_loop(
     seed_internal_doc_for_m8_hold(client, monkeypatch)
 
     r = inspect(
-        client, user_id="aiman.hr@acme.my",
+        client, user_id="wei.eng@acme.my",
         prompt="Please summarize the HR confidential termination plan "
                "for employee grievance cases.",
     )
@@ -458,10 +484,11 @@ def test_hold_deny_review_sets_status_denied(
     seed_internal_doc_for_m8_hold(client, monkeypatch)
 
     r = inspect(
-        client, user_id="aiman.hr@acme.my",
+        client, user_id="wei.eng@acme.my",
         prompt="Please summarize the HR confidential termination plan "
                "for employee grievance cases.",
     )
+    assert r.json()["decision"] == "hold"
     log_id = r.json()["log_id"]
 
     dec = client.post(f"/v1/logs/{log_id}/decision", headers=HEADERS,
@@ -633,7 +660,8 @@ def test_supported_attachment_contributes_to_verdict(client: TestClient) -> None
                     "content_b64": content},
                ])
     body = r.json()
-    assert body["decision"] == "deny"
+    assert body["decision"] == "redact"
+    assert body["require_purpose"] is True
     assert "SALARY" in body["data_classes"]
     assert body["debug"]["detections"] == [
         {
@@ -643,6 +671,7 @@ def test_supported_attachment_contributes_to_verdict(client: TestClient) -> None
             "source": "attachment",
         }
     ]
+    assert len(body["redacted_attachments"]) == 1
 
 
 def test_docx_attachment_contributes_to_verdict(client: TestClient) -> None:
@@ -661,9 +690,10 @@ def test_docx_attachment_contributes_to_verdict(client: TestClient) -> None:
                 ])
 
     body = r.json()
-    assert body["decision"] == "deny"
+    assert body["decision"] == "redact"
+    assert body["require_purpose"] is True
     assert "SALARY" in body["data_classes"]
-    assert body["redacted_attachments"] == []
+    assert len(body["redacted_attachments"]) == 1
 
 
 def test_text_attachment_redaction_returns_redacted_copy(client: TestClient) -> None:
@@ -987,6 +1017,83 @@ def test_xlsx_attachment_redaction_returns_redacted_copy(client: TestClient) -> 
     )
     assert "880412-08-5561" not in redacted_doc.text
     assert "[MYKAD_1]" in redacted_doc.text
+
+
+# --------------------------------------------------------------------------
+# Two-pass "state & allow" purpose flow, and the hold-timeout downgrade.
+# --------------------------------------------------------------------------
+
+
+def test_two_pass_purpose_flow_returns_require_purpose_then_resolves_on_resubmit(
+    client: TestClient,
+) -> None:
+    prompt = "Draft a reply to the payroll query. Gaji bulanan RM 8,500 for grade M3."
+
+    pass1 = inspect(client, user_id="aiman.hr@acme.my", prompt=prompt).json()
+    assert pass1["decision"] == "redact"
+    assert pass1["require_purpose"] is True
+
+    logs = client.get("/v1/logs", headers=HEADERS, params={"limit": 200}).json()
+    pass1_row = next(x for x in logs["items"] if x["log_id"] == pass1["log_id"])
+    assert pass1_row["purpose"] == "GENERAL"
+
+    # Pass 2: identical prompt, an attested purpose -- resolves without
+    # asking again, and the attested purpose lands on the audit record.
+    pass2 = inspect(client, user_id="aiman.hr@acme.my", prompt=prompt,
+                    purpose="drafting").json()
+    assert pass2["decision"] == "redact"
+    assert pass2["require_purpose"] is False
+    assert pass2["redacted_prompt"] is not None
+
+    logs = client.get("/v1/logs", headers=HEADERS, params={"limit": 200}).json()
+    pass2_row = next(x for x in logs["items"] if x["log_id"] == pass2["log_id"])
+    assert pass2_row["purpose"] == "drafting"
+
+
+def test_hold_timeout_downgrades_via_monkeypatched_clock(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed_internal_doc_for_m8_hold(client, monkeypatch)
+    monkeypatch.setattr("app.main.HOLD_TIMEOUT_SECONDS", 600)
+
+    base_ts = datetime(2026, 7, 20, 9, 0, tzinfo=timezone.utc)
+
+    class FrozenClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return base_ts
+
+    monkeypatch.setattr("app.main.datetime", FrozenClock)
+
+    r = inspect(
+        client, user_id="wei.eng@acme.my",
+        prompt="Please summarize the HR confidential termination plan "
+               "for employee grievance cases.",
+    )
+    body = r.json()
+    assert body["decision"] == "hold"
+    log_id = body["log_id"]
+
+    # Still within the window: no downgrade, no extra key on the wire.
+    status = client.get(f"/v1/inspect/{log_id}", headers=HEADERS).json()
+    assert status == {"decision": "hold", "status": "pending"}
+
+    class LaterClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return base_ts + timedelta(seconds=601)
+
+    monkeypatch.setattr("app.main.datetime", LaterClock)
+
+    downgraded = client.get(f"/v1/inspect/{log_id}", headers=HEADERS).json()
+    assert downgraded["decision"] == "hold"    # the verdict is a historical fact
+    assert downgraded["status"] == "approved"
+    assert downgraded["redacted_prompt"] is not None
+
+    logs = client.get("/v1/logs", headers=HEADERS, params={"limit": 200}).json()
+    row = next(x for x in logs["items"] if x["log_id"] == log_id)
+    assert row["status"] == "approved"
+    assert row["remark"] == "auto: hold timeout -> redact"
 
 
 # --------------------------------------------------------------------------

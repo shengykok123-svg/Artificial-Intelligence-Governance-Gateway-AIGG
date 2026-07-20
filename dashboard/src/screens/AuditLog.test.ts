@@ -26,6 +26,7 @@ function rec(overrides: Partial<AuditRecord> = {}): AuditRecord {
     user_department: "engineering",
     content_department: "finance",
     department_confidence: 0.75,
+    purpose: "GENERAL",
     ...overrides,
   };
 }

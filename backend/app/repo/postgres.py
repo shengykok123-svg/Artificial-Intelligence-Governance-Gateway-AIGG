@@ -64,6 +64,7 @@ def _audit_to_dto(row: AuditLog) -> AuditRecord:
         user_department=row.user_department,
         content_department=row.content_department,
         department_confidence=row.department_confidence,
+        purpose=row.purpose,
     )
 
 
@@ -85,6 +86,7 @@ def _audit_from_dto(rec: AuditRecord) -> AuditLog:
         user_department=rec.user_department,
         content_department=rec.content_department,
         department_confidence=rec.department_confidence,
+        purpose=rec.purpose,
         retention_until=None,  # SD-5: no purge job in the MVP.
     )
     # SD-3: one list[str] fans out into N rows.
@@ -121,6 +123,9 @@ def _rule_to_dto(row: PolicyRule) -> RuleRow:
         user_role=row.user_role,
         purpose=row.purpose,
         decision=row.decision,
+        min_confidence=row.min_confidence,
+        content_department=row.content_department,
+        require_purpose=row.require_purpose,
     )
 
 

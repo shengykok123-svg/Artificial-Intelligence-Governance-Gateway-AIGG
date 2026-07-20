@@ -69,6 +69,9 @@ def seed_rules(bundle, rows):
         bundle.rules.s.add(PolicyRule(
             data_class=r.data_class, ai_tool_tier=r.ai_tool_tier,
             user_role=r.user_role, purpose=r.purpose, decision=r.decision,
+            min_confidence=r.min_confidence,
+            content_department=r.content_department,
+            require_purpose=r.require_purpose,
         ))
     bundle.rules.s.commit()
 

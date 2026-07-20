@@ -6,20 +6,14 @@ import base64
 
 import pytest
 
-from app.detect.base import Classification, Document, Span
+from app.detect.base import Document, Span
 from app.mocks import (
     MockEmbedDetector,
     MockRulesDetector,
     MockTokeniser,
-    mock_decide,
 )
-from app.policy.engine import PolicyContext
 from app.repo.memory import InMemoryVaultRepo
 from app.vault.tokeniser import Forbidden
-
-CTX = PolicyContext(user_role="staff", department="hr", ai_tool_tier="PUBLIC_AI",
-                    tool_status="approved", purpose="GENERAL",
-                    target_host="chatgpt.com")
 
 
 def test_rules_detector_finds_real_offsets() -> None:
@@ -36,14 +30,6 @@ def test_embed_detector_is_honestly_empty() -> None:
     doc = Document(text="anything", source_filename=None, mime="text/plain")
     assert MockEmbedDetector().detect(doc) == []
     assert MockEmbedDetector().classify(doc) == (None, 0.0)
-
-
-def test_decide_strictest_wins_and_ignores_rules() -> None:
-    c = Classification(data_classes=["SALARY", "MYKAD"], confidence=1.0,
-                       spans=[], content_department=None,
-                       department_confidence=0.0)
-    verdict = mock_decide(c, CTX, rules=[])
-    assert verdict.decision == "deny"   # SALARY (deny) outranks MYKAD (redact)
 
 
 def test_tokeniser_right_to_left_preserves_earlier_spans() -> None:

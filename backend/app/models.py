@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -50,6 +51,10 @@ class AuditLog(Base):
     decision: Mapped[str] = mapped_column(String(16))   # allow | redact | hold | deny
     reason: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16))     # auto | pending | approved | denied
+    purpose: Mapped[str] = mapped_column(String(32), default="GENERAL")
+    # What the employee attested (or "GENERAL" for a pass-1 default). M3's
+    # state-and-allow rows read the attested purpose back via PolicyContext;
+    # this column is what the audit trail proves they actually stated.
     reviewer: Mapped[str | None] = mapped_column(String(64), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     remark: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -111,6 +116,11 @@ class PolicyRule(Base):
     user_role: Mapped[str] = mapped_column(String(32))     # "*" wildcard allowed
     purpose: Mapped[str] = mapped_column(String(32))       # "*" wildcard allowed
     decision: Mapped[str] = mapped_column(String(16))
+    min_confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    # "*" | "@cross" (content_department set and != ctx.department) | a
+    # literal department, matched against Classification.content_department.
+    content_department: Mapped[str] = mapped_column(String(32), default="*")
+    require_purpose: Mapped[bool] = mapped_column(Boolean, default=False)
     # Seeded from rules.yaml on first run. After that this table is the
     # only source of truth. M3 receives these rows as an argument.
 

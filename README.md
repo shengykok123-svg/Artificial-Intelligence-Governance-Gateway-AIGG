@@ -30,11 +30,14 @@ PostgreSQL + pgvector internal-document similarity.
 Current demo expectations:
 
 ```text
-Mocked module: M3 only
-Salary: deny
+Mocked modules: none (MOCK_MODULES= empty)
+Salary: redact + purpose picker ("state & allow")
 API key: deny
 MyKad/email/phone/person: redact
-M8 internal-document confidential similarity: hold
+Internal-document confidential similarity: mid-confidence state & allow
+(purpose picker); high-confidence same-department redact + purpose
+picker; high-confidence cross-department hold, auto-redacting after
+HOLD_TIMEOUT_SECONDS if nobody reviews it
 ```
 
 Use `docs/RUNBOOK.md` for commands. Use
@@ -55,27 +58,29 @@ changing interfaces or adding a module.
 
 ## Status
 
-**2026-07-19 update:** M2, M5, M7 and M8 have now landed as real modules; M3
-remains mocked by design for this frame. Chrome extension live acceptance
-passed for MyKad redact, API key deny, file redaction replacement, previous
-message edit interception, and attachment-removal stale-state handling. The
-mock M3 policy has been aligned to the meeting markdown: M2-detected API keys,
-bank account/card-like numbers, and salary are denied; tokenisable PII is
-redacted; M8 internal-document confidential similarity is held for admin
-review. See
-`docs/EXTENSION_TEST_REPORT.md` and `extension/README.md` for the current
-setup and evidence.
+**2026-07-20 update:** M3 has landed as a real, pure, table-driven decision
+engine with a "state & allow" verdict model (`require_purpose`), and
+`MOCK_MODULES` is now empty — the whole system runs with zero mocks (M9
+DeBERTa stays opt-in via `SEMANTIC_DETECTOR=m9_deberta`). Policy is data:
+`backend/app/policy/rules.yaml` seeds `policy_rules`, and a compliance
+officer edits a row, never redeploys code. Deny is now reserved for SECRET
+(credential incidents); SALARY, BANK_ACCT and DEPT_CONFIDENTIAL all get a
+path forward (redact and/or a purpose attestation) instead of a blanket
+block. A hold nobody reviews auto-downgrades to its prepared redaction after
+`HOLD_TIMEOUT_SECONDS` (default 600s) — nobody waits unbounded on a human
+reviewer. See `docs/EXTENSION_TEST_REPORT.md` and `extension/README.md` for
+the prior (M3-mocked) acceptance evidence.
 
-The current frame — **M0, M1, M2, M4, M5, M6, M7, M8** — is built, tested, and
-wired end to end against **real HTTP**. M3 remains mocked by design, selected
-explicitly via `MOCK_MODULES=M3` in `.env`.
+The full frame — **M0, M1, M2, M3, M4, M5, M6, M7, M8** — is built, tested,
+and wired end to end against **real HTTP**, with `MOCK_MODULES=` empty.
+`ENV=demo` now boots.
 
 | | Module | P | Status |
 |---|---|---|---|
 | ✅ | **M0** Database and persistence | P0 | Built, tested (both backends) |
 | ✅ | **M1** API skeleton + mock plane | P0 | Built, tested |
 | ✅ | **M2** Deterministic detection | P0 | Built — real structured-pattern detector |
-| ☐ | **M3** Decision engine | P0 | Mocked — `mock_decide` (ignores the rule table) |
+| ✅ | **M3** Decision engine | P0 | Built — pure, table-driven, "state & allow" (`require_purpose`) |
 | ✅ | **M4** Chrome extension | P0 | Built; live acceptance passed on ChatGPT |
 | ✅ | **M5** File extractor | P1 | Built — TXT/CSV/PDF/DOCX/PPTX/XLSX/image OCR extraction |
 | ✅ | **M6** Employer dashboard | P1 | Built |
@@ -84,16 +89,18 @@ explicitly via `MOCK_MODULES=M3` in `.env`.
 | 🧪 | **M9** Fine-tuned DeBERTa-v3-small | P3 | Built as an opt-in two-head department + confidentiality detector; synthetic baseline trained, pending reviewed gold data |
 
 `GET /v1/health` reports which modules are currently mocked — check it before
-trusting a verdict. In this frame it should report only `M3` as mocked. With
-M2/M5/M7/M8 real and M3 mocked, these demo strings produce the acceptance
-verdicts:
+trusting a verdict. With `MOCK_MODULES=` empty it should report `mocked: []`.
+On `PUBLIC_AI` these demo strings produce the acceptance verdicts:
 
 | Trigger string | Verdict |
 |---|---|
-| `880412-08-5561` | redact |
-| `sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d` | deny |
-| `RM 8,500` | deny |
-| prompt similar to indexed internal documents | hold |
+| `880412-08-5561` (MyKad) | redact |
+| `sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d` (API key) | deny |
+| `RM 8,500` (salary) | redact + purpose picker |
+| `account no: 1234 5678 9012` (bank account) | redact |
+| mid-similarity internal-document content (0.65–0.85) | state & allow (purpose picker) |
+| high-similarity internal-document content, same department (≥0.85) | redact + purpose picker |
+| high-similarity internal-document content, cross department (≥0.85) | hold — auto-redacts after `HOLD_TIMEOUT_SECONDS` |
 | anything else | allow |
 
 ### Proof it works
@@ -138,7 +145,7 @@ backend/app/detect/deberta.py   M9  optional DeBERTa detector                  B
 backend/ml/m9_train.py          M9  local fine-tuning entry point              BUILT
 backend/data/m9/                M9  synthetic baseline + review data           BUILT
 backend/app/extract/files.py    M5  file bytes -> Document                    BUILT
-backend/app/policy/engine.py    M3  decision engine (decide())                mocked
+backend/app/policy/engine.py    M3  decision engine (decide())                BUILT
 backend/app/policy/rules.yaml   M3  rule table                                seed data
 backend/app/vault/tokeniser.py  M7  reversible redaction                      BUILT
 extension/                      M4  MV3 + Vite + TypeScript                   BUILT
@@ -151,7 +158,7 @@ See `docs/README_M0.md`.
 
 ## Ground rules
 
-Still binding for whoever picks up M2, M3, M5, M7 or M8:
+Still binding for whoever picks up M2, M5, M7 or M8:
 
 1. **The contracts are law.** If your module seems to need a change, stop and
    say so. Do not change it locally.
@@ -183,7 +190,7 @@ cd backend
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 REPO_BACKEND=memory uvicorn app.main:app --reload
-# -> http://localhost:8000, seeded with 4 users, 15 rules, 3 tools, 30 audit rows
+# -> http://localhost:8000, seeded with 4 users, 22 rules, 3 tools, 30 audit rows
 ```
 
 ```bash
@@ -217,7 +224,7 @@ python scripts/index_internal_docs_pgvector.py   # seed a sample M8 internal-doc
 REPO_BACKEND=postgres uvicorn app.main:app --reload
 ```
 
-The memory backend is seeded with the same 30 audit rows, 15 rules and 3
+The memory backend is seeded with the same 30 audit rows, 22 rules and 3
 tools as the real database, so the extension and dashboard work against real
 data before any table exists and nobody but a Postgres session needs Docker
 running.

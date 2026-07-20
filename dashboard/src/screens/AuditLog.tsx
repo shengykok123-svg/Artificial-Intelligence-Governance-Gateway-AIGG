@@ -9,7 +9,7 @@ import { EmptyState, ErrorState, SkeletonRows } from "../components/EmptyState";
 import { StatusBadge, VerdictBadge } from "../components/VerdictBadge";
 
 const PAGE_SIZE = 20;
-const COLUMN_COUNT = 10; // User, Time, Host, Prompt, Filename, Data classes, User dept, Content dept, Verdict, Status
+const COLUMN_COUNT = 11; // User, Time, Host, Prompt, Filename, Data classes, User dept, Content dept, Purpose, Verdict, Status
 
 /**
  * Mirrors backend/app/repo/base.py's cross_department_only predicate
@@ -155,6 +155,7 @@ export default function AuditLog() {
               <th className="px-4 py-2 text-left font-medium text-gray-600">Data classes</th>
               <th className="px-4 py-2 text-left font-medium text-gray-600">User dept</th>
               <th className="px-4 py-2 text-left font-medium text-gray-600">Content dept</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-600">Purpose</th>
               <th className="px-4 py-2 text-left font-medium text-gray-600">Verdict</th>
               <th className="px-4 py-2 text-left font-medium text-gray-600">Status</th>
             </tr>
@@ -185,6 +186,7 @@ export default function AuditLog() {
                       <td className="px-4 py-3">
                         <ContentDepartmentCell row={row} />
                       </td>
+                      <td className="px-4 py-3 text-gray-600">{row.purpose}</td>
                       <td className="px-4 py-3">
                         <VerdictBadge decision={row.decision} />
                       </td>
@@ -196,7 +198,7 @@ export default function AuditLog() {
                       <tr className="bg-slate-50">
                         <td colSpan={COLUMN_COUNT} className="px-4 py-3">
                           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                            Reason (verbatim)
+                            Reason (verbatim) · Purpose: {row.purpose}
                           </p>
                           <p className="mt-1 whitespace-pre-wrap text-sm text-gray-800">{row.reason}</p>
                           {row.reviewer && (
