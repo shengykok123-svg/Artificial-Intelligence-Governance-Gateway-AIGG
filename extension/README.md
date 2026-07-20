@@ -52,15 +52,14 @@ department prediction and audit log ID. It deliberately never renders the raw
 prompt or matched sensitive values. This is developer/demo visibility only;
 remove or gate it before any production deployment.
 
-Expected popup health in the current frame:
-
-```text
-Backend is mocking: M3
-```
+For the integrated M3 branch, leave **MOCK_MODE** off. The popup health line
+shows which backend modules are mocked; a normal local M3/M8/M9 run should
+not be described as an all-real run unless `/v1/health` confirms it.
 
 ## Current Frame
 
-M2, M5, M7 and M8 are real. M3 remains mocked by design:
+The extension consumes the gateway's M2 + M8 + M9 detection results and the
+M3 policy verdict. M3 can return `allow`, `redact`, `hold`, or `deny`.
 
 - M2 detects structured sensitive data such as MyKad, salary and secrets.
 - M5 extracts text from TXT, CSV, PDF, DOCX, PPTX, XLSX and PNG/JPEG image attachments.
@@ -75,8 +74,10 @@ M2, M5, M7 and M8 are real. M3 remains mocked by design:
   unsupported-file handling because their contents cannot be inspected locally yet.
 - Image and scanned-PDF OCR requires a local Tesseract binary.
 - M7 tokenises redacted spans into encrypted reversible vault mappings.
-- M8 classifies department/confidential semantic signals with local embeddings.
-- M3 is still `mock_decide`.
+- M8 performs internal-document semantic similarity search.
+- M9 predicts a content department and confidential/non-confidential signal.
+- M3 applies policy based on data class, confidence, AI tier, user role,
+  purpose, and cross-department context.
 
 `GET /v1/health` is the source of truth. Do not claim an all-real-module run
 until it returns an empty `mocked` list.
@@ -119,9 +120,27 @@ For a hold verdict, `content.ts` stores the active `log_id` and asks
 backend status request. This avoids relying only on a Manifest V3 service
 worker timer, which Chrome can suspend.
 
-When the backend status becomes `approved`, the extension shows
-`approved -- sending now`, replays the original prompt, and clears the success
-banner after a short delay.
+When the backend status becomes `approved`, the extension either replays the
+original prompt (human approval) or applies the prepared redaction first
+(hold timeout downgrade). It then clears the success banner after a short
+delay.
+
+## In-page feedback states
+
+The card above the composer is deliberately a user-facing summary rather than
+the developer debug panel. It always states whether content was sent.
+
+| State | What the user sees | Send behaviour |
+|---|---|---|
+| ALLOW | No material risk detected | Original message is sent |
+| REDACT & SEND | Protected content was replaced | Redacted message/file is sent |
+| HOLD | Pending compliance review | Nothing is sent |
+| APPROVED / REVIEW DENIED | Human review result | Sent only when approved |
+| REVIEW PENDING | Poll window is still unresolved | Nothing is sent |
+| DENY | Policy blocks the request | Nothing is sent |
+| REDACTION FAILED / UNSUPPORTED ATTACHMENT | Gateway could not safely prepare content | Nothing is sent |
+| GATEWAY UNAVAILABLE / NOT CONFIGURED | Gateway did not inspect the request | Current MVP fails open and sends, clearly labelled |
+| PURPOSE REQUIRED | User selects a purpose and the same request is inspected again | Nothing is sent until the second verdict |
 
 ## Live Acceptance Cases
 

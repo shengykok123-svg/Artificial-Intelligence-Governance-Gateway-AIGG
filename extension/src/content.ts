@@ -147,19 +147,19 @@ function init(site: SiteKey): void {
     const composer = findComposer(site);
     const encoded = await encodeFiles(files);
 
-    if (composer) showBanner(composer, "hold", "checking attachment before upload.");
+    if (composer) showBanner(composer, "hold", "Checking the attachment before it is added.");
 
     let outcome: InspectOutcome;
     try {
       outcome = await inspectWithPurpose("", encoded, composer);
     } catch (err) {
       console.warn("[aigg] pre-upload inspection failed:", err);
-      if (composer) showBanner(composer, "deny", "attachment could not be checked -- not attached.");
+      if (composer) showBanner(composer, "gateway_unavailable", "The attachment could not be checked, so it was not added.");
       return;
     }
 
     if (!outcome.ok) {
-      if (composer) showBanner(composer, "deny", `attachment could not be checked -- not attached. ${outcome.message}`);
+      if (composer) showBanner(composer, "unsupported_file", `The attachment could not be checked. ${outcome.message}`);
       return;
     }
 
@@ -175,12 +175,15 @@ function init(site: SiteKey): void {
       case "allow":
         injectFiles(liveInput, files);
         capturedAttachments = encoded;
-        removeBanner();
+        if (liveComposer) {
+          showBanner(liveComposer, "allow", "Attachment checked and added.");
+          removeBannerSoon("Attachment checked and added");
+        }
         return;
 
       case "redact": {
         if (result.redacted_attachments.length !== files.length) {
-          if (liveComposer) showBanner(liveComposer, "deny", "redacted attachment was not available. Nothing was attached.");
+          if (liveComposer) showBanner(liveComposer, "redaction_failed", "The protected attachment could not be prepared safely.");
           return;
         }
 
@@ -199,12 +202,12 @@ function init(site: SiteKey): void {
       }
 
       case "hold":
-        if (liveComposer) showBanner(liveComposer, "hold", "attachment held for compliance review -- not attached yet.");
+        if (liveComposer) showBanner(liveComposer, "hold", "The attachment is pending compliance review and has not been added.");
         capturedAttachments = [];
         return;
 
       case "deny":
-        if (liveComposer) showBanner(liveComposer, "deny", `blocked attachment: ${result.reason}`);
+        if (liveComposer) showBanner(liveComposer, "deny", result.reason);
         capturedAttachments = [];
         return;
     }
@@ -354,7 +357,9 @@ function init(site: SiteKey): void {
       // Messaging layer itself failed (e.g. service worker briefly gone).
       // Same policy as an unreachable backend: fail OPEN.
       console.warn("[aigg] sendMessage failed, failing open:", err);
+      showBanner(composer, "gateway_unavailable", "The local gateway could not be reached, so this message was not inspected.");
       replaySend(composer, replay);
+      removeBannerSoon("local gateway could not be reached");
       return;
     }
 
@@ -379,7 +384,9 @@ function init(site: SiteKey): void {
 
     switch (result.decision) {
       case "allow":
+        showBanner(liveComposer, "allow", "No material risk was detected.");
         replaySend(liveComposer, replay);
+        removeBannerSoon("No material risk was detected");
         return;
 
       case "redact": {
@@ -396,8 +403,8 @@ function init(site: SiteKey): void {
         const wrote = await setComposerViaMainWorld(redacted, liveComposer);
         const settled = wrote && (await composerSettledOn(liveComposer, redacted));
         if (!settled) {
-          showBanner(liveComposer, "deny",
-            "Redaction could not be applied in place. Nothing was sent.");
+          showBanner(liveComposer, "redaction_failed",
+            "The protected replacement could not be applied safely.");
           return; // FAIL CLOSED. Never ship the original.
         }
 
@@ -414,12 +421,12 @@ function init(site: SiteKey): void {
       case "hold":
         activeLogId = result.log_id;
         activeHoldSnapshot = { logId: result.log_id, prompt, replayMode: replay.kind };
-        showBanner(liveComposer, "hold", "held for compliance review -- waiting for approval.");
+        showBanner(liveComposer, "hold", "Pending compliance review. A reviewer must approve it before it can be sent.");
         startHoldPolling(result.log_id);
         return;
 
       case "deny":
-        showBanner(liveComposer, "deny", `blocked: ${result.reason}`);
+        showBanner(liveComposer, "deny", result.reason);
         return;
     }
   }
@@ -434,17 +441,20 @@ function init(site: SiteKey): void {
         // Fail OPEN. A gateway that bricks the composer when the backend
         // blinks does not survive a demo, and blocking here would make the
         // tool itself the bypass. Known limitation -- see extension/README.md.
+        showBanner(composer, "gateway_unavailable", "The local gateway could not be reached, so this message was not inspected.");
         replaySend(composer, replay);
+        removeBannerSoon("local gateway could not be reached");
         return;
 
       case "unconfigured":
-        showBanner(composer, "unconfigured", "extension not configured (unknown user) -- letting this through.");
+        showBanner(composer, "unconfigured", "This extension has no gateway profile for the current user.");
         replaySend(composer, replay);
+        removeBannerSoon("no gateway profile");
         return;
 
       case "unsupported_file":
         // Fail CLOSED: we cannot vouch for a file we never inspected.
-        showBanner(composer, "unsupported_file", `attachment could not be read -- blocked. ${outcome.message}`);
+        showBanner(composer, "unsupported_file", `This file could not be inspected. ${outcome.message}`);
         return;
     }
   }
@@ -460,12 +470,12 @@ function init(site: SiteKey): void {
     if (message.status === "approved") {
       if (holdSnapshot?.replayMode === "edit") {
         const bannerTarget = composer ?? document.body;
-        showBanner(bannerTarget, "hold", "approved edit request -- click submit again to re-check and send.");
+        showBanner(bannerTarget, "approved", "The edited request was approved. Submit it again so the latest content can be checked and sent.");
         return;
       }
       if (composer) {
         if (!holdSnapshot || getComposerText(composer).trim() !== holdSnapshot.prompt) {
-          showBanner(composer, "hold", "approved request changed -- not sent. Click Send again to re-check.");
+          showBanner(composer, "hold", "The reviewed content changed before approval was received. Submit again to re-check it.");
           return;
         }
 
@@ -478,25 +488,25 @@ function init(site: SiteKey): void {
             const wrote = await setComposerViaMainWorld(redactedPrompt, composer);
             const settled = wrote && (await composerSettledOn(composer, redactedPrompt));
             if (!settled) {
-              showBanner(composer, "deny",
-                "Held request timed out and its prepared redaction could not be applied. Nothing was sent.");
+              showBanner(composer, "redaction_failed",
+                "The review timed out, but its prepared redaction could not be applied safely.");
               return;
             }
-            showBanner(composer, "redact", "held request timed out -- sending the prepared redaction now.");
+            showBanner(composer, "redact", "Review timed out. The prepared protected version is being sent instead.");
             replaySend(composer, { kind: "composer", target: null });
             removeBannerSoon("sending the prepared redaction now.");
           })();
           return;
         }
 
-        showBanner(composer, "hold", "approved -- sending now.");
+        showBanner(composer, "approved", "Compliance review approved this request.");
         replaySend(composer, { kind: "composer", target: null }); // replays the ORIGINAL prompt: hold never touched composer contents
         removeBannerSoon("approved -- sending now.");
       }
     } else if (message.status === "denied") {
-      if (composer) showBanner(composer, "denied", "denied by reviewer. Not sent.");
+      if (composer) showBanner(composer, "denied", "A compliance reviewer did not approve this request.");
     } else {
-      if (composer) showBanner(composer, "timeout", "still pending after 5 minutes. Not sent -- try again shortly.");
+      if (composer) showBanner(composer, "timeout", "This review is still pending. Try again shortly or ask a reviewer to resolve it.");
     }
   }
 

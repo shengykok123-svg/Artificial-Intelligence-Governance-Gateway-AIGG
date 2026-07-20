@@ -5,24 +5,34 @@ import { PURPOSE_OPTIONS } from "./types";
 const BANNER_ID = "aigg-banner";
 
 export type BannerKind =
+  | "allow"
   | "redact"
   | "hold"
+  | "approved"
   | "deny"
   | "denied"
   | "timeout"
+  | "gateway_unavailable"
+  | "redaction_failed"
   | "unconfigured"
   | "unsupported_file"
   | "purpose";
 
-const STYLE: Record<BannerKind, { bg: string; fg: string }> = {
-  redact: { bg: "#fef3c7", fg: "#92400e" },
-  hold: { bg: "#fef9c3", fg: "#854d0e" },
-  deny: { bg: "#fee2e2", fg: "#991b1b" },
-  denied: { bg: "#fee2e2", fg: "#991b1b" },
-  timeout: { bg: "#e5e7eb", fg: "#374151" },
-  unconfigured: { bg: "#e5e7eb", fg: "#374151" },
-  unsupported_file: { bg: "#fee2e2", fg: "#991b1b" },
-  purpose: { bg: "#dbeafe", fg: "#1e3a8a" },
+type BannerStyle = { bg: string; fg: string; icon: string; title: string; sent: string };
+
+const STYLE: Record<BannerKind, BannerStyle> = {
+  allow: { bg: "#ecfdf5", fg: "#047857", icon: "✓", title: "ALLOW", sent: "Your message has been sent." },
+  redact: { bg: "#fffbeb", fg: "#b45309", icon: "♢", title: "REDACT & SEND", sent: "Protected content was replaced before sending." },
+  hold: { bg: "#fff7ed", fg: "#c2410c", icon: "⏸", title: "HOLD", sent: "Nothing has been sent." },
+  approved: { bg: "#ecfdf5", fg: "#047857", icon: "✓", title: "APPROVED", sent: "Your message has been sent." },
+  deny: { bg: "#fef2f2", fg: "#b91c1c", icon: "⊘", title: "DENY", sent: "Nothing has been sent." },
+  denied: { bg: "#fef2f2", fg: "#b91c1c", icon: "⊘", title: "REVIEW DENIED", sent: "Nothing has been sent." },
+  timeout: { bg: "#f8fafc", fg: "#475569", icon: "◷", title: "REVIEW PENDING", sent: "Nothing has been sent." },
+  gateway_unavailable: { bg: "#f8fafc", fg: "#475569", icon: "!", title: "GATEWAY UNAVAILABLE", sent: "Message sent without gateway verification." },
+  redaction_failed: { bg: "#fef2f2", fg: "#b91c1c", icon: "⊘", title: "REDACTION FAILED", sent: "Nothing has been sent." },
+  unconfigured: { bg: "#f8fafc", fg: "#475569", icon: "!", title: "GATEWAY NOT CONFIGURED", sent: "Message sent without gateway verification." },
+  unsupported_file: { bg: "#fef2f2", fg: "#b91c1c", icon: "⊘", title: "UNSUPPORTED ATTACHMENT", sent: "Nothing has been sent." },
+  purpose: { bg: "#eff6ff", fg: "#1d4ed8", icon: "?", title: "PURPOSE REQUIRED", sent: "Nothing has been sent." },
 };
 
 /** Insert (replacing any existing) banner immediately before `anchor`. */
@@ -30,21 +40,47 @@ export function showBanner(anchor: Element, kind: BannerKind, text: string): voi
   removeBanner();
   const el = document.createElement("div");
   el.id = BANNER_ID;
-  el.textContent = `AI Governance Gateway: ${text}`;
   const palette = STYLE[kind];
   Object.assign(el.style, {
     position: "relative",
     zIndex: "2147483647",
-    padding: "8px 12px",
-    margin: "6px 0",
-    borderRadius: "8px",
+    padding: "12px 14px",
+    margin: "8px 0",
+    borderRadius: "10px",
+    minWidth: "280px",
+    maxWidth: "560px",
     fontSize: "13px",
     fontFamily: "system-ui, sans-serif",
     lineHeight: "1.4",
     background: palette.bg,
     color: palette.fg,
-    border: `1px solid ${palette.fg}`,
+    border: `1px solid ${palette.fg}55`,
+    boxShadow: "0 4px 16px rgba(15, 23, 42, 0.10)",
   });
+
+  const close = document.createElement("button");
+  close.type = "button";
+  close.textContent = "×";
+  close.setAttribute("aria-label", "Dismiss governance status");
+  Object.assign(close.style, {
+    position: "absolute", right: "8px", top: "5px", border: "0", background: "transparent",
+    color: palette.fg, cursor: "pointer", fontSize: "20px", lineHeight: "1",
+  });
+  close.addEventListener("click", removeBanner);
+
+  const heading = document.createElement("div");
+  heading.textContent = `${palette.icon}  ${palette.title}`;
+  Object.assign(heading.style, { fontWeight: "700", letterSpacing: "0.02em", paddingRight: "24px" });
+
+  const detail = document.createElement("div");
+  detail.textContent = text;
+  Object.assign(detail.style, { marginTop: "3px", color: "#1f2937" });
+
+  const outcome = document.createElement("div");
+  outcome.textContent = palette.sent;
+  Object.assign(outcome.style, { marginTop: "8px", paddingTop: "8px", borderTop: `1px solid ${palette.fg}33`, fontWeight: "600" });
+
+  el.append(heading, detail, outcome, close);
   anchor.parentElement?.insertBefore(el, anchor);
 }
 
