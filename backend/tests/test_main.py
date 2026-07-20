@@ -1097,6 +1097,58 @@ def test_hold_timeout_downgrades_via_monkeypatched_clock(
 
 
 # --------------------------------------------------------------------------
+# SEMANTIC_DETECTOR=both -- M8 and M9 in parallel behind CompositeSemanticDetector.
+# --------------------------------------------------------------------------
+
+
+def test_semantic_both_mode_produces_spans_from_both_detectors_and_health_reports_it(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.detect.base import Span
+
+    prompt = "Public webinar details are available. The board forecast is confidential."
+    embed_start = prompt.index("Public webinar")
+    embed_end = embed_start + len("Public webinar details are available.")
+    deberta_start = prompt.index("The board forecast")
+    deberta_end = deberta_start + len("The board forecast is confidential.")
+
+    class StubSemanticDetector:
+        """Stands in for CompositeSemanticDetector's own output -- this test
+        is about main.py's wiring and the audit trail, not re-testing the
+        composite's dedup logic (see test_composite.py for that)."""
+
+        def detect(self, doc):
+            del doc
+            return [
+                Span(start=embed_start, end=embed_end, data_class="DEPT_CONFIDENTIAL",
+                     detector="embed", confidence=0.90),
+                Span(start=deberta_start, end=deberta_end, data_class="DEPT_CONFIDENTIAL",
+                     detector="deberta", confidence=0.90),
+            ]
+
+        def classify(self, doc):
+            del doc
+            return "engineering", 0.90
+
+    monkeypatch.setattr("app.main.SEMANTIC_DETECTOR", "both")
+    monkeypatch.setattr("app.main.get_embed_detector", lambda internal_docs=None: StubSemanticDetector())
+
+    r = inspect(client, user_id="wei.eng@acme.my", prompt=prompt)
+    body = r.json()
+    assert "DEPT_CONFIDENTIAL" in body["data_classes"]
+    detectors = {d["detector"] for d in body["debug"]["detections"]}
+    assert detectors == {"embed", "deberta"}
+
+    logs = client.get("/v1/logs", headers=HEADERS, params={"limit": 200}).json()
+    row = next(x for x in logs["items"] if x["log_id"] == body["log_id"])
+    assert "DEPT_CONFIDENTIAL" in row["data_classes"]
+
+    health = client.get("/v1/health", headers=HEADERS).json()
+    assert health["semantic_detector"] == "both"
+    assert health["semantic_submodules"] == ["embed", "deberta"]
+
+
+# --------------------------------------------------------------------------
 # ENV=demo refuses to start with an active mock.
 # --------------------------------------------------------------------------
 

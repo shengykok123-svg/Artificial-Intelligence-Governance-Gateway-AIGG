@@ -6,7 +6,9 @@ found while dogfooding the purpose picker live. `MOCK_MODULES` is now empty,
 DeBERTa stays opt-in via `SEMANTIC_DETECTOR=m9_deberta`).
 
 Landed on branch **`codex/m3-decision-engine`** (pushed to `origin`), off
-`codex/integrate-redaction-origin-main`.
+`codex/integrate-redaction-origin-main`. A follow-up task, `SEMANTIC-BOTH`
+(M8 + M9 running concurrently), landed on the same branch afterward — see
+its own section below.
 
 ## What changed
 
@@ -149,3 +151,106 @@ README.md                          demo-string table, module status, layout
   already stale before this session (predates several M8/M9 additions) and
   was left as-is; only the demo-string table, module status, and layout
   rows that this task's acceptance criteria named were updated.
+
+---
+
+# SEMANTIC-BOTH — M8 + M9 run concurrently (follow-up session)
+
+Executed `SEMANTIC-BOTH`: `SEMANTIC_DETECTOR=both` now runs M8 (embedding
+similarity against indexed internal documents) and M9 (fine-tuned DeBERTa)
+in parallel on every inspection. They are complementary, not
+interchangeable — M8 catches paraphrases of a specific indexed internal
+document; M9 catches novel confidential content that matches nothing in the
+index. Zero call-site changes anywhere else, because both detectors already
+implement the same frozen `Detector` + `DocumentClassifier` protocol and
+every call site downstream (the inspect pipeline, ~8 attachment-redaction
+helpers) already takes exactly one object satisfying it.
+
+## What changed
+
+**New: `backend/app/detect/composite.py`.** `CompositeSemanticDetector`
+wraps an `embed` and a `deberta` sub-detector (duck-typed via a local
+`_SemanticSubDetector` protocol, so tests never need real models):
+- `detect()` unions both detectors' spans, then `dedup_overlapping()`
+  collapses overlapping same-`data_class` spans into one — sort by start,
+  sweep, transitively merge a chain of overlaps, higher confidence wins,
+  a confidence tie keeps the wider range. Different `data_class` spans
+  never merge even if their ranges overlap. Without this, M7 would
+  tokenise the same sentence twice with two overlapping, mutually
+  corrupting replacements whenever both detectors fired on it.
+- `classify()` returns whichever sub-detector's opinion has the higher
+  confidence; `(None, 0.0)` always loses to any real department.
+- Each `detect()` call logs one debug-level line —
+  `[semantic] embed=NNms deberta=NNms spans_embed=N spans_deberta=N deduped=N`
+  — the data for "what does dual detection cost."
+
+**`main.py` selection seam.** `SEMANTIC_DETECTOR` now accepts `m8 |
+m9_deberta | both`; the `m8`/`m9_deberta` branches in `get_embed_detector()`
+are untouched byte-for-byte, `both` is a new branch that constructs both
+real detectors (or `MockEmbedDetector` for M8's half if `M8` is still
+mocked) and wraps them in `CompositeSemanticDetector`. Fails loudly: a
+missing M9 weights file raises at construction, uncaught, same as
+`m9_deberta` alone. `GET /v1/health` gains `semantic_submodules:
+["embed","deberta"]` when the mode is `both`. A new startup check
+(`check_m8_index_not_empty`, wired via `@app.on_event("startup")`) prints a
+**warning** (never an error) if `internal_doc_chunks` is empty while M8 is
+active — legitimate on a fresh memory-backend dev box, but otherwise the
+kind of thing that silently makes M8 a no-op forever.
+
+**Threshold calibration knobs.** M8's confidence is a cosine similarity;
+M9's is a joint department+sensitivity head probability — not the same
+scale, even though the rule table's `min_confidence: 0.85` gates both
+identically. `embed.py`'s `SPAN_THRESHOLD`/`CLASSIFY_THRESHOLD` are now
+env-overridable (`M8_SPAN_THRESHOLD`, `M8_CLASSIFY_THRESHOLD`, same
+validation pattern as `deberta.py`'s `M9_CONFIDENCE_THRESHOLD`), so
+calibration happens at each detector's own emission threshold, not in the
+detector-agnostic rule table. `.env.example` documents the calibration
+procedure (run both over the gold eval set, pick thresholds for comparable
+precision). No rule-table schema change, no M3 change.
+
+## Files touched
+
+```
+backend/app/detect/composite.py    new: CompositeSemanticDetector, dedup_overlapping
+backend/app/detect/embed.py        SPAN_THRESHOLD/CLASSIFY_THRESHOLD -> env-overridable
+backend/app/main.py                "both" branch, /v1/health, M8-empty-index startup warning
+backend/tests/test_composite.py    new: 8 pure unit tests (6 specified + 2 more)
+backend/tests/test_main.py         both-mode integration test (spans from both
+                                    detector names in one audit record, /v1/health)
+.env.example                       M8_SPAN_THRESHOLD, M8_CLASSIFY_THRESHOLD + calibration note
+```
+
+`backend/app/policy/engine.py` and `backend/app/policy/rules.yaml` are
+untouched (`git diff --stat backend/app/policy/` is empty) — M3 stays
+detector-agnostic as designed.
+
+## Verified this session
+
+- `backend`: 168 passed, 43 skipped (Postgres, no Docker), 0 failed.
+- `git diff --stat backend/app/policy/` — empty, confirming M3/rules.yaml
+  are unmodified.
+- Beyond the test suite, exercised the real path on this machine (trained
+  M9 weights are present in `backend/artifacts/`, plus a live
+  sentence-transformers encoder):
+  - `SEMANTIC_DETECTOR=both` constructs a real `CompositeSemanticDetector`
+    wrapping real `EmbedDetector` + `DebertaDetector` instances.
+  - A novel confidential sentence (nothing indexed) fires **only**
+    `deberta`, confidence ≈0.975.
+  - A paraphrase of an indexed document fires **only** `embed`, confidence
+    ≈0.96.
+  - A sentence both would independently catch dedups to **exactly one**
+    span.
+  - `check_m8_index_not_empty()` prints the warning against an empty
+    memory-backend index, as designed.
+
+## Not done / carried forward
+
+- No live gold-eval-set calibration run was performed — `M8_SPAN_THRESHOLD`,
+  `M8_CLASSIFY_THRESHOLD`, and `M9_CONFIDENCE_THRESHOLD` are still at their
+  prior defaults (0.72 / 0.40 / 0.65). The `.env.example` comment documents
+  the procedure; actually running it against `backend/ml` gold data is
+  future work.
+- `@app.on_event("startup")` is deprecated in the installed FastAPI
+  (0.139.2) in favour of `lifespan` context managers; it still works
+  (tests pass, warning only) and was left as-is rather than restructuring
+  `app = FastAPI(...)` construction for a non-functional cleanup.

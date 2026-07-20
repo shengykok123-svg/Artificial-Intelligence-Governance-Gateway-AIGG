@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Protocol
 
@@ -11,10 +12,24 @@ from app.detect.base import Document, Span
 from app.repo.base import InternalDocRepo
 
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-CLASSIFY_THRESHOLD = 0.40
-SPAN_THRESHOLD = 0.72
 PGVECTOR_TOP_K = 5
 _SENTENCE_RE = re.compile(r"[^.!?\n]+(?:[.!?]+|$)")
+
+
+def _read_threshold(value: str | None, default: float, name: str) -> float:
+    threshold = float(value) if value else default
+    if not 0.0 < threshold < 1.0:
+        raise ValueError(f"{name} must be between 0 and 1.")
+    return threshold
+
+
+# M8's confidence is a cosine similarity -- NOT the same scale as M9's joint
+# head probability (see deberta.py's M9_CONFIDENCE_THRESHOLD). Each detector
+# calibrates its own emission threshold so the rule table's min_confidence
+# tiers mean one thing regardless of which detector emitted the span; see
+# .env.example for the calibration procedure.
+CLASSIFY_THRESHOLD = _read_threshold(os.getenv("M8_CLASSIFY_THRESHOLD"), 0.40, "M8_CLASSIFY_THRESHOLD")
+SPAN_THRESHOLD = _read_threshold(os.getenv("M8_SPAN_THRESHOLD"), 0.72, "M8_SPAN_THRESHOLD")
 
 
 class Encoder(Protocol):

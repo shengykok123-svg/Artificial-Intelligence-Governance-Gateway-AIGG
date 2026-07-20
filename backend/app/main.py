@@ -112,8 +112,24 @@ def get_embed_detector(internal_docs: Any | None = None) -> Detector | DocumentC
         # inspect pipeline needs to know which semantic implementation runs.
         from app.detect.deberta import DebertaDetector
         return DebertaDetector()
+    if SEMANTIC_DETECTOR == "both":
+        # M8 and M9 run in parallel behind the same Detector +
+        # DocumentClassifier protocol -- every call site downstream (the
+        # inspect pipeline and the attachment-redaction helpers) takes ONE
+        # object satisfying it, so this is the entire integration. Fail
+        # loudly: DebertaDetector's own missing-weights error is not caught
+        # here, and neither is EmbedDetector's missing-repo error.
+        from app.detect.composite import CompositeSemanticDetector
+        from app.detect.deberta import DebertaDetector
+        if "M8" in MOCK_MODULES:
+            from app.mocks import MockEmbedDetector
+            embed: Detector | DocumentClassifier = MockEmbedDetector()
+        else:
+            from app.detect.embed import EmbedDetector
+            embed = EmbedDetector(internal_docs=internal_docs)
+        return CompositeSemanticDetector(embed, DebertaDetector())
     if SEMANTIC_DETECTOR != "m8":
-        raise RuntimeError("SEMANTIC_DETECTOR must be 'm8' or 'm9_deberta'.")
+        raise RuntimeError("SEMANTIC_DETECTOR must be 'm8', 'm9_deberta', or 'both'.")
     if "M8" in MOCK_MODULES:
         from app.mocks import MockEmbedDetector
         return MockEmbedDetector()
@@ -579,6 +595,41 @@ def _forbidden_handler(request: Request, exc: Forbidden) -> JSONResponse:
     return JSONResponse(status_code=403, content={"detail": str(exc) or "forbidden"})
 
 
+def check_m8_index_not_empty() -> None:
+    """M8's index has no reload signal: an empty internal_doc_chunks table
+    means the real (unmocked) EmbedDetector will simply never produce a
+    span or a department -- not an error, just silent. Legitimate for a
+    fresh memory-backend dev environment; worth a loud warning anywhere
+    else, since nothing else would ever surface it. Warning, not error --
+    unlike a missing M9 weights file, an empty index is not a broken
+    module, just an unseeded one."""
+    if SEMANTIC_DETECTOR not in ("m8", "both") or "M8" in MOCK_MODULES:
+        return
+    from app.db import REPO_BACKEND, SessionLocal
+    if REPO_BACKEND == "postgres":
+        session = SessionLocal()
+        try:
+            from app.repo.postgres import PgInternalDocRepo
+            _rows, total = PgInternalDocRepo(session).list(limit=1, offset=0)
+        finally:
+            session.close()
+    else:
+        from app.repo import memory_repos
+        _rows, total = memory_repos().internal_docs.list(limit=1, offset=0)
+    if total == 0:
+        print(
+            "[startup] WARNING: internal_doc_chunks is empty -- M8 will "
+            "never produce a span or department until documents are "
+            "indexed via POST /v1/internal-docs.",
+            file=sys.stderr,
+        )
+
+
+@app.on_event("startup")
+def _startup_checks() -> None:
+    check_m8_index_not_empty()
+
+
 # --------------------------------------------------------------------------
 # Pipeline
 # --------------------------------------------------------------------------
@@ -1039,8 +1090,14 @@ def upload_internal_doc(
 
 @app.get("/v1/health")
 def health() -> dict:
-    return {
+    body: dict[str, Any] = {
         "status": "ok",
         "semantic_detector": SEMANTIC_DETECTOR,
         "mocked": sorted(MOCK_MODULES),
     }
+    if SEMANTIC_DETECTOR == "both":
+        # "both" is not itself a detector -- name the two that composed it,
+        # so a caller polling health can tell M8+M9 are the effective mode
+        # without knowing to interpret the string "both" specially.
+        body["semantic_submodules"] = ["embed", "deberta"]
+    return body
