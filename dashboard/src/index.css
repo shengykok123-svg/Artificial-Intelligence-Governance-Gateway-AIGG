@@ -9,5 +9,114 @@ html {
 }
 
 body {
-  @apply bg-slate-50 text-slate-900;
+  @apply bg-slate-50 text-slate-900 antialiased;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button, select, input {
+  font: inherit;
+}
+
+/* Complex grid values are kept here rather than generated Tailwind utility
+   classes. This gives the high-density compliance screens a stable desktop
+   two-pane layout in every Vite/Tailwind build. */
+.approval-layout {
+  display: grid;
+  grid-template-columns: minmax(540px, 0.94fr) minmax(620px, 1.06fr);
+  min-height: calc(100vh - 2rem);
+}
+
+.audit-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.audit-main {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.audit-evidence-drawer {
+  height: 100vh;
+  min-height: 0;
+}
+
+.approval-detail-pane {
+  min-width: 0;
+}
+
+.approval-list-row {
+  display: grid;
+  grid-template-columns: 54px minmax(126px, 1fr) minmax(108px, 0.9fr) minmax(150px, 1.1fr) minmax(112px, 0.9fr) 16px;
+}
+
+.approval-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.overview-top-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(330px, 1fr);
+}
+
+.overview-middle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.internal-doc-layout {
+  display: grid;
+  grid-template-columns: minmax(620px, 1.7fr) minmax(360px, 0.72fr);
+}
+
+.internal-doc-detail-pane {
+  max-height: calc(100vh - 210px);
+}
+
+@media (max-width: 1439px) {
+  .approval-layout {
+    grid-template-columns: minmax(480px, 0.9fr) minmax(500px, 1.1fr);
+  }
+
+  .approval-list-row {
+    grid-template-columns: 48px minmax(112px, 1fr) minmax(92px, 0.8fr) minmax(120px, 1fr) minmax(92px, 0.75fr) 14px;
+    gap: 0.5rem;
+  }
+}
+
+@media (max-width: 1199px) {
+  .audit-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
+  }
+
+  .audit-main { overflow: visible; }
+  .audit-evidence-drawer { height: auto; }
+
+  .approval-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .approval-detail-pane {
+    border-top: 1px solid rgb(226 232 240);
+  }
+
+  .overview-top-grid,
+  .overview-middle-grid,
+  .internal-doc-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .internal-doc-detail-pane { max-height: none; }
+}
+
+@media (max-width: 700px) {
+  .approval-list-row,
+  .approval-detail-grid {
+    grid-template-columns: 1fr;
+  }
 }
