@@ -324,10 +324,33 @@ def seed_internal_doc_for_m8(
     assert r.status_code == 200
 
 
+def mock_deberta_non_confidential(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Neutralise M9 for tests that need to pin the verdict to M8's mocked
+    confidence alone. This repo's .env sets SEMANTIC_DETECTOR=both, so the
+    REAL DeBERTa model runs on every request in this test file too -- and
+    since CompositeSemanticDetector.detect() dedups overlapping same-class
+    spans by keeping only the higher-confidence one, a real DeBERTa span can
+    silently replace the mocked M8 span before decide() ever sees it,
+    defeating the whole point of mocking M8. This stub short-circuits model
+    loading entirely (no weights read) and always reports "not confidential",
+    so M8's mocked span is the only DEPT_CONFIDENTIAL signal in play. Scoped
+    (via monkeypatch, auto-reverted) to only the tests that call this --
+    every other test still exercises the real DeBERTa model."""
+    from app.detect.deberta import SentencePrediction
+
+    monkeypatch.setattr("app.detect.deberta.DebertaDetector._load_model", lambda self: None)
+    monkeypatch.setattr(
+        "app.detect.deberta.DebertaDetector._predict",
+        lambda self, sentence: SentencePrediction("other", 0.0, False, 0.0),
+    )
+
+
 def seed_internal_doc_for_m8_hold(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """Backwards-compatible name for the hold/approve/deny/timeout review
     workflow tests below, which only need SOME hold verdict and do not care
-    about the exact similarity band."""
+    about the exact similarity band. Mocks DeBERTa too (see
+    mock_deberta_non_confidential) so that hold verdict is reliably M8's."""
+    mock_deberta_non_confidential(monkeypatch)
     seed_internal_doc_for_m8(client, monkeypatch, similarity=0.88)
 
 
@@ -437,6 +460,7 @@ def test_m8_internal_doc_cross_department_holds_from_the_same_tier_row(
     # lands on the exact same hold band, from the same tier row, as the
     # same-department case above; the department mismatch changes nothing
     # about the decision.
+    mock_deberta_non_confidential(monkeypatch)
     seed_internal_doc_for_m8(client, monkeypatch, department="hr", similarity=0.88)
 
     r = inspect(

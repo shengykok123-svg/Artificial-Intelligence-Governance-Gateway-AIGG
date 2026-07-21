@@ -24,6 +24,13 @@ SENSITIVITY_LABELS = frozenset({"confidential", "non_confidential"})
 _SENTENCE_BREAK = re.compile(r"(?:\r?\n)+|(?<=[.!?])\s+")
 
 
+def _read_threshold(value: str | None) -> float:
+    threshold = float(value or "0.65")
+    if not 0.0 < threshold < 1.0:
+        raise ValueError("M9_CONFIDENCE_THRESHOLD must be between 0 and 1.")
+    return threshold
+
+
 @dataclass(frozen=True)
 class SentencePrediction:
     department: str
@@ -46,10 +53,12 @@ class DebertaDetector:
         model: Any | None = None,
         torch_module: Any | None = None,
         device: Any | None = None,
+        threshold: float | None = None,
     ) -> None:
         self.model_path = model_path or Path(
             os.getenv("M9_MODEL_DIR", str(Path(__file__).resolve().parents[2] / "artifacts" / "deberta-m9-detector"))
         )
+        self.threshold = threshold if threshold is not None else _read_threshold(os.getenv("M9_CONFIDENCE_THRESHOLD"))
         self._predictor = predictor
         self._tokenizer = tokenizer
         self._model = model
@@ -158,12 +167,17 @@ class DebertaDetector:
     def detect(self, doc: Document) -> list[Span]:
         """Convert confidential sentence predictions into offset-correct
         policy spans. Span confidence is the sensitivity head's own score
-        (the severity axis) -- gated only on the categorical is_confidential
-        call, independent of the department head's confidence."""
+        (the severity axis), gated on the categorical is_confidential call
+        AND self.threshold -- the categorical flag alone is not reliable
+        enough near its decision boundary (an uncalibrated model can fire
+        confidently on harmless text), so a low-but-technically-confidential
+        score still does not reach the policy table as a span. classify()/
+        classify_sensitivity() stay ungated: the raw score is still visible
+        in the audit trail even when detect() suppresses the span."""
         spans: list[Span] = []
         for start, end, sentence in self._sentences(doc.text):
             prediction = self._predict(sentence)
-            if prediction.is_confidential:
+            if prediction.is_confidential and prediction.sensitivity_confidence >= self.threshold:
                 spans.append(Span(
                     start=start,
                     end=end,

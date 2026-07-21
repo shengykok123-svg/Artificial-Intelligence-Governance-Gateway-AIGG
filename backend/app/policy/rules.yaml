@@ -39,11 +39,12 @@
 #     SEPARATE axis (M8's matched-chunk department / M9's department head),
 #     independent of the min_confidence gate above, which only ever judges
 #     confidentiality-severity. A literal department matches equality.
-#     "@cross" rows are more specific than "*" rows (one more non-wildcard
-#     field), so whenever content is cross-department AND clears a band's
-#     min_confidence, the @cross row for that band wins outright over the
-#     same-department "*" row -- this is how cross-department mismatch
-#     escalates a verdict without its own separate confidence gate.
+#     "@cross" rows would be more specific than "*" rows (one more
+#     non-wildcard field) and would win outright over the same-department
+#     "*" row whenever content is cross-department -- the engine still
+#     supports this, but no @cross rows are seeded below right now, so
+#     cross-department mismatch currently has NO effect on the verdict; it
+#     is display/log only (dashboard column, cross_department_only filter).
 #   require_purpose: "state & allow" flag. Defaults to false.
 #   Most specific match wins (most non-wildcard fields, counting a
 #     detector-scoped rule as one more non-wildcard field, higher
@@ -81,15 +82,12 @@
 # severity (M8's cosine similarity / M9's sensitivity-head confidence) sets
 # the BASE tier below. Department attribution (M8's matched-chunk department
 # / M9's department-head confidence) is judged separately and never gates
-# severity on its own -- but once a department is known, a MISMATCH against
-# the requester's own department is itself an escalation: the @cross rows
-# below take the base tier one notch stricter (allow+justify -> hold+justify,
-# hold+justify -> deny), using the SAME severity confidence as the
-# same-department row at that band. Sending another department's confidential
-# material is treated as more serious than sending your own, independent of
-# how severe the content itself already reads. These starting bands reuse the
-# existing same-department thresholds; recalibrate against a gold eval set
-# before relying on them, same as the base bands (see .env.example).
+# severity on its own. content_department is still computed and logged on
+# every request (dashboard column, cross_department_only filter), but
+# cross-department escalation of the verdict itself (@cross rows) is
+# currently disabled -- see the content_department note above. These bands
+# reuse thresholds that have not been recalibrated against a gold eval set;
+# do so before relying on them (see .env.example).
 
 rules:
   # ---------- DEPT_CONFIDENTIAL, PUBLIC_AI: per-detector tiers ---------
@@ -114,15 +112,11 @@ rules:
   - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
      detector: deberta, min_confidence: 0.95, decision: deny}
 
-  # ---- DEPT_CONFIDENTIAL, PUBLIC_AI, cross-department: one tier stricter ----
-  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
-     content_department: "@cross", detector: embed, min_confidence: 0.50, decision: hold, require_purpose: true}
-  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
-     content_department: "@cross", detector: embed, min_confidence: 0.85, decision: deny}
-  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
-     content_department: "@cross", detector: deberta, min_confidence: 0.65, decision: hold, require_purpose: true}
-  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: PUBLIC_AI, user_role: "*", purpose: "*",
-     content_department: "@cross", detector: deberta, min_confidence: 0.90, decision: deny}
+  # Cross-department @cross rows disabled for now: content_department stays
+  # display/log-only (dashboard column, cross_department_only filter) and
+  # does not change the verdict. The rows above (data_class + tier + detector
+  # only) already apply regardless of department match. Re-add @cross rows
+  # here to bring escalation back if/when asked for.
 
   # ---------- DEPT_CONFIDENTIAL, ENTERPRISE_AI: one notch looser -------
   - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*",
@@ -131,13 +125,8 @@ rules:
      detector: deberta, min_confidence: 0.65, decision: allow, require_purpose: true}
 
   # ENTERPRISE_AI has no same-department hold/deny band at all (trusted one
-  # notch looser than PUBLIC_AI) -- but cross-department still escalates past
-  # allow, because whose data it is matters regardless of which AI tool tier
-  # it's headed to.
-  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*",
-     content_department: "@cross", detector: embed, min_confidence: 0.50, decision: hold, require_purpose: true}
-  - {data_class: DEPT_CONFIDENTIAL, ai_tool_tier: ENTERPRISE_AI, user_role: "*", purpose: "*",
-     content_department: "@cross", detector: deberta, min_confidence: 0.65, decision: hold, require_purpose: true}
+  # notch looser than PUBLIC_AI). Cross-department escalation for this tier
+  # is disabled for now too -- see the note above.
 
   # INTERNAL_AI DEPT_CONFIDENTIAL: allow (no row needed), cross-department
   # included -- the most-trusted tier stays untouched by this change.
