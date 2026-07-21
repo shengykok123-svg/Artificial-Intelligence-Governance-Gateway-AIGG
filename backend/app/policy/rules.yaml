@@ -54,18 +54,24 @@
 #
 # decision: allow | redact | hold | deny
 #
-# M2 HAS NO POLICY VOICE. MYKAD, EMAIL, PHONE, PERSON, BANK_ACCT, SALARY and
-# SECRET intentionally have NO rows here -- every span M2 (the regex
-# detector) finds is a data_class with no matching rule, which resolves to
-# allow via the no-candidate path in decide(). What actually protects that
-# data is the engine's structural regex redaction floor: ANY span with
-# detector == "rules" forces the decision from allow up to redact,
-# unconditionally, regardless of tier, role, or purpose (see
-# backend/app/policy/engine.py). This means M2 always redacts what it
-# finds, but never gets a vote in whether the request is held or denied --
-# a leaked credential (SECRET) is redacted the same as a MyKad number, not
-# escalated to deny, and no M2 class carries a require_purpose gate any
-# more (the floor doesn't set one).
+# M2 HAS NO POLICY VOICE HERE (in policy_rules). MYKAD, EMAIL, PHONE,
+# PERSON, BANK_ACCT, SALARY and API_KEY intentionally have NO rows in this
+# table -- every span M2 (the regex detector) finds is a data_class with no
+# matching rule, which resolves to allow via the no-candidate path in
+# decide(). What actually protects that data is the engine's structural
+# regex redaction floor: a span with detector == "rules" forces the
+# decision from allow up to redact, unconditionally, regardless of tier,
+# role, or purpose (see backend/app/policy/engine.py) -- PROVIDED its data
+# class is in the redaction_classes table (dashboard: Policy & Tools ->
+# Redaction). That table is separately admin-editable and seeded with all 7
+# built-in M2 classes by default -- it is not this file, and not something
+# M3/decide() reads a row for. This means M2 redacts what it finds by
+# default, but never gets a vote in whether the request is held or
+# denied -- a leaked credential (API_KEY) is redacted the same as a MyKad
+# number, not escalated to deny, and no M2 class carries a require_purpose
+# gate (the floor doesn't set one). An admin can remove a class from the
+# Redaction list to stop M2 protecting it entirely -- a deliberate,
+# real tradeoff, not a bug.
 #
 # DEPT_CONFIDENTIAL (M8/M9) is therefore the ONLY class with an actual
 # policy row, and the only thing that can push a request to hold or deny.

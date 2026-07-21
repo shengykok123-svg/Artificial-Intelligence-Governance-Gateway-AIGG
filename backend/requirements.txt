@@ -8,6 +8,9 @@ fastapi
 uvicorn[standard]
 pydantic>=2
 python-multipart
+# M2: admin-defined regex patterns need a real match timeout (ReDoS
+# protection) -- stdlib re has none, `regex` is drop-in compatible and adds one
+regex
 # M5
 pdfplumber
 python-docx

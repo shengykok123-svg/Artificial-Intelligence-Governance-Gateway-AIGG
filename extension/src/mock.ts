@@ -13,7 +13,7 @@ const CYCLE: Array<Pick<InspectResponse, "decision" | "data_classes" | "reason" 
   { decision: "allow", data_classes: [], reason: "No sensitive data class detected. (MOCK_MODE)", content_department: null, department_confidence: 0, debug: { policy_layer: "M3 (mock)", semantic_detector: "mock", detections: [] } },
   { decision: "redact", data_classes: ["MYKAD"], reason: "MYKAD detected. (MOCK_MODE)", content_department: null, department_confidence: 0, debug: { policy_layer: "M3 (mock)", semantic_detector: "mock", detections: [{ data_class: "MYKAD", detector: "M2 (mock)", confidence: 1, source: "prompt" }] } },
   { decision: "hold", data_classes: ["SALARY"], reason: "SALARY detected. (MOCK_MODE)", content_department: "hr", department_confidence: 0.92, debug: { policy_layer: "M3 (mock)", semantic_detector: "mock", detections: [{ data_class: "SALARY", detector: "M2 (mock)", confidence: 1, source: "prompt" }] } },
-  { decision: "deny", data_classes: ["SECRET"], reason: "SECRET detected. (MOCK_MODE)", content_department: "engineering", department_confidence: 0.97, debug: { policy_layer: "M3 (mock)", semantic_detector: "mock", detections: [{ data_class: "SECRET", detector: "M2 (mock)", confidence: 1, source: "prompt" }] } },
+  { decision: "deny", data_classes: ["API_KEY"], reason: "API_KEY detected. (MOCK_MODE)", content_department: "engineering", department_confidence: 0.97, debug: { policy_layer: "M3 (mock)", semantic_detector: "mock", detections: [{ data_class: "API_KEY", detector: "M2 (mock)", confidence: 1, source: "prompt" }] } },
 ];
 
 export async function nextMockOutcome(prompt: string): Promise<InspectResponse> {

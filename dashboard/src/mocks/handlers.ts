@@ -7,7 +7,7 @@
 
 import { http, HttpResponse } from "msw";
 
-import type { AiTool, AuditRecord, InternalDocChunk, RuleRow, StatsSummary } from "../api/types";
+import type { AiTool, AuditRecord, DetectionPattern, InternalDocChunk, RedactionClass, RuleRequest, RuleRow, StatsSummary } from "../api/types";
 
 const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
@@ -21,27 +21,78 @@ function iso(daysOffset: number, hoursOffset = 0): string {
 const tools: AiTool[] = [
   {
     host: "chatgpt.com", tier: "PUBLIC_AI", status: "approved",
-    approved_by: "admin@acme.my", approved_at: iso(-30), first_seen: iso(-60), usage_count: 10,
+    approved_by: "admin@acme.my", approved_at: iso(-30), first_seen: iso(-60),
+    usage_count: 10, visit_count: 0, catalog: "known",
   },
   {
     host: "gemini.google.com", tier: "PUBLIC_AI", status: "approved",
-    approved_by: "admin@acme.my", approved_at: iso(-30), first_seen: iso(-60), usage_count: 8,
+    approved_by: "admin@acme.my", approved_at: iso(-30), first_seen: iso(-60),
+    usage_count: 8, visit_count: 0, catalog: "known",
   },
   {
     host: "copilot.microsoft.com", tier: "PUBLIC_AI", status: "unapproved",
-    approved_by: null, approved_at: null, first_seen: iso(-10), usage_count: 4,
+    approved_by: null, approved_at: null, first_seen: iso(-10),
+    usage_count: 4, visit_count: 0, catalog: "known",
+  },
+  {
+    host: "perplexity.ai", tier: "PUBLIC_AI", status: "unapproved",
+    approved_by: null, approved_at: null, first_seen: iso(-5),
+    usage_count: 0, visit_count: 14, catalog: "known",
+  },
+  {
+    host: "poe.com", tier: "PUBLIC_AI", status: "unapproved",
+    approved_by: null, approved_at: null, first_seen: iso(-2),
+    usage_count: 0, visit_count: 3, catalog: "known",
+  },
+  {
+    host: "internal-llm.acme.my", tier: "PUBLIC_AI", status: "unapproved",
+    approved_by: null, approved_at: null, first_seen: iso(-1),
+    usage_count: 0, visit_count: 0, catalog: "other",
   },
 ];
 
 const rules: RuleRow[] = [
-  { data_class: "MYKAD", ai_tool_tier: "*", user_role: "*", purpose: "*", decision: "redact", detector: "*" },
-  { data_class: "SECRET", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "deny", detector: "*" },
-  { data_class: "SALARY", ai_tool_tier: "*", user_role: "*", purpose: "*", decision: "redact", detector: "*" },
-  { data_class: "BANK_ACCT", ai_tool_tier: "*", user_role: "*", purpose: "*", decision: "redact", detector: "*" },
-  { data_class: "DEPT_CONFIDENTIAL", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "hold", detector: "embed" },
-  { data_class: "DEPT_CONFIDENTIAL", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "deny", detector: "embed" },
-  { data_class: "DEPT_CONFIDENTIAL", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "hold", detector: "deberta" },
+  { id: 1, data_class: "MYKAD", ai_tool_tier: "*", user_role: "*", purpose: "*", decision: "redact", min_confidence: 0, content_department: "*", require_purpose: false, detector: "*" },
+  { id: 2, data_class: "API_KEY", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "deny", min_confidence: 0, content_department: "*", require_purpose: false, detector: "*" },
+  { id: 3, data_class: "SALARY", ai_tool_tier: "*", user_role: "*", purpose: "*", decision: "redact", min_confidence: 0, content_department: "*", require_purpose: false, detector: "*" },
+  { id: 4, data_class: "BANK_ACCT", ai_tool_tier: "*", user_role: "*", purpose: "*", decision: "redact", min_confidence: 0, content_department: "*", require_purpose: false, detector: "*" },
+  { id: 5, data_class: "DEPT_CONFIDENTIAL", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "hold", min_confidence: 0.85, content_department: "*", require_purpose: true, detector: "embed" },
+  { id: 6, data_class: "DEPT_CONFIDENTIAL", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "deny", min_confidence: 0.92, content_department: "*", require_purpose: false, detector: "embed" },
+  { id: 7, data_class: "DEPT_CONFIDENTIAL", ai_tool_tier: "PUBLIC_AI", user_role: "*", purpose: "*", decision: "hold", min_confidence: 0.90, content_department: "*", require_purpose: true, detector: "deberta" },
 ];
+let nextRuleId = 8;
+
+const redactionClasses: RedactionClass[] = [
+  { id: 1, data_class: "MYKAD" },
+  { id: 2, data_class: "EMAIL" },
+  { id: 3, data_class: "PHONE" },
+  { id: 4, data_class: "BANK_ACCT" },
+  { id: 5, data_class: "SALARY" },
+  { id: 6, data_class: "API_KEY" },
+  { id: 7, data_class: "PERSON" },
+];
+let nextRedactionId = 8;
+
+function displayId(dataClass: string, sequence: number): string {
+  return `${dataClass}-${String(sequence).padStart(5, "0")}`;
+}
+
+const patterns: DetectionPattern[] = [
+  { id: 1, data_class: "MYKAD", pattern: "\\b\\d{6}-\\d{2}-\\d{4}\\b", remark: "Malaysian IC number, format YYMMDD-PB-XXXX.", sequence: 1, display_id: displayId("MYKAD", 1) },
+  { id: 2, data_class: "EMAIL", pattern: "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b", remark: "Standard email address shape.", sequence: 1, display_id: displayId("EMAIL", 1) },
+  { id: 3, data_class: "PHONE", pattern: "\\b01\\d[-\\s]?\\d{7,8}\\b", remark: "Malaysian mobile number, format 01X-XXXXXXX(X).", sequence: 1, display_id: displayId("PHONE", 1) },
+  { id: 4, data_class: "BANK_ACCT", pattern: "(?i)\\b(?:account|acct|a/c)\\s*(?:no\\.?|number)?\\s*(?:is\\s+)?[:#-]?\\s*\\d(?:[\\d -]{6,22})\\d\\b", remark: "'Account/acct/a-c' followed by a 7-24 digit account number.", sequence: 1, display_id: displayId("BANK_ACCT", 1) },
+  { id: 5, data_class: "SALARY", pattern: "(?i)\\bRM\\s?\\d{1,3}(?:,\\d{3})*(?:\\.\\d{2})?\\b", remark: "RM currency amount, e.g. RM 8,500 or RM8500.00.", sequence: 1, display_id: displayId("SALARY", 1) },
+  { id: 6, data_class: "API_KEY", pattern: "\\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\\b", remark: "OpenAI/Anthropic-style API key shape (sk-... or sk-proj-...).", sequence: 1, display_id: displayId("API_KEY", 1) },
+  { id: 7, data_class: "API_KEY", pattern: "\\b(?:OPENAI|ANTHROPIC|AWS)_API_KEY\\s*=\\s*[A-Za-z0-9_./+=-]{16,}\\b", remark: "Cloud provider API key set via an env-style assignment, e.g. OPENAI_API_KEY=....", sequence: 2, display_id: displayId("API_KEY", 2) },
+  { id: 8, data_class: "PERSON", pattern: "\\b(?:Encik|Puan|Mr|Mrs|Ms|Dr)\\.?\\s+[A-Z][A-Za-z'-]*(?:\\s+[A-Z][A-Za-z'-]*){0,2}\\b", remark: "Honorific (Encik/Puan/Mr/Mrs/Ms/Dr) followed by a 1-3 word name.", sequence: 1, display_id: displayId("PERSON", 1) },
+];
+let nextPatternId = 9;
+
+function nextSequenceFor(dataClass: string): number {
+  const existing = patterns.filter((p) => p.data_class === dataClass).map((p) => p.sequence);
+  return Math.max(0, ...existing) + 1;
+}
 
 const internalDocs: InternalDocChunk[] = [];
 
@@ -84,7 +135,7 @@ const logs: AuditRecord[] = [
   }),
   row({
     decision: "deny", user_id: "wei.eng@acme.my", user_department: "engineering",
-    data_classes: ["SECRET"], prompt_text: "Debug this: OPENAI_API_KEY=sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d",
+    data_classes: ["API_KEY"], prompt_text: "Debug this: OPENAI_API_KEY=sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d",
     reason: "Credential detected. Prompt blocked at the browser.", ts: iso(0, -2),
   }),
   row({
@@ -212,6 +263,89 @@ export const handlers = [
   }),
 
   http.get(`${BASE}/v1/rules`, () => HttpResponse.json(rules)),
+
+  http.post(`${BASE}/v1/rules`, async ({ request }) => {
+    const body = (await request.json()) as RuleRequest;
+    const created: RuleRow = { id: nextRuleId++, ...body };
+    rules.push(created);
+    return HttpResponse.json(created);
+  }),
+
+  http.put(`${BASE}/v1/rules/:ruleId`, async ({ params, request }) => {
+    const body = (await request.json()) as RuleRequest;
+    const idx = rules.findIndex((r) => r.id === Number(params.ruleId));
+    if (idx === -1) return new HttpResponse(null, { status: 404 });
+    rules[idx] = { id: rules[idx].id, ...body };
+    return HttpResponse.json(rules[idx]);
+  }),
+
+  http.delete(`${BASE}/v1/rules/:ruleId`, ({ params }) => {
+    const idx = rules.findIndex((r) => r.id === Number(params.ruleId));
+    if (idx === -1) return new HttpResponse(null, { status: 404 });
+    rules.splice(idx, 1);
+    return HttpResponse.json({ deleted: true });
+  }),
+
+  http.get(`${BASE}/v1/redaction`, () => HttpResponse.json(redactionClasses)),
+
+  http.post(`${BASE}/v1/redaction`, async ({ request }) => {
+    const body = (await request.json()) as { data_class: string };
+    const existing = redactionClasses.find((r) => r.data_class === body.data_class);
+    if (existing) return HttpResponse.json(existing);
+    const created: RedactionClass = { id: nextRedactionId++, data_class: body.data_class };
+    redactionClasses.push(created);
+    return HttpResponse.json(created);
+  }),
+
+  http.delete(`${BASE}/v1/redaction/:rowId`, ({ params }) => {
+    const idx = redactionClasses.findIndex((r) => r.id === Number(params.rowId));
+    if (idx === -1) return new HttpResponse(null, { status: 404 });
+    redactionClasses.splice(idx, 1);
+    return HttpResponse.json({ deleted: true });
+  }),
+
+  http.get(`${BASE}/v1/patterns`, () => HttpResponse.json(patterns)),
+
+  http.post(`${BASE}/v1/patterns`, async ({ request }) => {
+    const body = (await request.json()) as { data_class: string; pattern: string; remark?: string };
+    // Client-side compile check standing in for backend validation -- mock
+    // realism only, not a security boundary (the real ReDoS protection is
+    // server-side, see backend/app/detect/rules.py).
+    try {
+      new RegExp(body.pattern);
+    } catch {
+      return HttpResponse.json({ detail: "invalid regex" }, { status: 422 });
+    }
+    const sequence = nextSequenceFor(body.data_class);
+    const created: DetectionPattern = { id: nextPatternId++, data_class: body.data_class, pattern: body.pattern, remark: body.remark ?? "", sequence, display_id: displayId(body.data_class, sequence) };
+    patterns.push(created);
+    if (!redactionClasses.some((r) => r.data_class === body.data_class)) {
+      redactionClasses.push({ id: nextRedactionId++, data_class: body.data_class });
+    }
+    return HttpResponse.json(created);
+  }),
+
+  http.put(`${BASE}/v1/patterns/:patternId`, async ({ params, request }) => {
+    const body = (await request.json()) as { data_class: string; pattern: string; remark?: string };
+    try {
+      new RegExp(body.pattern);
+    } catch {
+      return HttpResponse.json({ detail: "invalid regex" }, { status: 422 });
+    }
+    const idx = patterns.findIndex((p) => p.id === Number(params.patternId));
+    if (idx === -1) return new HttpResponse(null, { status: 404 });
+    const current = patterns[idx];
+    const sequence = body.data_class === current.data_class ? current.sequence : nextSequenceFor(body.data_class);
+    patterns[idx] = { id: current.id, data_class: body.data_class, pattern: body.pattern, remark: body.remark ?? "", sequence, display_id: displayId(body.data_class, sequence) };
+    return HttpResponse.json(patterns[idx]);
+  }),
+
+  http.delete(`${BASE}/v1/patterns/:patternId`, ({ params }) => {
+    const idx = patterns.findIndex((p) => p.id === Number(params.patternId));
+    if (idx === -1) return new HttpResponse(null, { status: 404 });
+    patterns.splice(idx, 1);
+    return HttpResponse.json({ deleted: true });
+  }),
 
   http.get(`${BASE}/v1/tools`, () => {
     const sorted = [...tools].sort((a, b) => {

@@ -27,7 +27,7 @@ engine with a "state & allow" verdict model (`require_purpose`), and
 DeBERTa stays opt-in via `SEMANTIC_DETECTOR=m9_deberta`). Policy is data:
 `backend/app/policy/rules.yaml` seeds `policy_rules`, and a compliance
 officer edits a row, never redeploys code. M2 (regex) classes — MYKAD,
-EMAIL, PHONE, PERSON, BANK_ACCT, SALARY, SECRET included — carry no policy
+EMAIL, PHONE, PERSON, BANK_ACCT, SALARY, API_KEY included — carry no policy
 voice of their own; the structural regex floor redacts every one of them,
 never escalates to hold or deny, not even a leaked credential.
 DEPT_CONFIDENTIAL (M8/M9) is the only class that can still push a request
@@ -131,7 +131,7 @@ bash backend/scripts/backbone_smoke.sh   # all 5 backbone flows, REPO_BACKEND=me
   category and their free-text justification side by side, and attachments
   are downloadable from the audit log for every decision — the redacted
   copy whenever anything in the file needed masking (confirmed with a
-  `SECRET`-bearing attachment on a `deny`), the original bytes unchanged
+  `API_KEY`-bearing attachment on a `deny`), the original bytes unchanged
   otherwise.
 
 ## Layout — do not deviate

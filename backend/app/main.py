@@ -33,10 +33,19 @@ from app.extract.pptx_ooxml import PptxXmlTextTarget, iter_pptx_ooxml_text_targe
 from app.extract.xlsx import XlsxTextTarget, iter_xlsx_text_targets, redact_xlsx_bytes
 from app.policy.engine import PolicyContext, Verdict
 from app.repo import Repos, get_repos
-from app.repo.base import AttachmentBlob, AuditRecord
+from app.known_ai_hosts import KNOWN_AI_HOSTS
+from app.repo.base import (
+    AiTool,
+    AttachmentBlob,
+    AuditRecord,
+    DetectionPatternRow,
+    RedactionClassRow,
+    RuleRow,
+)
 from app.schemas import (
     Attachment,
     DetectionDebug,
+    DetectionPatternRequest,
     InternalDocChunkResponse,
     InternalDocsPage,
     InternalDocUploadRequest,
@@ -45,6 +54,9 @@ from app.schemas import (
     InspectRequest,
     InspectResponse,
     RedactedAttachment,
+    RedactionClassRequest,
+    RuleRequest,
+    ToolVisitRequest,
 )
 
 load_dotenv()
@@ -98,12 +110,15 @@ print(
 # --------------------------------------------------------------------------
 
 
-def get_rules_detector() -> Detector:
+def get_rules_detector(patterns: list[tuple[str, str]] | None = None) -> Detector:
     if "M2" in MOCK_MODULES:
         from app.mocks import MockRulesDetector
         return MockRulesDetector()
     from app.detect.rules import RulesDetector
-    return RulesDetector()
+    # patterns=None falls back to RulesDetector's own DEFAULT_PATTERNS --
+    # only the real /v1/inspect path (below) ever passes the DB-backed
+    # list explicitly; other callers (tests, mocks) get the built-ins.
+    return RulesDetector(patterns=patterns)
 
 
 def get_embed_detector(internal_docs: Any | None = None) -> Detector | DocumentClassifier:
@@ -142,7 +157,7 @@ def get_extractor() -> Callable[[str, str, str], Document]:
     return extract
 
 
-def get_decider() -> Callable[[Classification, PolicyContext, list], Verdict]:
+def get_decider() -> Callable[[Classification, PolicyContext, list, frozenset], Verdict]:
     from app.policy.engine import decide
     return decide
 
@@ -659,7 +674,7 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
         documents.append(doc)
         attachment_docs.append((att, doc))
 
-    rules_detector = get_rules_detector()
+    rules_detector = get_rules_detector([(p.data_class, p.pattern) for p in repos.patterns.all()])
     embed_detector = get_embed_detector(repos.internal_docs)
 
     # Span.start/end are offsets into ONE Document's text. The prompt's own
@@ -755,7 +770,8 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
     )
 
     decide = get_decider()
-    verdict = decide(classification, ctx, repos.rules.all())
+    regex_redact_classes = frozenset(r.data_class for r in repos.redaction.all())
+    verdict = decide(classification, ctx, repos.rules.all(), regex_redact_classes)
 
     redacted_prompt: str | None = None
     redacted_attachments: list[RedactedAttachment] = []
@@ -1096,17 +1112,119 @@ def list_rules(repos: Repos = Depends(get_repos)):
     return repos.rules.all()
 
 
-@app.get("/v1/tools")
-def list_tools(repos: Repos = Depends(get_repos)) -> list[dict]:
+@app.post("/v1/rules")
+def create_rule(req: RuleRequest, repos: Repos = Depends(get_repos)) -> RuleRow:
+    return repos.rules.create(RuleRow(**req.model_dump()))
+
+
+@app.put("/v1/rules/{rule_id}")
+def update_rule(rule_id: int, req: RuleRequest, repos: Repos = Depends(get_repos)) -> RuleRow:
+    updated = repos.rules.update(rule_id, RuleRow(**req.model_dump()))
+    if updated is None:
+        raise HTTPException(status_code=404, detail="unknown rule_id")
+    return updated
+
+
+@app.delete("/v1/rules/{rule_id}")
+def delete_rule(rule_id: int, repos: Repos = Depends(get_repos)) -> dict:
+    if not repos.rules.delete(rule_id):
+        raise HTTPException(status_code=404, detail="unknown rule_id")
+    return {"deleted": True}
+
+
+@app.get("/v1/redaction")
+def list_redaction_classes(repos: Repos = Depends(get_repos)) -> list[RedactionClassRow]:
+    return repos.redaction.all()
+
+
+@app.post("/v1/redaction")
+def create_redaction_class(req: RedactionClassRequest, repos: Repos = Depends(get_repos)) -> RedactionClassRow:
+    return repos.redaction.create(RedactionClassRow(data_class=req.data_class))
+
+
+@app.delete("/v1/redaction/{row_id}")
+def delete_redaction_class(row_id: int, repos: Repos = Depends(get_repos)) -> dict:
+    if not repos.redaction.delete(row_id):
+        raise HTTPException(status_code=404, detail="unknown row_id")
+    return {"deleted": True}
+
+
+def _pattern_dict(row: DetectionPatternRow) -> dict:
+    # display_id ("MYKAD-00001") is a @property on DetectionPatternRow, not
+    # a dataclass field -- asdict() alone would drop it, so it's injected
+    # here explicitly, same as tools' computed usage_count/catalog fields.
+    return {**asdict(row), "display_id": row.display_id}
+
+
+@app.get("/v1/patterns")
+def list_patterns(repos: Repos = Depends(get_repos)) -> list[dict]:
+    return [_pattern_dict(p) for p in repos.patterns.all()]
+
+
+@app.post("/v1/patterns")
+def create_pattern(req: DetectionPatternRequest, repos: Repos = Depends(get_repos)) -> dict:
+    created = repos.patterns.create(DetectionPatternRow(**req.model_dump()))
+    # Defining a pattern and getting it masked is one action, not two --
+    # idempotent (RedactionRepo.create returns the existing row if this
+    # class is already on the list), so safe to call unconditionally.
+    repos.redaction.create(RedactionClassRow(data_class=req.data_class))
+    return _pattern_dict(created)
+
+
+@app.put("/v1/patterns/{pattern_id}")
+def update_pattern(pattern_id: int, req: DetectionPatternRequest, repos: Repos = Depends(get_repos)) -> dict:
+    updated = repos.patterns.update(pattern_id, DetectionPatternRow(**req.model_dump()))
+    if updated is None:
+        raise HTTPException(status_code=404, detail="unknown pattern_id")
+    return _pattern_dict(updated)
+
+
+@app.delete("/v1/patterns/{pattern_id}")
+def delete_pattern(pattern_id: int, repos: Repos = Depends(get_repos)) -> dict:
+    # Does NOT touch the Redaction list -- deleting one of a class's several
+    # patterns (or its only one) never silently removes it from the redact
+    # list; an admin cleans that up separately if they want to.
+    if not repos.patterns.delete(pattern_id):
+        raise HTTPException(status_code=404, detail="unknown pattern_id")
+    return {"deleted": True}
+
+
+def _tools_usage(repos: Repos) -> Counter[str]:
     # TODO(team decision): no repo method returns a usage count. Stopgap --
     # page repos.audit.list() and count target_host in Python. At 30 seed
     # rows this is free; it will not be at 30,000.
     all_rows, _total = repos.audit.list(limit=10_000, offset=0)
-    usage = Counter(row.target_host for row in all_rows)
-    return [
-        {**asdict(tool), "usage_count": usage.get(tool.host, 0)}
-        for tool in repos.tools.all()
-    ]
+    return Counter(row.target_host for row in all_rows)
+
+
+def _tool_dict(tool: AiTool, usage: Counter[str]) -> dict:
+    return {
+        **asdict(tool),
+        "usage_count": usage.get(tool.host, 0),
+        # "known": on the curated AI-host list (see known_ai_hosts.py).
+        # "other": reached the backend some other way (today, only via a
+        # real /v1/inspect call -- the webRequest-based detector in the
+        # extension never fires for a host it wasn't granted permission
+        # for, so it can only ever report "known" hosts).
+        "catalog": "known" if tool.host in KNOWN_AI_HOSTS else "other",
+    }
+
+
+@app.get("/v1/tools")
+def list_tools(repos: Repos = Depends(get_repos)) -> list[dict]:
+    usage = _tools_usage(repos)
+    return [_tool_dict(tool, usage) for tool in repos.tools.all()]
+
+
+@app.post("/v1/tools/visit")
+def record_tool_visit(req: ToolVisitRequest, repos: Repos = Depends(get_repos)) -> dict:
+    # The extension's shadow-AI detector: a hostname match against the
+    # bundled AI_HOSTS list plus a completed network request on that origin,
+    # no prompt/DOM access. Records the visit and (as a side effect, same as
+    # inspect()) auto-registers unknown hosts.
+    tool = repos.tools.record_visit(req.host)
+    usage = _tools_usage(repos)
+    return _tool_dict(tool, usage)
 
 
 @app.post("/v1/tools/{host}/decision")

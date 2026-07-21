@@ -17,9 +17,39 @@ from pathlib import Path
 
 import yaml
 
-from app.repo.base import AiTool, AuditRecord, RuleRow, UserRow
+from app.detect.rules import DEFAULT_PATTERNS
+from app.repo.base import (
+    AiTool,
+    AuditRecord,
+    DetectionPatternRow,
+    RedactionClassRow,
+    RuleRow,
+    UserRow,
+)
 
 RULES_YAML = Path(__file__).parent / "policy" / "rules.yaml"
+
+# Which data classes M2 (the regex detector) redacts, out of the box. Fully
+# admin-editable from the dashboard's Redaction tab after this -- see
+# RedactionRepo / the REGEX FLOOR note in backend/app/policy/engine.py.
+ALWAYS_REDACT_CLASSES: list[str] = [
+    "MYKAD", "EMAIL", "PHONE", "BANK_ACCT", "SALARY", "API_KEY", "PERSON",
+]
+
+# Human-readable "what this one matches" text for each built-in pattern,
+# shown as the Remark on the Detection Patterns screen. Keyed by the exact
+# (data_class, pattern) pair so API_KEY's two patterns each get their own
+# remark. Not read by RulesDetector/decide() -- admin-facing only.
+DEFAULT_PATTERN_REMARKS: dict[tuple[str, str], str] = {
+    DEFAULT_PATTERNS[0]: "Malaysian IC number, format YYMMDD-PB-XXXX.",
+    DEFAULT_PATTERNS[1]: "Standard email address shape.",
+    DEFAULT_PATTERNS[2]: "Malaysian mobile number, format 01X-XXXXXXX(X).",
+    DEFAULT_PATTERNS[3]: "'Account/acct/a-c' followed by a 7-24 digit account number.",
+    DEFAULT_PATTERNS[4]: "RM currency amount, e.g. RM 8,500 or RM8500.00.",
+    DEFAULT_PATTERNS[5]: "OpenAI/Anthropic-style API key shape (sk-... or sk-proj-...).",
+    DEFAULT_PATTERNS[6]: "Cloud provider API key set via an env-style assignment, e.g. OPENAI_API_KEY=....",
+    DEFAULT_PATTERNS[7]: "Honorific (Encik/Puan/Mr/Mrs/Ms/Dr) followed by a 1-3 word name.",
+}
 
 
 def load_rules_yaml() -> list[RuleRow]:
@@ -77,7 +107,7 @@ _SCENARIOS: list[tuple[str, str | None, list[str], str, str, str | None]] = [
      None, ["SALARY"], "deny",
      "SALARY to a public AI tool: blocked by policy.", "hr"),
     ("Debug this: OPENAI_API_KEY=sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d",
-     None, ["SECRET"], "deny",
+     None, ["API_KEY"], "deny",
      "Credential detected. Prompt blocked at the browser.", "engineering"),
     # content_department None: M8 returns (None, 0.0) below 0.40 rather than
     # guessing, and M6 renders that as an em dash. Seed the empty case too --
@@ -194,6 +224,11 @@ def seed_memory(repos) -> None:
     repos.users._seed([UserRow(user_id=u, role=r, department=d)
                        for u, r, d in USERS])
     repos.rules._seed(load_rules_yaml())
+    repos.redaction._seed([RedactionClassRow(data_class=c) for c in ALWAYS_REDACT_CLASSES])
+    repos.patterns._seed([
+        DetectionPatternRow(data_class=c, pattern=p, remark=DEFAULT_PATTERN_REMARKS.get((c, p), ""))
+        for c, p in DEFAULT_PATTERNS
+    ])
     repos.tools._seed([
         AiTool(host=h, tier=t, status=s,
                approved_by="admin@acme.my" if s == "approved" else None,
@@ -207,7 +242,7 @@ def seed_memory(repos) -> None:
 
 
 def seed_postgres(session) -> None:
-    from app.models import AiToolRow, PolicyRule, User
+    from app.models import AiToolRow, DetectionPattern, PolicyRule, RedactionClass, User
     from app.repo.postgres import PgAuditRepo
 
     now = datetime.now(timezone.utc)
@@ -226,6 +261,18 @@ def seed_postgres(session) -> None:
             content_department=rule.content_department,
             require_purpose=rule.require_purpose,
             detector=rule.detector,
+        ))
+
+    for data_class in ALWAYS_REDACT_CLASSES:
+        session.add(RedactionClass(data_class=data_class))
+
+    pattern_sequences: dict[str, int] = {}
+    for data_class, pattern in DEFAULT_PATTERNS:
+        pattern_sequences[data_class] = pattern_sequences.get(data_class, 0) + 1
+        session.add(DetectionPattern(
+            data_class=data_class, pattern=pattern,
+            remark=DEFAULT_PATTERN_REMARKS.get((data_class, pattern), ""),
+            sequence=pattern_sequences[data_class],
         ))
 
     for host, tier, status in TOOLS:

@@ -97,6 +97,54 @@ class RuleRow:
                                        # detector-agnostic (existing behaviour);
                                        # "embed"/"deberta" match only spans that
                                        # detector itself emitted for this class.
+    id: int | None = None              # None on a fresh/un-persisted row
+                                       # (e.g. one built from rules.yaml
+                                       # before _seed() assigns it an id).
+                                       # decide() never reads this -- it's
+                                       # purely a dashboard-editing handle.
+
+
+@dataclass
+class RedactionClassRow:
+    # Which data classes M2 (the regex detector) actually redacts. Simpler
+    # than RuleRow on purpose -- every entry here only ever does one thing
+    # (get redacted), so there's no tier/role/purpose/decision to carry.
+    # Seeded with the 7 built-in M2 classes (see seed.py), but fully
+    # admin-editable from here on -- decide()'s regex floor only redacts
+    # (and only escalates allow -> redact for) a class that's in this list.
+    data_class: str
+    id: int | None = None
+
+
+@dataclass
+class DetectionPatternRow:
+    # A single regex that M2 (RulesDetector) evaluates. Many-to-one with a
+    # data class on purpose -- API_KEY already needs two independent
+    # patterns today (an "sk-..." key shape and an "..._API_KEY=..." env
+    # line), and an admin adding "every way SALARY can be written" is the
+    # same shape: several simple rows sharing one data_class, not one
+    # hand-written alternation. Seeded from RulesDetector.DEFAULT_PATTERNS
+    # (see seed.py); fully admin-editable (including the built-ins) after
+    # that -- see PatternRepo below.
+    data_class: str
+    pattern: str
+    remark: str = ""    # free-text note for the admin who added/edited this
+                        # pattern -- e.g. why it exists, what it's for.
+                        # Never read by RulesDetector/decide(): purely
+                        # dashboard-facing documentation.
+    sequence: int = 0   # 1-based ordinal WITHIN this data_class, assigned by
+                        # the repo at create() (and reassigned at update() if
+                        # data_class itself changes) -- combines with
+                        # data_class to form the human-readable id shown in
+                        # the dashboard, e.g. "MYKAD-00001" (see
+                        # main.py's _pattern_dict). Editing the pattern text
+                        # or remark alone never moves this. Never read by
+                        # RulesDetector/decide() either.
+    id: int | None = None
+
+    @property
+    def display_id(self) -> str:
+        return f"{self.data_class}-{self.sequence:05d}"
 
 
 @dataclass
@@ -119,6 +167,15 @@ class AiTool:
                                    # returns it unchanged (SD-7) -- this field
                                    # is the "first seen" in shadow-AI
                                    # discovery, and moving it erases the story.
+    visit_count: int = 0           # extension-detected network activity on
+                                   # this host (see ToolRepo.record_visit),
+                                   # DISTINCT from the audit-derived
+                                   # usage_count main.py computes for hosts
+                                   # that actually went through /v1/inspect.
+                                   # A host only ever accumulates one or the
+                                   # other in practice: chatgpt.com/
+                                   # gemini.google.com get real usage_count,
+                                   # everything else gets visit_count.
 
 
 @dataclass
@@ -184,12 +241,29 @@ class VaultRepo(Protocol):
 
 class RuleRepo(Protocol):
     def all(self) -> list[RuleRow]: ...
+    def create(self, row: RuleRow) -> RuleRow: ...  # id on input ignored, fresh id assigned
+    def update(self, rule_id: int, row: RuleRow) -> RuleRow | None: ...  # None if unknown id
+    def delete(self, rule_id: int) -> bool: ...  # False if unknown id
+
+
+class RedactionRepo(Protocol):
+    def all(self) -> list[RedactionClassRow]: ...
+    def create(self, row: RedactionClassRow) -> RedactionClassRow: ...  # duplicate data_class -> existing row, not a new one
+    def delete(self, row_id: int) -> bool: ...  # False if unknown id
+
+
+class PatternRepo(Protocol):
+    def all(self) -> list[DetectionPatternRow]: ...
+    def create(self, row: DetectionPatternRow) -> DetectionPatternRow: ...  # id on input ignored, fresh id assigned
+    def update(self, pattern_id: int, row: DetectionPatternRow) -> DetectionPatternRow | None: ...  # None if unknown id
+    def delete(self, pattern_id: int) -> bool: ...  # False if unknown id
 
 
 class ToolRepo(Protocol):
     def by_host(self, host: str) -> AiTool | None: ...
     def all(self) -> list[AiTool]: ...
     def register(self, host: str) -> AiTool: ...  # unknown host, unapproved
+    def record_visit(self, host: str) -> AiTool: ...  # get-or-create, +1 visit_count
 
 
 class UserRepo(Protocol):
@@ -258,6 +332,13 @@ class InternalDocRepo(Protocol):
 #                       column mean "first" rather than "last".
 # ToolRepo.all          unapproved and blocked first, then host asc. M6 wants
 #                       the shadow AI at the top of the table.
+# ToolRepo.record_visit unknown host -> created exactly like register()
+#                       (PUBLIC_AI/unapproved) with visit_count=1. Known
+#                       host -> visit_count += 1, nothing else touched: not
+#                       status, not first_seen. This is the extension's
+#                       passive network-activity detector (no prompt, no
+#                       decide() call, no audit row) -- register() stays the
+#                       path /v1/inspect uses for a real inspected request.
 # UserRepo.by_id        unknown user_id -> None, never an exception. What M1
 #                       does about an unknown user is M1's call and belongs
 #                       in the API, not here: this layer stores records and
@@ -275,9 +356,50 @@ class InternalDocRepo(Protocol):
 # InternalDocRepo.clear_source
 #                       deletes all chunks for an uploaded source_file and
 #                       returns the number of removed chunks.
+# RuleRepo.create        id on the input row is ignored; a fresh id is
+#                       assigned (memory: next in-process counter; postgres:
+#                       the table's SERIAL). Returned row carries that id.
+# RuleRepo.update        unknown rule_id -> None, never an exception. id, if
+#                       present on the input row, is ignored -- the id
+#                       always comes from rule_id, not the row body.
+# RuleRepo.delete        unknown rule_id -> False. Known -> True, row gone.
+#                       decide() is never told about any of this: it reads
+#                       whatever RuleRepo.all() returns fresh on every
+#                       /v1/inspect call, so a dashboard edit is live
+#                       immediately, no cache, no restart.
+# RedactionRepo.create   a duplicate data_class (exact match) returns the
+#                       EXISTING row, not a new one -- same idempotency as
+#                       ToolRepo.register on a known host. No dedicated
+#                       "update": a one-field row is deleted and re-added,
+#                       not edited in place.
+# RedactionRepo.delete   unknown row_id -> False. Known -> True, row gone.
+#                       Same live-immediately guarantee as RuleRepo: /v1/
+#                       inspect reads RedactionRepo.all() fresh every call.
+# PatternRepo.create     id on the input row is ignored; a fresh id is
+#                       assigned. Unlike RedactionRepo, NOT deduplicated on
+#                       data_class -- many patterns legitimately share one
+#                       class (API_KEY already has two built in). sequence on
+#                       the input is ignored too -- the repo assigns the
+#                       next ordinal within that data_class (existing max + 1).
+# PatternRepo.update     unknown pattern_id -> None, never an exception.
+#                       Can change both data_class and pattern on a row --
+#                       this is how a built-in pattern gets edited, not just
+#                       replaced. sequence is kept unchanged if data_class is
+#                       unchanged; if data_class DOES change, a fresh
+#                       sequence is assigned within the new class (so the
+#                       display id never collides with an existing row
+#                       already in that class).
+# PatternRepo.delete     unknown pattern_id -> False. Known -> True, row
+#                       gone. Does NOT touch RedactionRepo -- deleting one
+#                       of a class's several patterns (or its only one)
+#                       never silently removes it from the redact list.
+#                       /v1/inspect reads PatternRepo.all() fresh every
+#                       call, same live-immediately guarantee as the others.
 
 __all__ = [
-    "AuditRecord", "TokenEntry", "RuleRow", "StatsSummary", "AiTool", "UserRow",
-    "InternalDocMatch", "InternalDocChunk",
-    "AuditRepo", "VaultRepo", "RuleRepo", "ToolRepo", "UserRepo", "InternalDocRepo",
+    "AuditRecord", "TokenEntry", "RuleRow", "RedactionClassRow",
+    "DetectionPatternRow", "StatsSummary",
+    "AiTool", "UserRow", "InternalDocMatch", "InternalDocChunk",
+    "AuditRepo", "VaultRepo", "RuleRepo", "RedactionRepo", "PatternRepo",
+    "ToolRepo", "UserRepo", "InternalDocRepo",
 ]

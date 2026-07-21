@@ -7,12 +7,21 @@ day four. That is what this file is for.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.repo.base import AttachmentBlob, AuditRecord, RuleRow, TokenEntry, UserRow
-from tests.conftest import seed_internal_docs, seed_rules, seed_users
+from app.repo.base import (
+    AttachmentBlob,
+    AuditRecord,
+    DetectionPatternRow,
+    RedactionClassRow,
+    RuleRow,
+    TokenEntry,
+    UserRow,
+)
+from tests.conftest import seed_internal_docs, seed_patterns, seed_redaction, seed_rules, seed_users
 
 NOW = datetime(2026, 7, 17, 9, 0, tzinfo=timezone.utc)
 
@@ -293,10 +302,10 @@ def test_update_pending_dedupes_data_classes(repos):
                            data_classes=["DEPT_CONFIDENTIAL"]))
     updated = repos.audit.update_pending("up-3", rec(
         decision="hold", status="pending",
-        data_classes=["DEPT_CONFIDENTIAL", "DEPT_CONFIDENTIAL", "SECRET"],
+        data_classes=["DEPT_CONFIDENTIAL", "DEPT_CONFIDENTIAL", "API_KEY"],
     ))
     assert updated is not None
-    assert sorted(updated.data_classes) == ["DEPT_CONFIDENTIAL", "SECRET"]
+    assert sorted(updated.data_classes) == ["API_KEY", "DEPT_CONFIDENTIAL"]
 
 
 # --------------------------------------------------------------------------
@@ -343,7 +352,7 @@ def test_mutating_a_returned_record_does_not_touch_storage(repos):
     repos.audit.create(rec(log_id="iso-1"))
     got = repos.audit.get("iso-1")
     got.decision = "deny"
-    got.data_classes.append("SECRET")
+    got.data_classes.append("API_KEY")
     assert repos.audit.get("iso-1").decision == "redact"
     assert repos.audit.get("iso-1").data_classes == ["MYKAD"]
 
@@ -435,12 +444,16 @@ def test_vault_maps_are_isolated(repos):
 def test_rules_round_trip(repos):
     rows = [
         RuleRow("MYKAD", "PUBLIC_AI", "*", "*", "redact"),
-        RuleRow("SECRET", "PUBLIC_AI", "*", "*", "deny"),
+        RuleRow("API_KEY", "PUBLIC_AI", "*", "*", "deny"),
     ]
     seed_rules(repos, rows)
     got = repos.rules.all()
     assert len(got) == 2
-    assert got[0] == RuleRow("MYKAD", "PUBLIC_AI", "*", "*", "redact")
+    # Seeding assigns each row a real id -- compare everything else, and
+    # check the id landed rather than baking a specific value (memory's
+    # counter and postgres's SERIAL are not guaranteed to agree on numbering).
+    assert replace(got[0], id=None) == RuleRow("MYKAD", "PUBLIC_AI", "*", "*", "redact")
+    assert got[0].id is not None
 
 
 def test_rules_empty(repos):
@@ -460,6 +473,177 @@ def test_rules_yaml_seeds_the_table(repos):
     # all, and are protected purely by the engine's structural regex floor.
     assert all(r.data_class == "DEPT_CONFIDENTIAL" for r in all_rows)
     assert any(r.decision == "hold" for r in all_rows)
+
+
+def test_rules_yaml_seeded_rows_get_sequential_ids(repos):
+    from app.seed import load_rules_yaml
+    seed_rules(repos, load_rules_yaml())
+    ids = [r.id for r in repos.rules.all()]
+    assert all(i is not None for i in ids)
+    assert len(ids) == len(set(ids))  # all distinct
+    assert ids == sorted(ids)  # all() orders by id
+
+
+def test_rules_create_assigns_an_id(repos):
+    created = repos.rules.create(RuleRow("X", "*", "*", "*", "allow"))
+    assert created.id is not None
+    assert [r.data_class for r in repos.rules.all()] == ["X"]
+
+
+def test_rules_update_unknown_id_returns_none(repos):
+    assert repos.rules.update(999, RuleRow("X", "*", "*", "*", "allow")) is None
+
+
+def test_rules_update_changes_the_row_in_place(repos):
+    created = repos.rules.create(RuleRow("X", "*", "*", "*", "allow"))
+    updated = repos.rules.update(created.id, RuleRow("X", "*", "*", "*", "deny"))
+    assert updated is not None
+    assert updated.id == created.id
+    assert updated.decision == "deny"
+    assert repos.rules.all()[0].decision == "deny"
+
+
+def test_rules_delete_unknown_id_returns_false(repos):
+    assert repos.rules.delete(999) is False
+
+
+def test_rules_delete_removes_the_row(repos):
+    created = repos.rules.create(RuleRow("X", "*", "*", "*", "allow"))
+    assert repos.rules.delete(created.id) is True
+    assert repos.rules.all() == []
+
+
+# --------------------------------------------------------------------------
+# RedactionRepo -- which data classes M2 actually redacts
+# --------------------------------------------------------------------------
+
+def test_redaction_create_assigns_an_id(repos):
+    created = repos.redaction.create(RedactionClassRow(data_class="MYKAD"))
+    assert created.id is not None
+    assert [r.data_class for r in repos.redaction.all()] == ["MYKAD"]
+
+
+def test_redaction_create_on_duplicate_data_class_returns_existing_row(repos):
+    first = repos.redaction.create(RedactionClassRow(data_class="MYKAD"))
+    second = repos.redaction.create(RedactionClassRow(data_class="MYKAD"))
+    assert second.id == first.id
+    assert len(repos.redaction.all()) == 1
+
+
+def test_redaction_delete_unknown_id_returns_false(repos):
+    assert repos.redaction.delete(999) is False
+
+
+def test_redaction_delete_removes_the_row(repos):
+    created = repos.redaction.create(RedactionClassRow(data_class="MYKAD"))
+    assert repos.redaction.delete(created.id) is True
+    assert repos.redaction.all() == []
+
+
+def test_redaction_seeded_classes_are_all_present(repos):
+    from app.seed import ALWAYS_REDACT_CLASSES
+    seed_redaction(repos, [RedactionClassRow(data_class=c) for c in ALWAYS_REDACT_CLASSES])
+    assert sorted(r.data_class for r in repos.redaction.all()) == sorted(ALWAYS_REDACT_CLASSES)
+
+
+# --------------------------------------------------------------------------
+# PatternRepo -- the regexes M2 actually evaluates
+# --------------------------------------------------------------------------
+
+def test_pattern_create_assigns_an_id(repos):
+    created = repos.patterns.create(DetectionPatternRow(data_class="MYKAD", pattern=r"\d+"))
+    assert created.id is not None
+    assert [r.data_class for r in repos.patterns.all()] == ["MYKAD"]
+
+
+def test_pattern_remark_round_trips_through_create_and_update(repos):
+    created = repos.patterns.create(DetectionPatternRow(
+        data_class="MYKAD", pattern=r"\d+", remark="Malaysian IC number",
+    ))
+    assert created.remark == "Malaysian IC number"
+    assert repos.patterns.all()[0].remark == "Malaysian IC number"
+
+    updated = repos.patterns.update(created.id, DetectionPatternRow(
+        data_class="MYKAD", pattern=r"\d+", remark="updated note",
+    ))
+    assert updated is not None
+    assert updated.remark == "updated note"
+
+
+def test_pattern_remark_defaults_to_empty_string(repos):
+    created = repos.patterns.create(DetectionPatternRow(data_class="X", pattern=r"x"))
+    assert created.remark == ""
+
+
+def test_pattern_sequence_and_display_id_are_per_data_class(repos):
+    first = repos.patterns.create(DetectionPatternRow(data_class="MYKAD", pattern=r"a"))
+    second = repos.patterns.create(DetectionPatternRow(data_class="MYKAD", pattern=r"b"))
+    other_class = repos.patterns.create(DetectionPatternRow(data_class="SALARY", pattern=r"c"))
+
+    assert first.sequence == 1
+    assert first.display_id == "MYKAD-00001"
+    assert second.sequence == 2
+    assert second.display_id == "MYKAD-00002"
+    # A different data_class starts its own count at 1, independent of MYKAD's.
+    assert other_class.sequence == 1
+    assert other_class.display_id == "SALARY-00001"
+
+
+def test_pattern_sequence_survives_editing_only_the_pattern_text(repos):
+    created = repos.patterns.create(DetectionPatternRow(data_class="MYKAD", pattern=r"old"))
+    updated = repos.patterns.update(created.id, DetectionPatternRow(data_class="MYKAD", pattern=r"new"))
+    assert updated is not None
+    assert updated.sequence == created.sequence
+    assert updated.display_id == created.display_id
+
+
+def test_pattern_sequence_reassigned_when_data_class_changes(repos):
+    repos.patterns.create(DetectionPatternRow(data_class="WAGE", pattern=r"existing"))  # WAGE-00001
+    created = repos.patterns.create(DetectionPatternRow(data_class="SALARY", pattern=r"a"))  # SALARY-00001
+    moved = repos.patterns.update(created.id, DetectionPatternRow(data_class="WAGE", pattern=r"a"))
+    assert moved is not None
+    # Must not collide with the WAGE pattern that already occupies sequence 1.
+    assert moved.display_id == "WAGE-00002"
+
+
+def test_pattern_create_does_not_dedupe_by_data_class(repos):
+    # Unlike RedactionRepo -- API_KEY already needs two independent patterns
+    # today, and an admin adding "another way SALARY is written" is the
+    # same shape: several rows sharing one data_class, not deduped away.
+    first = repos.patterns.create(DetectionPatternRow(data_class="SALARY", pattern=r"RM\s?\d+"))
+    second = repos.patterns.create(DetectionPatternRow(data_class="SALARY", pattern=r"\d+\s?MYR"))
+    assert first.id != second.id
+    assert len(repos.patterns.all()) == 2
+
+
+def test_pattern_update_unknown_id_returns_none(repos):
+    assert repos.patterns.update(999, DetectionPatternRow(data_class="X", pattern=r"x")) is None
+
+
+def test_pattern_update_changes_the_row_in_place(repos):
+    created = repos.patterns.create(DetectionPatternRow(data_class="X", pattern=r"old"))
+    updated = repos.patterns.update(created.id, DetectionPatternRow(data_class="X", pattern=r"new"))
+    assert updated is not None
+    assert updated.id == created.id
+    assert updated.pattern == "new"
+    assert repos.patterns.all()[0].pattern == "new"
+
+
+def test_pattern_delete_unknown_id_returns_false(repos):
+    assert repos.patterns.delete(999) is False
+
+
+def test_pattern_delete_removes_the_row(repos):
+    created = repos.patterns.create(DetectionPatternRow(data_class="X", pattern=r"x"))
+    assert repos.patterns.delete(created.id) is True
+    assert repos.patterns.all() == []
+
+
+def test_pattern_seeded_defaults_match_rules_detector(repos):
+    from app.detect.rules import DEFAULT_PATTERNS
+    seed_patterns(repos, [DetectionPatternRow(data_class=c, pattern=p) for c, p in DEFAULT_PATTERNS])
+    got = {(r.data_class, r.pattern) for r in repos.patterns.all()}
+    assert got == set(DEFAULT_PATTERNS)
 
 
 # --------------------------------------------------------------------------
@@ -526,6 +710,32 @@ def test_set_status_records_who_and_when(repos):
     assert out.status == "approved"
     assert out.approved_by == "admin@acme.my"
     assert out.approved_at is not None
+
+
+def test_record_visit_creates_unknown_host_with_count_one(repos):
+    tool = repos.tools.record_visit("perplexity.ai")
+    assert tool.host == "perplexity.ai"
+    assert tool.tier == "PUBLIC_AI"
+    assert tool.status == "unapproved"
+    assert tool.visit_count == 1
+
+
+def test_record_visit_increments_known_host(repos):
+    repos.tools.register("chatgpt.com")
+    first = repos.tools.record_visit("chatgpt.com")
+    second = repos.tools.record_visit("chatgpt.com")
+    assert first.visit_count == 1
+    assert second.visit_count == 2
+
+
+def test_record_visit_does_not_reset_status_or_first_seen(repos):
+    repos.tools.register("chatgpt.com")
+    repos.tools._set_status("chatgpt.com", "approved", "admin@acme.my")
+    approved_first_seen = repos.tools.by_host("chatgpt.com").first_seen
+
+    visited = repos.tools.record_visit("chatgpt.com")
+    assert visited.status == "approved"
+    assert visited.first_seen == approved_first_seen
 
 
 # --------------------------------------------------------------------------

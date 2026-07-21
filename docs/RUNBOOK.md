@@ -185,7 +185,7 @@ This is the behavior Luis aligned to the meeting notes.
 
 | Detector output | Meaning | Final decision |
 | --- | --- | --- |
-| `SECRET` | API key / credential | deny |
+| `API_KEY` | API key / credential | deny |
 | `SALARY` | salary amount | deny |
 | `BANK_ACCT` | bank account/card-like number | deny |
 | `MYKAD` | Malaysian IC | redact |
@@ -356,8 +356,8 @@ Expected important fields:
 ```json
 {
   "decision": "deny",
-  "data_classes": ["SECRET"],
-  "reason": "SECRET detected (mock policy)."
+  "data_classes": ["API_KEY"],
+  "reason": "API_KEY detected (mock policy)."
 }
 ```
 

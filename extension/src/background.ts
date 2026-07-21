@@ -16,6 +16,7 @@ import type {
   LogStatus,
 } from "./types";
 import { mockPollUntilResolved, nextMockOutcome } from "./mock";
+import { AI_HOSTS } from "./ai_hosts";
 
 // user_id <- chrome.storage, defaulted to a seeded user. IF-1 carries no
 // user_id but IF-2 requires one; without a default, a fresh unpacked build
@@ -213,4 +214,83 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
   }
 
   return false;
+});
+
+// --------------------------------------------------------------------------
+// Shadow-AI discovery: unlike chatgpt.com/gemini.google.com (real content
+// scripts, real prompt inspection), the ~2,200 hosts in AI_HOSTS get no DOM
+// integration at all -- there's no per-site selector work for tools we've
+// never customized. Without that, there is no reliable way to tell "the
+// user sent a prompt" apart from "the page did its own background XHR/fetch
+// calls" -- confirmed concretely on poe.com, whose own page load fires 3
+// POST requests to a generic /api/receive_POST endpoint before a user types
+// anything, indistinguishable by method or resource type from a real
+// message send. So instead of watching network traffic at all, this uses
+// chrome.webNavigation.onCompleted -- the browser's own top-level-navigation
+// lifecycle signal, not a request-layer one -- to fire "this tool was
+// opened" exactly once per page the user actually lands on.
+//
+// This deliberately replaced an earlier chrome.webRequest.onCompleted (type
+// === "main_frame") version: it looked equivalent, but requests fetched via
+// Chrome's own prerendering (e.g. omnibox-predicted navigation to sites like
+// perplexity.ai's Next.js app) don't reliably surface through webRequest the
+// same way once the tab activates the prerendered page, so some real visits
+// silently never fired. webNavigation tracks navigation state directly and
+// fires on activation regardless of how the underlying document was
+// fetched (network, cache, or prerender), so it doesn't have that gap.
+// Coarser than a per-prompt counter -- multiple prompts in one open tab/chat
+// only count as the one visit that opened it -- but it's an honest, stable
+// signal instead of one that jumps around based on how chatty a given
+// site's background traffic happens to be. manifest.json declares
+// host_permissions for exactly these hosts (not <all_urls>).
+// --------------------------------------------------------------------------
+
+const REAL_TRACKED_HOSTS = new Set(["chatgpt.com", "gemini.google.com"]);
+// Safety net only, not a burst-collapsing window: a single top-level
+// navigation should fire onCompleted once, but this guards against edge
+// cases (e.g. a site issuing its own immediate reload) double-pinging.
+// Keyed by tab + host so two tabs open on the same shadow-AI site are
+// tracked independently instead of one tab's load suppressing the other's.
+const VISIT_DEBOUNCE_MS = 3_000;
+const lastVisitPingByTabHost = new Map<string, number>();
+
+async function postToolVisit(config: Config, host: string): Promise<void> {
+  try {
+    const res = await fetch(`${config.baseUrl}/v1/tools/visit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Api-Key": config.apiKey },
+      body: JSON.stringify({ host }),
+    });
+    if (!res.ok) console.warn(`[aigg] POST /v1/tools/visit -> HTTP ${res.status}`);
+  } catch (err) {
+    // Fail silent+open, same posture as the rest of this file -- a shadow-AI
+    // discovery ping must never affect page load or composer use.
+    console.warn("[aigg] tool visit ping failed:", err);
+  }
+}
+
+chrome.webNavigation.onCompleted.addListener((details) => {
+  if (details.frameId !== 0) return; // top-level frame only, not iframes
+
+  let hostname: string;
+  try {
+    hostname = new URL(details.url).hostname.toLowerCase();
+  } catch {
+    return;
+  }
+
+  if (REAL_TRACKED_HOSTS.has(hostname)) return; // already tracked via inspect()
+  if (!AI_HOSTS.has(hostname)) return; // not a tracked shadow-AI host
+
+  const key = `${details.tabId}:${hostname}`;
+  const now = Date.now();
+  const last = lastVisitPingByTabHost.get(key) ?? 0;
+  if (now - last < VISIT_DEBOUNCE_MS) return;
+  lastVisitPingByTabHost.set(key, now);
+
+  void (async () => {
+    const config = await getConfig();
+    if (config.mockMode) return; // mock mode never talks to a real backend
+    await postToolVisit(config, hostname);
+  })();
 });

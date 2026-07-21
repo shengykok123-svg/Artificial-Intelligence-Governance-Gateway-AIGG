@@ -25,6 +25,8 @@ from sqlalchemy.orm import sessionmaker
 from app.repo.memory import (
     InMemoryAuditRepo,
     InMemoryInternalDocRepo,
+    InMemoryPatternRepo,
+    InMemoryRedactionRepo,
     InMemoryRuleRepo,
     InMemoryToolRepo,
     InMemoryUserRepo,
@@ -38,10 +40,12 @@ ADMIN_URL = os.getenv(
 
 
 class Bundle:
-    def __init__(self, audit, vault, rules, tools, users, internal_docs):
+    def __init__(self, audit, vault, rules, tools, users, internal_docs, redaction=None, patterns=None):
         self.audit, self.vault, self.rules, self.tools = audit, vault, rules, tools
         self.users = users
         self.internal_docs = internal_docs
+        self.redaction = redaction
+        self.patterns = patterns
 
 
 def seed_users(bundle, rows):
@@ -58,9 +62,10 @@ def seed_users(bundle, rows):
 
 
 def seed_rules(bundle, rows):
-    """RuleRepo is read-only on the protocol -- rules arrive via reset_db.py,
-    not via the API. Tests need a way in, so this is the one place that knows
-    how each backend gets its rows."""
+    """Rules are also writable via POST/PUT/DELETE /v1/rules now, but tests
+    that just need a known baseline table still want the fast direct-seed
+    path rather than round-tripping through the API. This is the one place
+    that knows how each backend takes a bulk set of rows."""
     if isinstance(bundle.rules, InMemoryRuleRepo):
         bundle.rules._seed(rows)
         return
@@ -79,6 +84,30 @@ def seed_rules(bundle, rows):
 
 def seed_internal_docs(bundle, rows):
     bundle.internal_docs._seed(rows)
+
+
+def seed_redaction(bundle, rows):
+    """Same idea as seed_rules: a fast direct-seed path for a known
+    baseline, alongside the writable POST/DELETE /v1/redaction API."""
+    if isinstance(bundle.redaction, InMemoryRedactionRepo):
+        bundle.redaction._seed(rows)
+        return
+    from app.models import RedactionClass
+    for r in rows:
+        bundle.redaction.s.add(RedactionClass(data_class=r.data_class))
+    bundle.redaction.s.commit()
+
+
+def seed_patterns(bundle, rows):
+    """Same idea as seed_rules/seed_redaction: a fast direct-seed path for a
+    known baseline, alongside the writable POST/PUT/DELETE /v1/patterns API."""
+    if isinstance(bundle.patterns, InMemoryPatternRepo):
+        bundle.patterns._seed(rows)
+        return
+    from app.models import DetectionPattern
+    for r in rows:
+        bundle.patterns.s.add(DetectionPattern(data_class=r.data_class, pattern=r.pattern))
+    bundle.patterns.s.commit()
 
 
 @pytest.fixture(scope="session")
@@ -139,7 +168,9 @@ def repos(request):
     if request.param == "memory":
         yield Bundle(InMemoryAuditRepo(), InMemoryVaultRepo(),
                      InMemoryRuleRepo(), InMemoryToolRepo(),
-                     InMemoryUserRepo(), InMemoryInternalDocRepo())
+                     InMemoryUserRepo(), InMemoryInternalDocRepo(),
+                     redaction=InMemoryRedactionRepo(),
+                     patterns=InMemoryPatternRepo())
         return
 
     engine = request.getfixturevalue("pg_engine")
@@ -147,6 +178,8 @@ def repos(request):
     from app.repo.postgres import (
         PgAuditRepo,
         PgInternalDocRepo,
+        PgPatternRepo,
+        PgRedactionRepo,
         PgRuleRepo,
         PgToolRepo,
         PgUserRepo,
@@ -163,4 +196,6 @@ def repos(request):
     Session = sessionmaker(bind=engine, expire_on_commit=False)
     with Session() as s:
         yield Bundle(PgAuditRepo(s), PgVaultRepo(s), PgRuleRepo(s),
-                     PgToolRepo(s), PgUserRepo(s), PgInternalDocRepo(s))
+                     PgToolRepo(s), PgUserRepo(s), PgInternalDocRepo(s),
+                     redaction=PgRedactionRepo(s),
+                     patterns=PgPatternRepo(s))

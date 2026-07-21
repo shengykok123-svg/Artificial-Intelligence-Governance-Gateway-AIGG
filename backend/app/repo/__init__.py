@@ -14,10 +14,21 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app import db
-from app.repo.base import AuditRepo, InternalDocRepo, RuleRepo, ToolRepo, UserRepo, VaultRepo
+from app.repo.base import (
+    AuditRepo,
+    InternalDocRepo,
+    PatternRepo,
+    RedactionRepo,
+    RuleRepo,
+    ToolRepo,
+    UserRepo,
+    VaultRepo,
+)
 from app.repo.memory import (
     InMemoryAuditRepo,
     InMemoryInternalDocRepo,
+    InMemoryPatternRepo,
+    InMemoryRedactionRepo,
     InMemoryRuleRepo,
     InMemoryToolRepo,
     InMemoryUserRepo,
@@ -32,6 +43,8 @@ class Repos:
     audit: AuditRepo
     vault: VaultRepo
     rules: RuleRepo
+    redaction: RedactionRepo
+    patterns: PatternRepo
     tools: ToolRepo
     users: UserRepo   # SD-2. M1 keys role and department off user_id.
     internal_docs: InternalDocRepo
@@ -49,6 +62,8 @@ def memory_repos() -> Repos:
             audit=InMemoryAuditRepo(),
             vault=InMemoryVaultRepo(),
             rules=InMemoryRuleRepo(),
+            redaction=InMemoryRedactionRepo(),
+            patterns=InMemoryPatternRepo(),
             tools=InMemoryToolRepo(),
             users=InMemoryUserRepo(),
             internal_docs=InMemoryInternalDocRepo(),
@@ -70,6 +85,8 @@ def get_repos(session: Session | None = Depends(db.get_session)) -> Repos:
         from app.repo.postgres import (
             PgAuditRepo,
             PgInternalDocRepo,
+            PgPatternRepo,
+            PgRedactionRepo,
             PgRuleRepo,
             PgToolRepo,
             PgUserRepo,
@@ -79,6 +96,8 @@ def get_repos(session: Session | None = Depends(db.get_session)) -> Repos:
             audit=PgAuditRepo(session),
             vault=PgVaultRepo(session),
             rules=PgRuleRepo(session),
+            redaction=PgRedactionRepo(session),
+            patterns=PgPatternRepo(session),
             tools=PgToolRepo(session),
             users=PgUserRepo(session),
             internal_docs=PgInternalDocRepo(session),

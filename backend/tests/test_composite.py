@@ -97,7 +97,7 @@ def test_different_data_class_spans_never_merge_even_if_overlapping():
     # dedup_overlapping itself must not assume that -- cross-class overlap
     # is never a merge candidate.
     a = Span(start=0, end=20, data_class="DEPT_CONFIDENTIAL", detector="embed", confidence=0.90)
-    b = Span(start=5, end=15, data_class="SECRET", detector="rules", confidence=1.0)
+    b = Span(start=5, end=15, data_class="API_KEY", detector="rules", confidence=1.0)
     assert dedup_overlapping([a, b]) == [a, b]
 
 
@@ -215,7 +215,7 @@ def test_deduped_span_still_lands_in_the_correct_policy_tier():
     )
     ctx = PolicyContext(user_role="staff", department="engineering", ai_tool_tier="PUBLIC_AI",
                         tool_status="approved", purpose="GENERAL", target_host="chatgpt.com")
-    verdict = decide(classification, ctx, load_rules_yaml())
+    verdict = decide(classification, ctx, load_rules_yaml(), frozenset())
     # The surviving span is detector="deberta" (dedup kept the higher
     # confidence one): M9's own tiers apply (>=0.90 hold+justify), not M8's
     # -- 0.91 is below M9's 0.95 deny band.

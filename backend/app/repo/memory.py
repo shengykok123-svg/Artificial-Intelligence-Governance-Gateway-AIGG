@@ -20,8 +20,10 @@ from app.repo.base import (
     AiTool,
     AttachmentBlob,
     AuditRecord,
+    DetectionPatternRow,
     InternalDocChunk,
     InternalDocMatch,
+    RedactionClassRow,
     RuleRow,
     StatsSummary,
     TokenEntry,
@@ -160,14 +162,113 @@ class InMemoryVaultRepo:
 
 class InMemoryRuleRepo:
     def __init__(self, rows: list[RuleRow] | None = None) -> None:
-        self._rows: list[RuleRow] = deepcopy(rows) if rows else []
+        self._rows: dict[int, RuleRow] = {}
+        self._next_id = 1
+        if rows:
+            self._seed(rows)
 
     def all(self) -> list[RuleRow]:
-        return deepcopy(self._rows)
+        return [deepcopy(r) for r in sorted(self._rows.values(), key=lambda r: r.id)]
+
+    def create(self, row: RuleRow) -> RuleRow:
+        new = deepcopy(row)
+        new.id = self._next_id
+        self._next_id += 1
+        self._rows[new.id] = new
+        return deepcopy(new)
+
+    def update(self, rule_id: int, row: RuleRow) -> RuleRow | None:
+        if rule_id not in self._rows:
+            return None
+        updated = deepcopy(row)
+        updated.id = rule_id
+        self._rows[rule_id] = updated
+        return deepcopy(updated)
+
+    def delete(self, rule_id: int) -> bool:
+        return self._rows.pop(rule_id, None) is not None
 
     # Not part of IF-9. seed.py and the tests use it to load rules.yaml.
     def _seed(self, rows: list[RuleRow]) -> None:
-        self._rows = deepcopy(rows)
+        self._rows = {}
+        self._next_id = 1
+        for r in rows:
+            self.create(r)  # sequential ids 1..N -- seeded rows are
+                            # editable/deletable too, not just new ones
+
+
+class InMemoryRedactionRepo:
+    def __init__(self, rows: list[RedactionClassRow] | None = None) -> None:
+        self._rows: dict[int, RedactionClassRow] = {}
+        self._next_id = 1
+        if rows:
+            self._seed(rows)
+
+    def all(self) -> list[RedactionClassRow]:
+        return [deepcopy(r) for r in sorted(self._rows.values(), key=lambda r: r.id)]
+
+    def create(self, row: RedactionClassRow) -> RedactionClassRow:
+        existing = next((r for r in self._rows.values() if r.data_class == row.data_class), None)
+        if existing is not None:
+            return deepcopy(existing)
+        new = deepcopy(row)
+        new.id = self._next_id
+        self._next_id += 1
+        self._rows[new.id] = new
+        return deepcopy(new)
+
+    def delete(self, row_id: int) -> bool:
+        return self._rows.pop(row_id, None) is not None
+
+    # Not part of IF-9. seed.py and the tests use it.
+    def _seed(self, rows: list[RedactionClassRow]) -> None:
+        self._rows = {}
+        self._next_id = 1
+        for r in rows:
+            self.create(r)
+
+
+class InMemoryPatternRepo:
+    def __init__(self, rows: list[DetectionPatternRow] | None = None) -> None:
+        self._rows: dict[int, DetectionPatternRow] = {}
+        self._next_id = 1
+        if rows:
+            self._seed(rows)
+
+    def all(self) -> list[DetectionPatternRow]:
+        return [deepcopy(r) for r in sorted(self._rows.values(), key=lambda r: r.id)]
+
+    def _next_sequence_for(self, data_class: str) -> int:
+        existing = [r.sequence for r in self._rows.values() if r.data_class == data_class]
+        return max(existing, default=0) + 1
+
+    def create(self, row: DetectionPatternRow) -> DetectionPatternRow:
+        new = deepcopy(row)
+        new.id = self._next_id
+        self._next_id += 1
+        new.sequence = self._next_sequence_for(new.data_class)
+        self._rows[new.id] = new
+        return deepcopy(new)
+
+    def update(self, pattern_id: int, row: DetectionPatternRow) -> DetectionPatternRow | None:
+        if pattern_id not in self._rows:
+            return None
+        current = self._rows[pattern_id]
+        updated = deepcopy(row)
+        updated.id = pattern_id
+        updated.sequence = current.sequence if row.data_class == current.data_class else self._next_sequence_for(row.data_class)
+        self._rows[pattern_id] = updated
+        return deepcopy(updated)
+
+    def delete(self, pattern_id: int) -> bool:
+        return self._rows.pop(pattern_id, None) is not None
+
+    # Not part of IF-9. seed.py and the tests use it.
+    def _seed(self, rows: list[DetectionPatternRow]) -> None:
+        self._rows = {}
+        self._next_id = 1
+        for r in rows:
+            self.create(r)
 
 
 class InMemoryToolRepo:
@@ -193,6 +294,12 @@ class InMemoryToolRepo:
         tool = AiTool(host=host, tier="PUBLIC_AI", status="unapproved",
                       approved_by=None, approved_at=None, first_seen=_now())
         self._rows[host] = tool
+        return deepcopy(tool)
+
+    def record_visit(self, host: str) -> AiTool:
+        self.register(host)  # ensures a row exists; no-op if already present
+        tool = self._rows[host]
+        tool.visit_count += 1
         return deepcopy(tool)
 
     # Not part of IF-9. seed.py uses it.

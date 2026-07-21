@@ -169,6 +169,38 @@ class PolicyRule(Base):
     # only source of truth. M3 receives these rows as an argument.
 
 
+class RedactionClass(Base):
+    __tablename__ = "redaction_classes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    data_class: Mapped[str] = mapped_column(String(32))
+    # Which data classes M2 (the regex detector) redacts. Seeded with the 7
+    # built-in M2 classes; fully admin-editable after that. decide()'s
+    # regex floor only redacts (and only escalates allow -> redact for) a
+    # class that's a row in this table -- see the REGEX FLOOR note in
+    # backend/app/policy/engine.py.
+
+
+class DetectionPattern(Base):
+    __tablename__ = "detection_patterns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    data_class: Mapped[str] = mapped_column(String(32))
+    pattern: Mapped[str] = mapped_column(String(255))
+    remark: Mapped[str] = mapped_column(String(500), default="")
+    sequence: Mapped[int] = mapped_column(Integer, default=0)
+    # 1-based ordinal within this data_class -- combines with data_class to
+    # form the dashboard-facing human-readable id, e.g. "MYKAD-00001" (see
+    # DetectionPatternRow.display_id / main.py's _pattern_dict).
+    # A single regex M2 (RulesDetector) evaluates. Many rows can share a
+    # data_class (API_KEY already needs two: an "sk-..." key shape and an
+    # "..._API_KEY=..." env-line shape) -- an admin adding another way to
+    # match an existing class (or a brand-new one) is just another row here.
+    # Seeded from RulesDetector.DEFAULT_PATTERNS (see seed.py); fully
+    # admin-editable, including the built-ins, after that. remark is a
+    # free-text note only -- never read by detection/policy logic.
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -190,7 +222,11 @@ class AiToolRow(Base):
     approved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    visit_count: Mapped[int] = mapped_column(Integer, default=0)
     # An unknown host is auto-registered here as PUBLIC_AI / unapproved,
     # silently. Record it, do not hold the prompt. Decided, SD-7.
     # first_seen is not on the AiTool DTO (which is frozen). M6 wants the
     # column; raise it with the team rather than widening base.py here.
+    # No Alembic in this repo (SD-6) -- reset_db.py recreates the table.
+    # On a live DB you don't want to drop: ALTER TABLE ai_tools ADD COLUMN
+    # visit_count INTEGER DEFAULT 0.

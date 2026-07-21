@@ -64,7 +64,7 @@ echo "  $r"
 decision=$(echo "$r" | field decision)
 [ "$decision" = "deny" ] && pass "decision=deny" || fail "expected deny, got $decision"
 reason=$(echo "$r" | field reason)
-echo "$reason" | grep -qi SECRET && pass "reason names the class" || fail "reason does not name SECRET: $reason"
+echo "$reason" | grep -qi API_KEY && pass "reason names the class" || fail "reason does not name API_KEY: $reason"
 
 echo
 echo "== 3. redact (+ SD-1) =="

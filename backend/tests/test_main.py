@@ -379,7 +379,7 @@ def test_allow(client: TestClient) -> None:
     assert any(x["log_id"] == body["log_id"] for x in logs["items"])
 
 
-def test_secret_is_redacted_not_denied(client: TestClient) -> None:
+def test_api_key_is_redacted_not_denied(client: TestClient) -> None:
     # M2 has no policy voice (see rules.yaml): a leaked credential is
     # redacted by the structural regex floor exactly like any other regex
     # class, never escalated to deny. Only DEPT_CONFIDENTIAL (M8/M9) can
@@ -388,7 +388,7 @@ def test_secret_is_redacted_not_denied(client: TestClient) -> None:
                 prompt="Debug this: OPENAI_API_KEY=sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d")
     body = r.json()
     assert body["decision"] == "redact"
-    assert "SECRET" in body["data_classes"]
+    assert "API_KEY" in body["data_classes"]
     assert body["redacted_prompt"] is not None
     assert "sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d" not in body["redacted_prompt"]
 
@@ -625,6 +625,326 @@ def test_tools_include_first_seen(client: TestClient) -> None:
     tools = client.get("/v1/tools", headers=HEADERS).json()
     fresh = next(t for t in tools if t["host"] == "brand-new-shadow.ai")
     assert fresh["first_seen"] is not None
+
+
+def test_tool_visit_endpoint_records_and_returns_visit_count(client: TestClient) -> None:
+    r = client.post("/v1/tools/visit", headers=HEADERS, json={"host": "poe.com"})
+    assert r.status_code == 200
+    assert r.json()["visit_count"] == 1
+    assert r.json()["status"] == "unapproved"
+
+    r2 = client.post("/v1/tools/visit", headers=HEADERS, json={"host": "poe.com"})
+    assert r2.json()["visit_count"] == 2
+
+    tools = client.get("/v1/tools", headers=HEADERS).json()
+    row = next(t for t in tools if t["host"] == "poe.com")
+    assert row["visit_count"] == 2
+
+
+def test_tool_visit_requires_api_key(client: TestClient) -> None:
+    r = client.post("/v1/tools/visit", json={"host": "poe.com"})
+    assert r.status_code == 403
+
+
+def test_tools_catalog_flags_known_and_other_hosts(client: TestClient) -> None:
+    # "poe.com" is on the curated AI-host list (known_ai_hosts.py); a made-up
+    # host that only ever reached the backend through /v1/inspect is not.
+    client.post("/v1/tools/visit", headers=HEADERS, json={"host": "poe.com"})
+    inspect(client, target_host="example.com", prompt="hi")
+
+    tools = client.get("/v1/tools", headers=HEADERS).json()
+    known = next(t for t in tools if t["host"] == "poe.com")
+    other = next(t for t in tools if t["host"] == "example.com")
+    assert known["catalog"] == "known"
+    assert other["catalog"] == "other"
+
+
+# --------------------------------------------------------------------------
+# Policy Rules CRUD -- the dashboard's editable policy table
+# --------------------------------------------------------------------------
+
+
+def _rule_body(**overrides) -> dict:
+    body = {
+        "data_class": "DEPT_CONFIDENTIAL", "ai_tool_tier": "PUBLIC_AI",
+        "user_role": "*", "purpose": "*", "decision": "hold",
+        "min_confidence": 0.5, "content_department": "*",
+        "require_purpose": False, "detector": "*",
+    }
+    body.update(overrides)
+    return body
+
+
+def test_create_rule_assigns_an_id_and_appears_in_list(client: TestClient) -> None:
+    r = client.post("/v1/rules", headers=HEADERS, json=_rule_body())
+    assert r.status_code == 200
+    created = r.json()
+    assert created["id"] is not None
+
+    rules = client.get("/v1/rules", headers=HEADERS).json()
+    assert any(row["id"] == created["id"] for row in rules)
+
+
+def test_create_rule_rejects_invalid_decision(client: TestClient) -> None:
+    r = client.post("/v1/rules", headers=HEADERS, json=_rule_body(decision="maybe"))
+    assert r.status_code == 422
+
+
+def test_create_rule_rejects_invalid_detector(client: TestClient) -> None:
+    r = client.post("/v1/rules", headers=HEADERS, json=_rule_body(detector="regex"))
+    assert r.status_code == 422
+
+
+def test_create_rule_rejects_out_of_range_confidence(client: TestClient) -> None:
+    r = client.post("/v1/rules", headers=HEADERS, json=_rule_body(min_confidence=1.5))
+    assert r.status_code == 422
+
+
+def test_update_rule_unknown_id_is_404(client: TestClient) -> None:
+    r = client.put("/v1/rules/999999", headers=HEADERS, json=_rule_body())
+    assert r.status_code == 404
+
+
+def test_delete_rule_unknown_id_is_404(client: TestClient) -> None:
+    r = client.delete("/v1/rules/999999", headers=HEADERS)
+    assert r.status_code == 404
+
+
+def test_update_and_delete_rule_round_trip(client: TestClient) -> None:
+    created = client.post("/v1/rules", headers=HEADERS, json=_rule_body(decision="hold")).json()
+
+    updated = client.put(f"/v1/rules/{created['id']}", headers=HEADERS,
+                         json=_rule_body(decision="deny")).json()
+    assert updated["id"] == created["id"]
+    assert updated["decision"] == "deny"
+    rules = client.get("/v1/rules", headers=HEADERS).json()
+    assert next(r for r in rules if r["id"] == created["id"])["decision"] == "deny"
+
+    d = client.delete(f"/v1/rules/{created['id']}", headers=HEADERS)
+    assert d.status_code == 200
+    rules = client.get("/v1/rules", headers=HEADERS).json()
+    assert not any(r["id"] == created["id"] for r in rules)
+
+
+def test_rule_edit_changes_live_inspect_verdict(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The actual point of the feature: a rule added through the dashboard's
+    # API takes effect on the very next /v1/inspect call, no restart, no
+    # cache -- repos.rules.all() is read fresh inside inspect() every time.
+    mock_deberta_non_confidential(monkeypatch)
+    # 0.80: above EmbedDetector.detect()'s own SPAN_THRESHOLD (0.72, needed
+    # for a DEPT_CONFIDENTIAL span to exist at all) and above the same-
+    # department ">=0.50 allow+justify" row, but below its ">=0.85 hold" row.
+    seed_internal_doc_for_m8(client, monkeypatch, department="hr", similarity=0.80)
+
+    prompt = ("Please summarize the HR confidential termination plan "
+              "for employee grievance cases.")
+
+    # Baseline: cross-department read (engineering user, HR content) at 0.80
+    # -- only the same-department "*" allow+justify row (>=0.50) matches
+    # today, since no @cross row exists.
+    baseline = inspect(client, user_id="wei.eng@acme.my", prompt=prompt)
+    assert baseline.json()["decision"] == "allow"
+
+    # Add a @cross escalation rule via the API -- exactly what the dashboard
+    # form now lets a compliance officer do.
+    r = client.post("/v1/rules", headers=HEADERS, json=_rule_body(
+        content_department="@cross", detector="embed", min_confidence=0.50,
+        decision="deny", require_purpose=False,
+    ))
+    assert r.status_code == 200
+
+    # Same request again, same process, no restart -- now cross-department
+    # at 0.80 hits the new @cross row (more specific than the same-
+    # department "*" row) and escalates straight to deny.
+    escalated = inspect(client, user_id="wei.eng@acme.my", prompt=prompt)
+    assert escalated.json()["decision"] == "deny"
+
+
+# --------------------------------------------------------------------------
+# Redaction classes -- which data classes M2 actually redacts
+# --------------------------------------------------------------------------
+
+
+def test_redaction_classes_seeded_with_the_7_built_in_m2_classes(client: TestClient) -> None:
+    rows = client.get("/v1/redaction", headers=HEADERS).json()
+    assert sorted(r["data_class"] for r in rows) == sorted(
+        ["MYKAD", "EMAIL", "PHONE", "BANK_ACCT", "SALARY", "API_KEY", "PERSON"]
+    )
+
+
+def test_create_and_delete_redaction_class_round_trip(client: TestClient) -> None:
+    created = client.post("/v1/redaction", headers=HEADERS,
+                          json={"data_class": "CUSTOM_CLASS"}).json()
+    assert created["id"] is not None
+
+    rows = client.get("/v1/redaction", headers=HEADERS).json()
+    assert any(r["data_class"] == "CUSTOM_CLASS" for r in rows)
+
+    d = client.delete(f"/v1/redaction/{created['id']}", headers=HEADERS)
+    assert d.status_code == 200
+    rows = client.get("/v1/redaction", headers=HEADERS).json()
+    assert not any(r["data_class"] == "CUSTOM_CLASS" for r in rows)
+
+
+def test_delete_redaction_class_unknown_id_is_404(client: TestClient) -> None:
+    r = client.delete("/v1/redaction/999999", headers=HEADERS)
+    assert r.status_code == 404
+
+
+def test_redaction_class_removal_changes_live_inspect_verdict(client: TestClient) -> None:
+    # The actual point of the feature: removing API_KEY from the Redaction
+    # list means a leaked API key is no longer redacted OR escalated at
+    # all -- live, no restart.
+    prompt = "Debug this: OPENAI_API_KEY=sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d"
+
+    baseline = inspect(client, prompt=prompt)
+    assert baseline.json()["decision"] == "redact"
+    assert "API_KEY" in baseline.json()["data_classes"]
+
+    rows = client.get("/v1/redaction", headers=HEADERS).json()
+    api_key_row = next(r for r in rows if r["data_class"] == "API_KEY")
+    d = client.delete(f"/v1/redaction/{api_key_row['id']}", headers=HEADERS)
+    assert d.status_code == 200
+
+    after_removal = inspect(client, prompt=prompt)
+    assert after_removal.json()["decision"] == "allow"
+    # Still detected -- M2 doesn't know about the list, only decide() does.
+    assert "API_KEY" in after_removal.json()["data_classes"]
+
+    # Re-add it -- redaction resumes on the very next request.
+    client.post("/v1/redaction", headers=HEADERS, json={"data_class": "API_KEY"})
+    restored = inspect(client, prompt=prompt)
+    assert restored.json()["decision"] == "redact"
+
+
+# --------------------------------------------------------------------------
+# Detection patterns -- admin-defined regexes M2 evaluates
+# --------------------------------------------------------------------------
+
+
+def test_patterns_seeded_with_the_8_built_in_entries(client: TestClient) -> None:
+    from app.detect.rules import DEFAULT_PATTERNS
+    rows = client.get("/v1/patterns", headers=HEADERS).json()
+    assert {(r["data_class"], r["pattern"]) for r in rows} == set(DEFAULT_PATTERNS)
+
+
+def test_seeded_api_key_patterns_get_distinct_sequential_display_ids(client: TestClient) -> None:
+    # API_KEY has 2 built-in patterns -- confirms per-class sequencing works
+    # end-to-end through the seeded data, not just freshly created rows.
+    rows = client.get("/v1/patterns", headers=HEADERS).json()
+    api_key_ids = sorted(r["display_id"] for r in rows if r["data_class"] == "API_KEY")
+    assert api_key_ids == ["API_KEY-00001", "API_KEY-00002"]
+
+
+def test_pattern_display_id_appears_in_create_and_list_responses(client: TestClient) -> None:
+    created = client.post("/v1/patterns", headers=HEADERS,
+                          json={"data_class": "STAFF_ID", "pattern": r"\bEMP-\d{5}\b"}).json()
+    assert created["display_id"] == "STAFF_ID-00001"
+
+    rows = client.get("/v1/patterns", headers=HEADERS).json()
+    assert next(r for r in rows if r["id"] == created["id"])["display_id"] == "STAFF_ID-00001"
+
+
+def test_create_pattern_rejects_invalid_regex(client: TestClient) -> None:
+    r = client.post("/v1/patterns", headers=HEADERS,
+                    json={"data_class": "X", "pattern": "(unclosed"})
+    assert r.status_code == 422
+
+
+def test_create_pattern_rejects_too_long_pattern(client: TestClient) -> None:
+    r = client.post("/v1/patterns", headers=HEADERS,
+                    json={"data_class": "X", "pattern": "a" * 201})
+    assert r.status_code == 422
+
+
+def test_create_pattern_auto_adds_its_class_to_redaction(client: TestClient) -> None:
+    r = client.post("/v1/patterns", headers=HEADERS,
+                    json={"data_class": "PROJECT_CODENAME", "pattern": r"\bNightingale\b"})
+    assert r.status_code == 200
+
+    redaction_rows = client.get("/v1/redaction", headers=HEADERS).json()
+    assert any(row["data_class"] == "PROJECT_CODENAME" for row in redaction_rows)
+
+
+def test_update_and_delete_pattern_round_trip(client: TestClient) -> None:
+    created = client.post("/v1/patterns", headers=HEADERS,
+                          json={"data_class": "X", "pattern": r"old"}).json()
+
+    updated = client.put(f"/v1/patterns/{created['id']}", headers=HEADERS,
+                         json={"data_class": "X", "pattern": r"new"}).json()
+    assert updated["id"] == created["id"]
+    assert updated["pattern"] == "new"
+
+    d = client.delete(f"/v1/patterns/{created['id']}", headers=HEADERS)
+    assert d.status_code == 200
+    rows = client.get("/v1/patterns", headers=HEADERS).json()
+    assert not any(r["id"] == created["id"] for r in rows)
+
+
+def test_pattern_remark_is_stored_and_editable(client: TestClient) -> None:
+    created = client.post("/v1/patterns", headers=HEADERS, json={
+        "data_class": "STAFF_ID", "pattern": r"\bEMP-\d{5}\b",
+        "remark": "Internal employee ID format",
+    }).json()
+    assert created["remark"] == "Internal employee ID format"
+
+    rows = client.get("/v1/patterns", headers=HEADERS).json()
+    assert next(r for r in rows if r["id"] == created["id"])["remark"] == "Internal employee ID format"
+
+    updated = client.put(f"/v1/patterns/{created['id']}", headers=HEADERS, json={
+        "data_class": "STAFF_ID", "pattern": r"\bEMP-\d{5}\b", "remark": "revised note",
+    }).json()
+    assert updated["remark"] == "revised note"
+
+
+def test_pattern_remark_defaults_to_empty_string_when_omitted(client: TestClient) -> None:
+    created = client.post("/v1/patterns", headers=HEADERS,
+                          json={"data_class": "X", "pattern": r"x"}).json()
+    assert created["remark"] == ""
+
+
+def test_update_pattern_unknown_id_is_404(client: TestClient) -> None:
+    r = client.put("/v1/patterns/999999", headers=HEADERS,
+                   json={"data_class": "X", "pattern": r"x"})
+    assert r.status_code == 404
+
+
+def test_delete_pattern_unknown_id_is_404(client: TestClient) -> None:
+    r = client.delete("/v1/patterns/999999", headers=HEADERS)
+    assert r.status_code == 404
+
+
+def test_new_custom_pattern_changes_live_inspect_verdict(client: TestClient) -> None:
+    # The actual point of the feature: a brand-new admin-defined class is
+    # detected AND redacted on the very next request -- no restart.
+    prompt = "The Nightingale rollout is delayed until Q3."
+
+    baseline = inspect(client, prompt=prompt)
+    assert baseline.json()["decision"] == "allow"
+    assert "PROJECT_CODENAME" not in baseline.json()["data_classes"]
+
+    r = client.post("/v1/patterns", headers=HEADERS,
+                    json={"data_class": "PROJECT_CODENAME", "pattern": r"\bNightingale\b"})
+    assert r.status_code == 200
+
+    escalated = inspect(client, prompt=prompt)
+    assert escalated.json()["decision"] == "redact"
+    assert "PROJECT_CODENAME" in escalated.json()["data_classes"]
+
+
+def test_editing_a_built_in_pattern_changes_live_inspect_detection(client: TestClient) -> None:
+    rows = client.get("/v1/patterns", headers=HEADERS).json()
+    phone_row = next(r for r in rows if r["data_class"] == "PHONE")
+
+    # Narrow PHONE's own pattern to something that no longer matches a
+    # normal Malaysian mobile number.
+    client.put(f"/v1/patterns/{phone_row['id']}", headers=HEADERS,
+              json={"data_class": "PHONE", "pattern": r"\bNEVERMATCHES\b"})
+
+    r = inspect(client, prompt="Call 012-3456789 anytime.")
+    assert "PHONE" not in r.json()["data_classes"]
 
 
 def test_internal_doc_upload_indexes_extracted_chunks(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

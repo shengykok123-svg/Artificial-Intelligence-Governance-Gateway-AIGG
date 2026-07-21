@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+import regex
+from pydantic import BaseModel, Field, field_validator
 
 
 class Attachment(BaseModel):
@@ -99,9 +100,75 @@ class InternalDocsPage(BaseModel):
     limit: int
     offset: int
 
+
+class RuleRequest(BaseModel):
+    # Create/update body for the policy rules table -- see
+    # backend/app/policy/rules.yaml's header comment for what each field
+    # means to decide(). data_class and ai_tool_tier are deliberately plain
+    # strings, not Literal-restricted: nothing in the engine hard-codes
+    # either set, and locking them here would create a second source of
+    # truth that drifts from rules.yaml/the engine's own tolerance for new
+    # values.
+    data_class: str
+    ai_tool_tier: str
+    user_role: str = "*"
+    purpose: str = "*"
+    decision: Literal["allow", "redact", "hold", "deny"]
+    min_confidence: float = Field(0.0, ge=0.0, le=1.0)
+    content_department: str = "*"
+    require_purpose: bool = False
+    detector: Literal["*", "embed", "deberta"] = "*"
+
+
+class ToolVisitRequest(BaseModel):
+    # The extension's shadow-AI detector: a hostname match against the
+    # bundled AI_HOSTS list plus a completed network request on that origin
+    # (see extension/src/background.ts). No prompt/content ever travels with
+    # this call -- just the bare hostname.
+    host: str
+
+
+class RedactionClassRequest(BaseModel):
+    # Create body for the redaction_classes table -- see RedactionRepo /
+    # the REGEX FLOOR note in backend/app/policy/engine.py. Deliberately
+    # one field: every row here only ever does one thing (get redacted).
+    data_class: str
+
+
+_MAX_PATTERN_LENGTH = 200
+
+
+class DetectionPatternRequest(BaseModel):
+    # Create/update body for the detection_patterns table -- see PatternRepo
+    # / app/detect/rules.py. A pattern is evaluated against arbitrary prompt
+    # content on every /v1/inspect call, so this is the ONLY place regex
+    # input is accepted from -- validate here, not in RulesDetector, which
+    # trusts whatever it's constructed with. The length cap and compile
+    # check catch obvious mistakes; they are not a ReDoS guarantee on their
+    # own -- the real protection is RulesDetector's runtime match timeout
+    # (see DEFAULT_MATCH_TIMEOUT_SECONDS), which applies regardless of what
+    # slips past this check.
+    data_class: str
+    pattern: str
+    remark: str = ""    # free-text note -- why this pattern exists, what
+                        # it's for. Never read by detection/policy logic.
+
+    @field_validator("pattern")
+    @classmethod
+    def _validate_pattern(cls, value: str) -> str:
+        if len(value) > _MAX_PATTERN_LENGTH:
+            raise ValueError(f"pattern must be {_MAX_PATTERN_LENGTH} characters or fewer")
+        try:
+            regex.compile(value)
+        except regex.error as exc:
+            raise ValueError(f"invalid regex: {exc}") from exc
+        return value
+
+
 __all__ = [
     "Attachment",
     "DetectionDebug",
+    "DetectionPatternRequest",
     "InternalDocChunkResponse",
     "InternalDocsPage",
     "InternalDocUploadRequest",
@@ -110,4 +177,7 @@ __all__ = [
     "InspectRequest",
     "InspectResponse",
     "RedactedAttachment",
+    "RedactionClassRequest",
+    "RuleRequest",
+    "ToolVisitRequest",
 ]

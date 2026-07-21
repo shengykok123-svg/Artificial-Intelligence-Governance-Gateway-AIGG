@@ -7,6 +7,8 @@
 import type {
   AiTool,
   AuditRecord,
+  DetectionPattern,
+  DetectionPatternRequest,
   HealthResponse,
   InternalDocsPage,
   InternalDocUploadRequest,
@@ -14,6 +16,9 @@ import type {
   LogDecisionRequest,
   LogsPage,
   LogsQuery,
+  RedactionClass,
+  RedactionClassRequest,
+  RuleRequest,
   RuleRow,
   StatsSummary,
   ToolDecisionRequest,
@@ -108,6 +113,46 @@ export async function downloadAttachment(logId: string): Promise<void> {
 
 export function getRules(): Promise<RuleRow[]> {
   return request<RuleRow[]>("/v1/rules");
+}
+
+export function createRule(body: RuleRequest): Promise<RuleRow> {
+  return request<RuleRow>("/v1/rules", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateRule(id: number, body: RuleRequest): Promise<RuleRow> {
+  return request<RuleRow>(`/v1/rules/${id}`, { method: "PUT", body: JSON.stringify(body) });
+}
+
+export function deleteRule(id: number): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(`/v1/rules/${id}`, { method: "DELETE" });
+}
+
+export function getRedactionClasses(): Promise<RedactionClass[]> {
+  return request<RedactionClass[]>("/v1/redaction");
+}
+
+export function createRedactionClass(body: RedactionClassRequest): Promise<RedactionClass> {
+  return request<RedactionClass>("/v1/redaction", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function deleteRedactionClass(id: number): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(`/v1/redaction/${id}`, { method: "DELETE" });
+}
+
+export function getPatterns(): Promise<DetectionPattern[]> {
+  return request<DetectionPattern[]>("/v1/patterns");
+}
+
+export function createPattern(body: DetectionPatternRequest): Promise<DetectionPattern> {
+  return request<DetectionPattern>("/v1/patterns", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updatePattern(id: number, body: DetectionPatternRequest): Promise<DetectionPattern> {
+  return request<DetectionPattern>(`/v1/patterns/${id}`, { method: "PUT", body: JSON.stringify(body) });
+}
+
+export function deletePattern(id: number): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(`/v1/patterns/${id}`, { method: "DELETE" });
 }
 
 export function getTools(): Promise<AiTool[]> {

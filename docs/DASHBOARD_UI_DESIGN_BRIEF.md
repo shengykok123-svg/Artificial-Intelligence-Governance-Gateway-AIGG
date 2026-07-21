@@ -68,7 +68,7 @@ M2 detects structured sensitive values using rules/patterns. Important classes i
 - `PERSON`
 - `BANK_ACCT`
 - `SALARY`
-- `SECRET` (for example, API credentials)
+- `API_KEY` (for example, API credentials)
 
 These are primarily a redaction floor: detected spans must be masked in redacted prompts, audit records and prepared release copies.
 
@@ -165,7 +165,7 @@ The administrator needs to:
 | Target host | The AI site, e.g. `chatgpt.com`, `gemini.google.com`. |
 | Prompt | An excerpt. If redaction happened, the record shows redacted text; original values belong in the encrypted vault. |
 | Filename | Submitted attachment, when present; downloadable. |
-| Data classes | Detected labels such as `MYKAD`, `SECRET`, `DEPT_CONFIDENTIAL`. |
+| Data classes | Detected labels such as `MYKAD`, `API_KEY`, `DEPT_CONFIDENTIAL`. |
 | User department | The sender's department. |
 | Content department | The model's department attribution plus confidence. |
 | M8 | Raw M8 department and confidence. |
@@ -348,7 +348,7 @@ The currently running full system contains representative test/demo data. This i
 | Policy rules | 14 |
 | Indexed M8 chunks | 10 |
 | Example AI hosts | `chatgpt.com`, `gemini.google.com`, `copilot.microsoft.com` |
-| Frequent data classes | `DEPT_CONFIDENTIAL`, `PERSON`, `MYKAD`, `SALARY`, `BANK_ACCT`, `EMAIL`, `PHONE`, `SECRET` |
+| Frequent data classes | `DEPT_CONFIDENTIAL`, `PERSON`, `MYKAD`, `SALARY`, `BANK_ACCT`, `EMAIL`, `PHONE`, `API_KEY` |
 
 Current internal-document source examples:
 

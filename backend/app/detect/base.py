@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 
 DataClass = Literal["PERSON", "MYKAD", "EMAIL", "PHONE", "BANK_ACCT",
-                    "SALARY", "SECRET", "DEPT_CONFIDENTIAL"]
+                    "SALARY", "API_KEY", "DEPT_CONFIDENTIAL"]
 
 
 @dataclass(frozen=True)

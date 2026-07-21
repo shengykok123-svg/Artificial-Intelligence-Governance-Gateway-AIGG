@@ -55,7 +55,7 @@ list[RuleRow])`. Everything detector- or I/O-shaped happens in
 
 | # | Name | File | What it answers | Data classes it owns |
 |---|------|------|------------------|-----------------------|
-| M2 | `RulesDetector` | `app/detect/rules.py` | Deterministic pattern match | `MYKAD`, `EMAIL`, `PHONE`, `BANK_ACCT`, `SALARY`, `SECRET`, `PERSON` |
+| M2 | `RulesDetector` | `app/detect/rules.py` | Deterministic pattern match | `MYKAD`, `EMAIL`, `PHONE`, `BANK_ACCT`, `SALARY`, `API_KEY`, `PERSON` |
 | M8 | `EmbedDetector` | `app/detect/embed.py` | "Does this resemble one of OUR indexed documents?" (cosine similarity) | `DEPT_CONFIDENTIAL` |
 | M9 | `DebertaDetector` | `app/detect/deberta.py` | "Is this text confidential in nature?" (fine-tuned classifier, no corpus needed) | `DEPT_CONFIDENTIAL` |
 
@@ -199,24 +199,34 @@ request is denied, even if the other detector found nothing at all.
 
 M2 (`rules`-detector) spans have **no policy row of their own** — see §5.1 —
 so on their own they'd default to `allow`. Instead, `decide()` applies a
-structural floor **after** the table has decided everything else:
+structural floor **after** the table has decided everything else, gated on
+an admin-editable set of data classes (`regex_redact_classes`, sourced from
+`RedactionRepo` / the dashboard's Redaction tab, seeded with all 7 built-in
+M2 classes):
 
-> Any span with `detector == "rules"` forces the decision from `allow` up to
-> `redact`, unconditionally, regardless of tier, role, or purpose.
+> A span with `detector == "rules"` **whose data class is in
+> `regex_redact_classes`** forces the decision from `allow` up to `redact`,
+> unconditionally, regardless of tier, role, or purpose. A span whose class
+> has been removed from that list is not redacted and does not affect the
+> decision at all — it still shows up in `data_classes`/debug, it just no
+> longer protects anything.
 
-- On `allow` → upgraded to `redact`.
+- On `allow` → upgraded to `redact` (only for classes in the list).
 - On `hold` or `deny` → the decision is **left alone** (a human reviewer's
   call on DEPT_CONFIDENTIAL isn't weakened by an M2 hit alone), **but** the
-  M2 spans are still merged into `spans_to_redact` regardless. This matters
-  because hold's redaction is prepared *eagerly* (§6) — so if a hold is later
-  approved or times out, whatever M2 found (a credential, a MyKad number) is
-  already masked in what gets released. Nothing unredacted can ever leave
-  once a hold clears, even though the M2 hit itself never escalated the
-  decision.
+  (filtered) M2 spans are still merged into `spans_to_redact` regardless.
+  This matters because hold's redaction is prepared *eagerly* (§6) — so if a
+  hold is later approved or times out, whatever M2 found (and is still on
+  the redact list) is already masked in what gets released. Nothing
+  unredacted can ever leave once a hold clears, even though the M2 hit
+  itself never escalated the decision.
 
-Net effect: M2 always redacts what it finds; it never votes on hold/deny.
-A leaked `SECRET` is redacted the same as a stray MyKad number — never
-escalated — and carries no `require_purpose` gate (the floor doesn't set one).
+Net effect, at the default (all 7 classes listed): M2 always redacts what
+it finds; it never votes on hold/deny. A leaked `API_KEY` is redacted the
+same as a stray MyKad number — never escalated — and carries no
+`require_purpose` gate (the floor doesn't set one). An admin can narrow
+this list from the Redaction tab; doing so is a real, live change to what
+gets protected, not just a display setting.
 
 ### 4.6 `spans_to_redact`
 
@@ -234,14 +244,23 @@ the source of truth, and `decide()` never reads the file directly — M1
 fetches rows via `RuleRepo.all()` and hands them to `decide()` as plain data.
 A compliance officer edits a **row**, not code, to change policy.
 
-### 5.1 M2 classes: no policy voice, by design
+### 5.1 M2 classes: no `rules.yaml` voice, but redaction is now editable
 
-`MYKAD`, `EMAIL`, `PHONE`, `PERSON`, `BANK_ACCT`, `SALARY`, `SECRET` have
-**zero rows** in `rules.yaml`, on purpose. They rely entirely on the
-structural regex floor (§4.5): always redacted, never escalated, no
-`require_purpose`. `DEPT_CONFIDENTIAL` (M8/M9) is therefore the **only**
-class with real policy rows, and the only thing that can push a request to
-`hold` or `deny`.
+`MYKAD`, `EMAIL`, `PHONE`, `PERSON`, `BANK_ACCT`, `SALARY`, `API_KEY` have
+**zero rows** in `rules.yaml`, on purpose — they never escalate to
+`hold`/`deny`, and no M2 class carries a `require_purpose` gate.
+`DEPT_CONFIDENTIAL` (M8/M9) is therefore still the **only** class with real
+policy rows, and the only thing that can push a request to `hold` or `deny`.
+
+Redaction itself, though, is no longer hardcoded. The structural regex
+floor (§4.5) only redacts a class that's present in a separate,
+admin-editable table (`RedactionRepo`, dashboard: **Policy & Tools →
+Redaction**), seeded with all 7 built-in M2 classes by default. Removing a
+class from that list (e.g. `API_KEY`) means M2 can still *detect* it — it
+still shows up in `data_classes` and the debug trace — but it no longer
+redacts or upgrades `allow → redact` for that class at all. This is a
+deliberate, real tradeoff an admin can make, not a bug — see the Redaction
+tab's own warning copy before removing a built-in class.
 
 ### 5.2 The current bands
 

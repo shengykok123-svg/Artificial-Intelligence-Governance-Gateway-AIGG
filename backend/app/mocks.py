@@ -31,7 +31,7 @@ class MockRulesDetector:
 
     _TRIGGERS: dict[str, DataClass] = {
         "880412-08-5561": "MYKAD",
-        "sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d": "SECRET",
+        "sk-proj-9f2b1c8e4a7d3f6b0e5c2a9d": "API_KEY",
         "RM 8,500": "SALARY",
     }
 

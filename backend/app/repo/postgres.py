@@ -19,7 +19,9 @@ from app.models import (
     AuditAttachment,
     AuditDataClass,
     AuditLog,
+    DetectionPattern,
     PolicyRule,
+    RedactionClass,
     TokenMap,
     User,
 )
@@ -27,8 +29,10 @@ from app.repo.base import (
     AiTool,
     AttachmentBlob,
     AuditRecord,
+    DetectionPatternRow,
     InternalDocChunk,
     InternalDocMatch,
+    RedactionClassRow,
     RuleRow,
     StatsSummary,
     TokenEntry,
@@ -122,6 +126,7 @@ def _tool_to_dto(row: AiToolRow) -> AiTool:
         approved_by=row.approved_by,
         approved_at=row.approved_at,
         first_seen=row.first_seen,
+        visit_count=row.visit_count,
     )
 
 
@@ -144,6 +149,18 @@ def _rule_to_dto(row: PolicyRule) -> RuleRow:
         content_department=row.content_department,
         require_purpose=row.require_purpose,
         detector=row.detector,
+        id=row.id,
+    )
+
+
+def _redaction_class_to_dto(row: RedactionClass) -> RedactionClassRow:
+    return RedactionClassRow(data_class=row.data_class, id=row.id)
+
+
+def _pattern_to_dto(row: DetectionPattern) -> DetectionPatternRow:
+    return DetectionPatternRow(
+        data_class=row.data_class, pattern=row.pattern, remark=row.remark,
+        sequence=row.sequence, id=row.id,
     )
 
 
@@ -358,6 +375,123 @@ class PgRuleRepo:
         ).all()
         return [_rule_to_dto(r) for r in rows]
 
+    def create(self, row: RuleRow) -> RuleRow:
+        db_row = PolicyRule(
+            data_class=row.data_class, ai_tool_tier=row.ai_tool_tier,
+            user_role=row.user_role, purpose=row.purpose, decision=row.decision,
+            min_confidence=row.min_confidence,
+            content_department=row.content_department,
+            require_purpose=row.require_purpose, detector=row.detector,
+        )
+        self.s.add(db_row)
+        self.s.commit()
+        self.s.refresh(db_row)
+        return _rule_to_dto(db_row)
+
+    def update(self, rule_id: int, row: RuleRow) -> RuleRow | None:
+        db_row = self.s.get(PolicyRule, rule_id)
+        if db_row is None:
+            return None
+        db_row.data_class = row.data_class
+        db_row.ai_tool_tier = row.ai_tool_tier
+        db_row.user_role = row.user_role
+        db_row.purpose = row.purpose
+        db_row.decision = row.decision
+        db_row.min_confidence = row.min_confidence
+        db_row.content_department = row.content_department
+        db_row.require_purpose = row.require_purpose
+        db_row.detector = row.detector
+        self.s.commit()
+        self.s.refresh(db_row)
+        return _rule_to_dto(db_row)
+
+    def delete(self, rule_id: int) -> bool:
+        db_row = self.s.get(PolicyRule, rule_id)
+        if db_row is None:
+            return False
+        self.s.delete(db_row)
+        self.s.commit()
+        return True
+
+
+class PgRedactionRepo:
+    def __init__(self, session: Session) -> None:
+        self.s = session
+
+    def all(self) -> list[RedactionClassRow]:
+        rows = self.s.scalars(
+            select(RedactionClass).order_by(RedactionClass.id)
+        ).all()
+        return [_redaction_class_to_dto(r) for r in rows]
+
+    def create(self, row: RedactionClassRow) -> RedactionClassRow:
+        existing = self.s.scalars(
+            select(RedactionClass).where(RedactionClass.data_class == row.data_class)
+        ).first()
+        if existing is not None:
+            return _redaction_class_to_dto(existing)
+        db_row = RedactionClass(data_class=row.data_class)
+        self.s.add(db_row)
+        self.s.commit()
+        self.s.refresh(db_row)
+        return _redaction_class_to_dto(db_row)
+
+    def delete(self, row_id: int) -> bool:
+        db_row = self.s.get(RedactionClass, row_id)
+        if db_row is None:
+            return False
+        self.s.delete(db_row)
+        self.s.commit()
+        return True
+
+
+class PgPatternRepo:
+    def __init__(self, session: Session) -> None:
+        self.s = session
+
+    def all(self) -> list[DetectionPatternRow]:
+        rows = self.s.scalars(
+            select(DetectionPattern).order_by(DetectionPattern.id)
+        ).all()
+        return [_pattern_to_dto(r) for r in rows]
+
+    def _next_sequence_for(self, data_class: str) -> int:
+        max_seq = self.s.scalar(
+            select(func.max(DetectionPattern.sequence)).where(DetectionPattern.data_class == data_class)
+        )
+        return (max_seq or 0) + 1
+
+    def create(self, row: DetectionPatternRow) -> DetectionPatternRow:
+        db_row = DetectionPattern(
+            data_class=row.data_class, pattern=row.pattern, remark=row.remark,
+            sequence=self._next_sequence_for(row.data_class),
+        )
+        self.s.add(db_row)
+        self.s.commit()
+        self.s.refresh(db_row)
+        return _pattern_to_dto(db_row)
+
+    def update(self, pattern_id: int, row: DetectionPatternRow) -> DetectionPatternRow | None:
+        db_row = self.s.get(DetectionPattern, pattern_id)
+        if db_row is None:
+            return None
+        if row.data_class != db_row.data_class:
+            db_row.sequence = self._next_sequence_for(row.data_class)
+        db_row.data_class = row.data_class
+        db_row.pattern = row.pattern
+        db_row.remark = row.remark
+        self.s.commit()
+        self.s.refresh(db_row)
+        return _pattern_to_dto(db_row)
+
+    def delete(self, pattern_id: int) -> bool:
+        db_row = self.s.get(DetectionPattern, pattern_id)
+        if db_row is None:
+            return False
+        self.s.delete(db_row)
+        self.s.commit()
+        return True
+
 
 class PgToolRepo:
     def __init__(self, session: Session) -> None:
@@ -386,6 +520,17 @@ class PgToolRepo:
         row = AiToolRow(host=host, tier="PUBLIC_AI", status="unapproved",
                         approved_by=None, approved_at=None, first_seen=_now())
         self.s.add(row)
+        self.s.commit()
+        return _tool_to_dto(row)
+
+    def record_visit(self, host: str) -> AiTool:
+        row = self.s.get(AiToolRow, host)
+        if row is None:
+            row = AiToolRow(host=host, tier="PUBLIC_AI", status="unapproved",
+                            approved_by=None, approved_at=None, first_seen=_now(),
+                            visit_count=0)
+            self.s.add(row)
+        row.visit_count = (row.visit_count or 0) + 1
         self.s.commit()
         return _tool_to_dto(row)
 

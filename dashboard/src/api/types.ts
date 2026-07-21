@@ -63,16 +63,66 @@ export interface StatsSummary {
 }
 
 export interface RuleRow {
+  id: number;
   data_class: string;
   ai_tool_tier: string;
   user_role: string;
   purpose: string;
-  decision: string;
+  decision: Decision;
+  min_confidence: number; // 0.0 - 1.0
+  content_department: string; // "*" | "@cross" | a literal department
+  require_purpose: boolean;
   detector: string; // "*" | "embed" | "deberta"
+}
+
+// Create/update body -- everything RuleRow has except id, which the server
+// assigns (create) or takes from the URL (update).
+export interface RuleRequest {
+  data_class: string;
+  ai_tool_tier: string;
+  user_role: string;
+  purpose: string;
+  decision: Decision;
+  min_confidence: number;
+  content_department: string;
+  require_purpose: boolean;
+  detector: string;
+}
+
+// M2's redact list -- deliberately simpler than RuleRow: every entry here
+// only ever does one thing (get redacted), so there's no tier/role/purpose/
+// decision to carry, just the data class itself.
+export interface RedactionClass {
+  id: number;
+  data_class: string;
+}
+
+export interface RedactionClassRequest {
+  data_class: string;
+}
+
+// A single regex M2 evaluates. Many rows can share a data_class -- API_KEY
+// already needs two (an "sk-..." key shape and an "..._API_KEY=..." env
+// line); an admin adding another way an existing class is written (or a
+// brand-new class) is just another row here.
+export interface DetectionPattern {
+  id: number;
+  data_class: string;
+  pattern: string;
+  remark: string; // free-text note -- why this pattern exists, what it's for
+  sequence: number; // 1-based ordinal within this data_class
+  display_id: string; // "[data_class]-00001", server-computed, e.g. "MYKAD-00001"
+}
+
+export interface DetectionPatternRequest {
+  data_class: string;
+  pattern: string;
+  remark: string;
 }
 
 export type ToolTier = "PUBLIC_AI" | "ENTERPRISE_AI" | "INTERNAL_AI";
 export type ToolStatus = "approved" | "unapproved" | "blocked";
+export type ToolCatalog = "known" | "other";
 
 export interface AiTool {
   host: string;
@@ -81,7 +131,11 @@ export interface AiTool {
   approved_by: string | null;
   approved_at: string | null;
   first_seen: string; // ISO 8601. Never moves once set.
-  usage_count: number;
+  usage_count: number; // real /v1/inspect calls (audit-log derived)
+  visit_count: number; // extension-detected network activity (shadow AI)
+  catalog: ToolCatalog; // "known": on the curated AI-host list. "other":
+                        // reached the backend some other way (e.g. a direct
+                        // /v1/inspect call to an uncatalogued host).
 }
 
 export interface ToolDecisionRequest {
