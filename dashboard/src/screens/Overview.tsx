@@ -51,14 +51,14 @@ function formatUserName(email: string) {
   return parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
 }
 
-const TREND_DATA = [
-  { date: "6 May", allowed: 300, redacted: 120, held: 40, denied: 10 },
-  { date: "7 May", allowed: 330, redacted: 140, held: 50, denied: 12 },
-  { date: "8 May", allowed: 400, redacted: 185, held: 50, denied: 10 },
-  { date: "9 May", allowed: 330, redacted: 130, held: 45, denied: 8 },
-  { date: "10 May", allowed: 385, redacted: 170, held: 50, denied: 10 },
-  { date: "11 May", allowed: 345, redacted: 150, held: 55, denied: 12 },
-  { date: "12 May", allowed: 400, redacted: 160, held: 50, denied: 8 },
+const TREND_DATA: DayPoint[] = [
+  { date: "6 May", allow: 300, redact: 120, hold: 40, deny: 10 },
+  { date: "7 May", allow: 330, redact: 140, hold: 50, deny: 12 },
+  { date: "8 May", allow: 400, redact: 185, hold: 50, deny: 10 },
+  { date: "9 May", allow: 330, redact: 130, hold: 45, deny: 8 },
+  { date: "10 May", allow: 385, redact: 170, hold: 50, deny: 10 },
+  { date: "11 May", allow: 345, redact: 150, hold: 55, deny: 12 },
+  { date: "12 May", allow: 400, redact: 160, hold: 50, deny: 8 },
 ];
 
 const DATA_CLASSES = [
@@ -201,8 +201,9 @@ export default function Overview() {
   const heldPct = ((heldCount / totalCount) * 100).toFixed(1);
   const deniedPct = ((deniedCount / totalCount) * 100).toFixed(1);
 
-  const trendData = stats.data?.by_day && stats.data.by_day.length > 0
-    ? pivotByDay(stats.data.by_day)
+  const hasLiveTrends = stats.data?.by_day && stats.data.by_day.some(([_, __, n]) => n > 0);
+  const trendData = hasLiveTrends
+    ? pivotByDay(stats.data!.by_day)
     : TREND_DATA;
 
   // 1. Top Data Classes
@@ -447,10 +448,10 @@ export default function Overview() {
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} domain={[0, 500]} />
                 <Tooltip />
-                <Line type="monotone" dataKey="allowed" stroke="#16a34a" strokeWidth={2} dot={{ r: 3.5, fill: "#16a34a", strokeWidth: 0 }} />
-                <Line type="monotone" dataKey="redacted" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3.5, fill: "#f59e0b", strokeWidth: 0 }} />
-                <Line type="monotone" dataKey="held" stroke="#ef4444" strokeWidth={2} dot={{ r: 3.5, fill: "#ef4444", strokeWidth: 0 }} />
-                <Line type="monotone" dataKey="denied" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3.5, fill: "#8b5cf6", strokeWidth: 0 }} />
+                <Line type="monotone" dataKey="allow" stroke="#16a34a" strokeWidth={2} dot={{ r: 3.5, fill: "#16a34a", strokeWidth: 0 }} />
+                <Line type="monotone" dataKey="redact" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3.5, fill: "#f59e0b", strokeWidth: 0 }} />
+                <Line type="monotone" dataKey="hold" stroke="#ef4444" strokeWidth={2} dot={{ r: 3.5, fill: "#ef4444", strokeWidth: 0 }} />
+                <Line type="monotone" dataKey="deny" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3.5, fill: "#8b5cf6", strokeWidth: 0 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
