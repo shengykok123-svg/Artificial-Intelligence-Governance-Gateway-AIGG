@@ -645,8 +645,7 @@ export default function AuditLog() {
                     <span className="block">AI Tool</span>
                   </th>
                   <th className="px-4 py-2.5 whitespace-nowrap text-center">
-                    <span className="block">Document</span>
-                    <span className="block font-medium text-slate-500">Similarity</span>
+                    <span className="block">Document Similarity</span>
                   </th>
                   <th className="px-4 py-2.5 whitespace-nowrap text-center">
                     <span className="block">Predicted Content</span>
