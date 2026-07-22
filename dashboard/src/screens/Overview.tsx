@@ -338,68 +338,68 @@ export default function Overview() {
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-3 space-y-4 flex flex-col justify-between">
           <h3 className="text-xs font-bold text-slate-900">Pending Approval</h3>
 
-          <div className="flex items-center justify-between gap-2">
-            {/* SVG Multi-color Ring Gauge */}
-            <div className="relative flex h-28 w-28 shrink-0 items-center justify-center">
+          <div className="flex items-center justify-between gap-3">
+            {/* Enlarged SVG Multi-color Ring Gauge */}
+            <div className="relative flex h-36 w-36 shrink-0 items-center justify-center">
               <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100">
                 {/* Light Rose Background Track */}
-                <circle cx="50" cy="50" r="38" stroke="#ffe4e6" strokeWidth="12" fill="transparent" />
+                <circle cx="50" cy="50" r="40" stroke="#ffe4e6" strokeWidth="9" fill="transparent" />
                 {/* Red Segment (High risk 50%) */}
                 <circle
                   cx="50"
                   cy="50"
-                  r="38"
+                  r="40"
                   stroke="#ef4444"
-                  strokeWidth="12"
+                  strokeWidth="9"
                   fill="transparent"
-                  strokeDasharray="119.38 238.76"
+                  strokeDasharray="125.66 251.33"
                   strokeDashoffset="0"
                 />
                 {/* Yellow Segment (Medium risk 34%) */}
                 <circle
                   cx="50"
                   cy="50"
-                  r="38"
+                  r="40"
                   stroke="#f59e0b"
-                  strokeWidth="12"
+                  strokeWidth="9"
                   fill="transparent"
-                  strokeDasharray="81.18 238.76"
-                  strokeDashoffset="-119.38"
+                  strokeDasharray="85.45 251.33"
+                  strokeDashoffset="-125.66"
                 />
                 {/* Green Segment (Low risk 16%) */}
                 <circle
                   cx="50"
                   cy="50"
-                  r="38"
+                  r="40"
                   stroke="#10b981"
-                  strokeWidth="12"
+                  strokeWidth="9"
                   fill="transparent"
-                  strokeDasharray="38.20 238.76"
-                  strokeDashoffset="-200.56"
+                  strokeDasharray="40.21 251.33"
+                  strokeDashoffset="-211.11"
                 />
               </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className="text-2xl font-bold text-slate-900">156</span>
-                <span className="text-[10px] font-medium text-slate-500">Held requests</span>
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-2">
+                <span className="text-2xl font-extrabold text-slate-900 leading-none">156</span>
+                <span className="mt-1 text-[10px] font-semibold text-slate-500 whitespace-nowrap">Held requests</span>
               </div>
             </div>
 
             {/* Legend Right */}
             <div className="space-y-2 text-xs font-medium text-slate-700">
-              <div className="flex items-center justify-between gap-3">
-                <span className="flex items-center gap-1.5 text-rose-600 font-semibold">
+              <div className="flex items-center justify-between gap-2.5">
+                <span className="flex items-center gap-1.5 text-rose-600 font-semibold whitespace-nowrap">
                   <span className="h-2 w-2 rounded-full bg-rose-500" /> High risk
                 </span>
                 <span className="font-bold text-slate-900">78 (50.0%)</span>
               </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="flex items-center gap-1.5 text-amber-600 font-semibold">
+              <div className="flex items-center justify-between gap-2.5">
+                <span className="flex items-center gap-1.5 text-amber-600 font-semibold whitespace-nowrap">
                   <span className="h-2 w-2 rounded-full bg-amber-500" /> Medium risk
                 </span>
                 <span className="font-bold text-slate-900">53 (34.0%)</span>
               </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="flex items-center gap-1.5 text-emerald-600 font-semibold">
+              <div className="flex items-center justify-between gap-2.5">
+                <span className="flex items-center gap-1.5 text-emerald-600 font-semibold whitespace-nowrap">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" /> Low risk
                 </span>
                 <span className="font-bold text-slate-900">25 (16.0%)</span>
@@ -428,24 +428,24 @@ export default function Overview() {
           </h3>
 
           <div className="flex items-center gap-4">
-            {/* SVG Ring Gauge */}
-            <div className="relative flex h-28 w-28 shrink-0 items-center justify-center">
+            {/* Enlarged SVG Ring Gauge */}
+            <div className="relative flex h-36 w-36 shrink-0 items-center justify-center">
               <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="38" stroke="#e2e8f0" strokeWidth="12" fill="transparent" />
+                <circle cx="50" cy="50" r="40" stroke="#e2e8f0" strokeWidth="9" fill="transparent" />
                 <circle
                   cx="50"
                   cy="50"
-                  r="38"
+                  r="40"
                   stroke="#059669"
-                  strokeWidth="12"
+                  strokeWidth="9"
                   fill="transparent"
-                  strokeDasharray="55.87 238.76"
+                  strokeDasharray="58.81 251.33"
                   strokeDashoffset="0"
                 />
               </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className="text-xl font-bold text-slate-900">23.4%</span>
-                <span className="text-[10px] font-medium text-slate-500">Cross-department</span>
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-2">
+                <span className="text-2xl font-extrabold text-slate-900 leading-none">23.4%</span>
+                <span className="mt-1 text-[10px] font-semibold text-slate-500 whitespace-nowrap">Cross-department</span>
               </div>
             </div>
 
