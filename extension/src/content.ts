@@ -409,7 +409,7 @@ function init(site: SiteKey): void {
     if (!prompt && capturedAttachments.length === 0) return;
 
     const files = capturedAttachments;
-    capturedAttachments = [];
+    showBanner(composer, "checking", "Inspecting prompt and attachments...");
 
     let outcome: InspectOutcome;
     try {
@@ -445,9 +445,9 @@ function init(site: SiteKey): void {
 
     switch (result.decision) {
       case "allow":
-        showBanner(liveComposer, "allow", "No material risk was detected.");
+        showBanner(liveComposer, "allow", "No material risk detected.");
         replaySend(liveComposer, replay);
-        removeBannerSoon("No material risk was detected");
+        removeBannerSoon("No material risk detected");
         return;
 
       case "redact": {
