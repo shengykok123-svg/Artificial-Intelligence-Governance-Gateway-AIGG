@@ -140,13 +140,22 @@ export default function ApprovalQueue() {
   );
 
   const oldestWaitText = useMemo(() => {
-    if (!allItems.length) return "0 min";
-    const oldestMs = new Date(allItems[0].ts).getTime();
+    const raw = logs.data?.items ?? [];
+    if (!raw.length) return "0 min";
+    let oldestTs = raw[0].ts;
+    for (const item of raw) {
+      if (item.ts.localeCompare(oldestTs) < 0) {
+        oldestTs = item.ts;
+      }
+    }
+    const oldestMs = new Date(oldestTs).getTime();
     const mins = Math.max(0, Math.floor((Date.now() - oldestMs) / 60_000));
     if (mins < 60) return `${mins} min`;
     const hrs = Math.floor(mins / 60);
-    return `${hrs} hr${hrs > 1 ? "s" : ""}`;
-  }, [allItems]);
+    if (hrs < 24) return `${hrs} hr${hrs > 1 ? "s" : ""}`;
+    const days = Math.floor(hrs / 24);
+    return `${days} day${days > 1 ? "s" : ""}`;
+  }, [logs.data?.items]);
 
   async function handleDownload() {
     if (!selected) return;
