@@ -710,7 +710,7 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
             for span in spans
         )
 
-    data_classes = sorted({span.data_class for span in all_spans})
+    span_data_classes = {span.data_class for span in all_spans}
     confidence = max((s.confidence for s in all_spans), default=0.0)
 
     combined_text = "\n".join(doc.text for doc in documents)
@@ -743,21 +743,28 @@ def inspect(req: InspectRequest, repos: Repos = Depends(get_repos)) -> InspectRe
     if content_department is not None and content_department != user.department:
         cross_department_confidence = max(m8_confidence, m9_confidence)
 
-    # M10 fix: decide()'s per-detector confidence gate (embed/deberta) only
-    # has NO classification.confidence fallback -- unlike "*" rules, it looks
-    # exclusively at classification.spans for that (class, detector) pair. If
-    # spans here were prompt-only, a DEPT_CONFIDENTIAL span found ONLY in an
-    # attachment (no echo in the prompt text) would be invisible to the tier
-    # table and silently default to allow. all_spans (prompt + attachment)
-    # fixes that; spans_to_redact is still filtered back down to prompt-only
-    # spans below before it ever touches req.prompt, so mixing attachment
-    # spans in here cannot corrupt prompt-text slicing.
+    # M11: decide()'s per-detector confidence gate (embed/deberta) now reads
+    # m8_confidence/m9_sensitivity_confidence -- the whole-document score --
+    # rather than per-sentence spans, so DEPT_CONFIDENTIAL must enter
+    # data_classes whenever either detector actually scored something,
+    # regardless of whether any individual sentence cleared SPAN_THRESHOLD.
+    # Without this, a document that reads as confidential in aggregate but
+    # has no single qualifying sentence would carry a high m8_confidence/
+    # m9_sensitivity_confidence that decide() never gets a chance to look at,
+    # because the class would never appear in data_classes to begin with.
+    data_classes_set = set(span_data_classes)
+    if m8_confidence > 0.0 or m9_sensitivity_confidence > 0.0:
+        data_classes_set.add("DEPT_CONFIDENTIAL")
+    data_classes = sorted(data_classes_set)
+
     classification = Classification(
         data_classes=data_classes,
         confidence=confidence,
         spans=all_spans,
         content_department=content_department,
         department_confidence=department_confidence,
+        m8_confidence=m8_confidence,
+        m9_sensitivity_confidence=m9_sensitivity_confidence,
     )
 
     ctx = PolicyContext(

@@ -26,9 +26,17 @@ def _classification(data_class: str, confidence: float, *,
                     detector: str = "rules") -> tuple[Classification, Span]:
     span = Span(start=0, end=10, data_class=data_class,
                detector=detector, confidence=confidence)
+    # M11: embed/deberta are gated on the whole-document score, not the span
+    # itself -- mirror `confidence` onto whichever axis `detector` names so
+    # existing per-detector test cases still exercise the tier they say they
+    # do. Non-semantic detectors (e.g. "rules") leave both at 0.0.
+    m8_confidence = confidence if detector == "embed" else 0.0
+    m9_sensitivity_confidence = confidence if detector == "deberta" else 0.0
     c = Classification(data_classes=[data_class], confidence=confidence,
                        spans=[span], content_department=content_department,
-                       department_confidence=department_confidence)
+                       department_confidence=department_confidence,
+                       m8_confidence=m8_confidence,
+                       m9_sensitivity_confidence=m9_sensitivity_confidence)
     return c, span
 
 
@@ -58,7 +66,8 @@ def test_api_key_and_salary_together_just_redact_no_escalation_no_purpose():
                        detector="rules", confidence=1.0)
     c = Classification(data_classes=["API_KEY", "SALARY"], confidence=1.0,
                        spans=[api_key_span, salary_span],
-                       content_department=None, department_confidence=0.0)
+                       content_department=None, department_confidence=0.0,
+                       m8_confidence=0.0, m9_sensitivity_confidence=0.0)
     verdict = decide(c, CTX_PUBLIC, RULES, M2_CLASSES)
     assert verdict.decision == "redact"
     assert verdict.require_purpose is False
@@ -86,7 +95,8 @@ def test_email_and_api_key_together_still_only_redact():
                        detector="rules", confidence=1.0)
     c = Classification(data_classes=["EMAIL", "API_KEY"], confidence=1.0,
                        spans=[email_span, api_key_span],
-                       content_department=None, department_confidence=0.0)
+                       content_department=None, department_confidence=0.0,
+                       m8_confidence=0.0, m9_sensitivity_confidence=0.0)
     verdict = decide(c, CTX_PUBLIC, RULES, M2_CLASSES)
     assert verdict.decision == "redact"
 
@@ -102,7 +112,8 @@ def test_api_key_plus_dept_confidential_deny_band_denies_but_still_masks_api_key
                      detector="embed", confidence=0.93)
     c = Classification(data_classes=["API_KEY", "DEPT_CONFIDENTIAL"], confidence=1.0,
                        spans=[api_key_span, dept_span],
-                       content_department=None, department_confidence=0.93)
+                       content_department=None, department_confidence=0.93,
+                       m8_confidence=0.93, m9_sensitivity_confidence=0.0)
     verdict = decide(c, CTX_PUBLIC, RULES, M2_CLASSES)
     assert verdict.decision == "deny"
     assert verdict.spans_to_redact == [api_key_span]
@@ -195,7 +206,8 @@ def test_salary_enterprise_ai_hr_role_redacts_via_floor():
 
 def test_no_data_classes_allows():
     c = Classification(data_classes=[], confidence=0.0, spans=[],
-                       content_department=None, department_confidence=0.0)
+                       content_department=None, department_confidence=0.0,
+                       m8_confidence=0.0, m9_sensitivity_confidence=0.0)
     verdict = decide(c, CTX_PUBLIC, RULES, M2_CLASSES)
     assert verdict.decision == "allow"
     assert verdict.require_purpose is False
@@ -304,7 +316,8 @@ def test_attachment_only_class_falls_back_to_overall_confidence():
                 purpose="*", decision="redact", min_confidence=0.5),
     ]
     c = Classification(data_classes=["SALARY"], confidence=0.9, spans=[],
-                       content_department=None, department_confidence=0.0)
+                       content_department=None, department_confidence=0.0,
+                       m8_confidence=0.0, m9_sensitivity_confidence=0.0)
     verdict = decide(c, CTX_PUBLIC, rules, M2_CLASSES)
     assert verdict.decision == "redact"
     assert verdict.spans_to_redact == []  # never invents spans
@@ -362,7 +375,8 @@ def test_embed_086_and_deberta_096_strictest_wins_deny():
                         detector="deberta", confidence=0.96)
     c = Classification(data_classes=["DEPT_CONFIDENTIAL"], confidence=0.96,
                        spans=[embed_span, deberta_span],
-                       content_department=None, department_confidence=0.0)
+                       content_department=None, department_confidence=0.0,
+                       m8_confidence=0.86, m9_sensitivity_confidence=0.96)
     verdict = decide(c, CTX_PUBLIC, RULES, M2_CLASSES)
     assert verdict.decision == "deny"
 
@@ -419,7 +433,8 @@ def test_regex_email_plus_embed_060_redacts_with_purpose_and_email_span():
                      detector="embed", confidence=0.60)
     c = Classification(data_classes=["EMAIL", "DEPT_CONFIDENTIAL"], confidence=1.0,
                        spans=[email_span, dept_span],
-                       content_department=None, department_confidence=0.0)
+                       content_department=None, department_confidence=0.0,
+                       m8_confidence=0.60, m9_sensitivity_confidence=0.0)
     verdict = decide(c, CTX_PUBLIC, RULES, M2_CLASSES)
     assert verdict.decision == "redact"
     assert verdict.require_purpose is True
@@ -433,7 +448,8 @@ def test_regex_email_plus_embed_093_denies_but_still_masks_email():
                      detector="embed", confidence=0.93)
     c = Classification(data_classes=["EMAIL", "DEPT_CONFIDENTIAL"], confidence=1.0,
                        spans=[email_span, dept_span],
-                       content_department=None, department_confidence=0.0)
+                       content_department=None, department_confidence=0.0,
+                       m8_confidence=0.93, m9_sensitivity_confidence=0.0)
     verdict = decide(c, CTX_PUBLIC, RULES, M2_CLASSES)
     assert verdict.decision == "deny"
     assert verdict.spans_to_redact == [email_span]
@@ -482,7 +498,8 @@ def test_removing_one_class_does_not_affect_a_different_class():
                        detector="rules", confidence=1.0)
     c = Classification(data_classes=["EMAIL", "API_KEY"], confidence=1.0,
                        spans=[email_span, api_key_span],
-                       content_department=None, department_confidence=0.0)
+                       content_department=None, department_confidence=0.0,
+                       m8_confidence=0.0, m9_sensitivity_confidence=0.0)
     without_api_key = frozenset(M2_CLASSES - {"API_KEY"})
     verdict = decide(c, CTX_PUBLIC, RULES, without_api_key)
     assert verdict.decision == "redact"  # EMAIL is still on the list

@@ -32,6 +32,8 @@ class Classification:
     spans: list[Span]
     content_department: str | None    # finance | hr | legal | engineering
     department_confidence: float      # 0.0 when content_department is None
+    m8_confidence: float               # M8's whole-document cosine similarity
+    m9_sensitivity_confidence: float   # M9's whole-document sensitivity-head probability
 
 
 class Detector(Protocol):
