@@ -1,36 +1,17 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { Link } from "react-router-dom";
 
-import { useLogsQuery, useStatsQuery, useToolsQuery } from "../api/queries";
-import type { Decision, ToolStatus } from "../api/types";
-import { DataClassPills } from "../components/DataClassPills";
-import { EmptyState, ErrorState } from "../components/EmptyState";
-import { StatusBadge, VerdictBadge } from "../components/VerdictBadge";
-import { usageShareByHost } from "./PolicyAndTools";
-
-const TOOL_USAGE_FILTERS: Array<"all" | ToolStatus> = ["all", "approved", "unapproved", "blocked"];
-const TOOL_PIE_COLORS = ["#7441dc", "#4e87ed", "#10a295", "#f59a20", "#f6b644", "#5392f5"];
-
-const DECISIONS: Decision[] = ["allow", "redact", "hold", "deny"];
-const COLORS: Record<Decision, { solid: string; soft: string; icon: string; symbol: string; description: string }> = {
-  allow: { solid: "#169b5b", soft: "#e5f7ec", icon: "text-emerald-700", symbol: "✓", description: "Requests sent automatically" },
-  redact: { solid: "#f59a20", soft: "#fff1dc", icon: "text-amber-600", symbol: "✎", description: "Sensitive values protected before send" },
-  hold: { solid: "#7441dc", soft: "#efe9ff", icon: "text-violet-700", symbol: "Ⅱ", description: "Requests requiring review" },
-  deny: { solid: "#ef3f3c", soft: "#ffe8e7", icon: "text-red-600", symbol: "／", description: "Requests blocked by policy" },
-};
+import type { Decision } from "../api/types";
+import { useLogsQuery, useStatsQuery } from "../api/queries";
 
 export interface DayPoint {
   date: string;
@@ -39,6 +20,8 @@ export interface DayPoint {
   hold: number;
   deny: number;
 }
+
+const DECISIONS: Decision[] = ["allow", "redact", "hold", "deny"];
 
 export function pivotByDay(byDay: [string, string, number][]): DayPoint[] {
   const map = new Map<string, DayPoint>();
@@ -50,77 +33,574 @@ export function pivotByDay(byDay: [string, string, number][]): DayPoint[] {
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function dateTime(ts: string) {
-  return new Date(ts).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
+const TREND_DATA = [
+  { date: "6 May", allowed: 300, redacted: 120, held: 40, denied: 10 },
+  { date: "7 May", allowed: 330, redacted: 140, held: 50, denied: 12 },
+  { date: "8 May", allowed: 400, redacted: 185, held: 50, denied: 10 },
+  { date: "9 May", allowed: 330, redacted: 130, held: 45, denied: 8 },
+  { date: "10 May", allowed: 385, redacted: 170, held: 50, denied: 10 },
+  { date: "11 May", allowed: 345, redacted: 150, held: 55, denied: 12 },
+  { date: "12 May", allowed: 400, redacted: 160, held: 50, denied: 8 },
+];
 
-function promptExcerpt(text: string, max = 68) {
-  const value = text.replace(/\s+/g, " ").trim();
-  return value.length > max ? `${value.slice(0, max)}…` : value;
-}
+const DATA_CLASSES = [
+  { name: "PERSON (Name)", count: 612, pct: "31.4%" },
+  { name: "EMAIL", count: 487, pct: "25.0%" },
+  { name: "SALARY", count: 312, pct: "16.0%" },
+  { name: "PHONE", count: 221, pct: "11.3%" },
+  { name: "BANK_ACCT", count: 148, pct: "7.6%" },
+  { name: "API_KEY", count: 68, pct: "3.5%" },
+];
 
-function KpiCard({ decision, count, total, pending }: { decision: Decision; count: number; total: number; pending?: number }) {
-  const color = COLORS[decision];
-  return <article className="flex min-w-0 gap-4 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm"><span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-3xl font-bold" style={{ backgroundColor: color.soft, color: color.solid }}>{color.symbol}</span><div><p className="font-semibold" style={{ color: color.solid }}>{decision[0].toUpperCase() + decision.slice(1)}</p><p className="mt-0.5 text-3xl font-bold tracking-tight text-slate-900">{count}</p><p className="mt-1 text-xs text-slate-600">{total ? `${((count / total) * 100).toFixed(1)}% of ${total} events` : "No activity yet"}</p><p className="mt-1 text-xs text-slate-600">{color.description}</p>{decision === "hold" && pending !== undefined && pending > 0 && <span className="mt-1 inline-flex rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">{pending} pending review</span>}</div></article>;
-}
+const AI_TOOLS = [
+  { name: "ChatGPT", domain: "chatgpt.com", count: "1,102", pct: "56.6%" },
+  { name: "Gemini", domain: "gemini.google.com", count: "564", pct: "29.0%" },
+  { name: "Microsoft Copilot", domain: "copilot.microsoft.com", count: "184", pct: "9.4%" },
+  { name: "Claude", domain: "claude.ai", count: "68", pct: "3.5%" },
+  { name: "Other / Unlisted", domain: "", count: "30", pct: "1.5%" },
+];
 
-function Card({ title, subtitle, children, className = "" }: { title: string; subtitle?: string; children: React.ReactNode; className?: string }) {
-  return <section className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}><div className="mb-3"><h2 className="text-sm font-bold text-slate-800">{title} <span className="ml-1 text-slate-400">ⓘ</span></h2>{subtitle && <p className="mt-1 text-xs text-slate-500">{subtitle}</p>}</div>{children}</section>;
-}
+const TOP_RISK_USERS = [
+  { name: "Wong Li Na", dept: "Finance", events: 28, trend: "↑ 27%", isUp: true },
+  { name: "Siti Nur Aisyah", dept: "HR", events: 24, trend: "↑ 41%", isUp: true },
+  { name: "Arjun Raj", dept: "Sales", events: 19, trend: "↑ 11%", isUp: true },
+  { name: "Jason Tan", dept: "IT", events: 16, trend: "↓ 6%", isUp: false },
+  { name: "Kevin Yip", dept: "Finance", events: 15, trend: "↑ 15%", isUp: true },
+];
 
-function AttentionItem({ tone, symbol, title, description, to, action }: { tone: string; symbol: string; title: string; description: string; to: string; action: string }) {
-  return <div className="flex items-center gap-3 border-b border-slate-100 py-3 last:border-0"><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg font-bold ${tone}`}>{symbol}</span><div className="min-w-0 flex-1"><p className="text-sm font-bold text-slate-800">{title}</p><p className="mt-0.5 text-xs leading-4 text-slate-500">{description}</p></div><Link to={to} className="whitespace-nowrap rounded-md border border-slate-200 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50">{action} ›</Link></div>;
-}
+const RECENT_HIGH_RISK = [
+  {
+    ts: "12 May 2025, 10:18 AM",
+    user: "Wong Li Na",
+    tool: "ChatGPT",
+    userDept: "Finance",
+    predDept: "HR (92%)",
+    similarity: "87% (High)",
+    simTone: "text-rose-600 font-semibold",
+    sensitivity: "0.91 (High)",
+    sensTone: "text-rose-600 font-semibold",
+    cross: "Yes (88%)",
+    crossTone: "text-rose-600 font-semibold",
+    verdict: "HOLD",
+    verdictBadge: "bg-amber-100 text-amber-800 border border-amber-200",
+    status: "Pending",
+    statusBadge: "bg-blue-100 text-blue-700",
+    risk: "High",
+    riskBadge: "bg-rose-100 text-rose-700",
+  },
+  {
+    ts: "12 May 2025, 09:58 AM",
+    user: "Siti Nur Aisyah",
+    tool: "ChatGPT",
+    userDept: "HR",
+    predDept: "Finance (89%)",
+    similarity: "75% (High)",
+    simTone: "text-rose-600 font-semibold",
+    sensitivity: "0.93 (High)",
+    sensTone: "text-rose-600 font-semibold",
+    cross: "Yes (81%)",
+    crossTone: "text-rose-600 font-semibold",
+    verdict: "DENY",
+    verdictBadge: "bg-rose-100 text-rose-800 border border-rose-200",
+    status: "Reviewed",
+    statusBadge: "bg-emerald-100 text-emerald-700",
+    risk: "High",
+    riskBadge: "bg-rose-100 text-rose-700",
+  },
+  {
+    ts: "12 May 2025, 09:33 AM",
+    user: "Arjun Raj",
+    tool: "Microsoft Copilot",
+    userDept: "Sales",
+    predDept: "Sales (78%)",
+    similarity: "62% (Medium)",
+    simTone: "text-amber-600 font-semibold",
+    sensitivity: "0.63 (Medium)",
+    sensTone: "text-amber-600 font-semibold",
+    cross: "No (22%)",
+    crossTone: "text-emerald-600 font-semibold",
+    verdict: "REDACT",
+    verdictBadge: "bg-orange-100 text-orange-800 border border-orange-200",
+    status: "Reviewed",
+    statusBadge: "bg-emerald-100 text-emerald-700",
+    risk: "Medium",
+    riskBadge: "bg-amber-100 text-amber-700",
+  },
+  {
+    ts: "12 May 2025, 09:10 AM",
+    user: "Kevin Yip",
+    tool: "ChatGPT",
+    userDept: "Finance",
+    predDept: "Legal (90%)",
+    similarity: "81% (High)",
+    simTone: "text-rose-600 font-semibold",
+    sensitivity: "0.86 (High)",
+    sensTone: "text-rose-600 font-semibold",
+    cross: "Yes (76%)",
+    crossTone: "text-rose-600 font-semibold",
+    verdict: "HOLD",
+    verdictBadge: "bg-amber-100 text-amber-800 border border-amber-200",
+    status: "Pending",
+    statusBadge: "bg-blue-100 text-blue-700",
+    risk: "High",
+    riskBadge: "bg-rose-100 text-rose-700",
+  },
+  {
+    ts: "12 May 2025, 08:55 AM",
+    user: "Marcus Lee",
+    tool: "Microsoft Copilot",
+    userDept: "Operations",
+    predDept: "Operations (93%)",
+    similarity: "8% (Low)",
+    simTone: "text-emerald-600 font-semibold",
+    sensitivity: "0.12 (Low)",
+    sensTone: "text-emerald-600 font-semibold",
+    cross: "No (9%)",
+    crossTone: "text-emerald-600 font-semibold",
+    verdict: "ALLOW",
+    verdictBadge: "bg-emerald-100 text-emerald-800 border border-emerald-200",
+    status: "Reviewed",
+    statusBadge: "bg-emerald-100 text-emerald-700",
+    risk: "Low",
+    riskBadge: "bg-emerald-100 text-emerald-700",
+  },
+];
 
 export default function Overview() {
   const stats = useStatsQuery();
-  const pending = useLogsQuery({ limit: 1, offset: 0, status: "pending" });
-  const cross = useLogsQuery({ limit: 1, offset: 0, cross_department_only: true });
-  const recent = useLogsQuery({ limit: 100, offset: 0 });
-  const tools = useToolsQuery();
-  const [toolFilter, setToolFilter] = useState<"all" | ToolStatus>("all");
+  const logs = useLogsQuery({ limit: 5, offset: 0 });
 
-  if (stats.isLoading) return <div className="p-7"><div className="h-12 w-56 animate-pulse rounded bg-slate-200" /><div className="mt-6 grid grid-cols-4 gap-4">{[1, 2, 3, 4].map((item) => <div key={item} className="h-36 animate-pulse rounded-xl bg-slate-200" />)}</div></div>;
-  if (stats.isError || !stats.data) return <div className="p-7"><ErrorState message={(stats.error as Error)?.message ?? "Unknown error"} /></div>;
-
-  const byDecision = stats.data.by_decision;
-  const total = DECISIONS.reduce((sum, decision) => sum + (byDecision[decision] ?? 0), 0);
-  const byDay = pivotByDay(stats.data.by_day).slice(-7).map((row) => ({
-    ...row,
-    label: new Date(`${row.date}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" }),
-  }));
-  const dataClasses = stats.data.top_data_classes.map(([name, count]) => ({ name, count }));
-  const topUsers = stats.data.top_users.map(([name, count]) => ({ name, count }));
-  const unapprovedTools = (tools.data ?? []).filter((tool) => tool.status === "unapproved").length;
-  const shadowVisitTotal = (tools.data ?? [])
-    .filter((tool) => tool.host !== "chatgpt.com" && tool.host !== "gemini.google.com")
-    .reduce((sum, tool) => sum + tool.visit_count, 0);
-  const highRisk = [...(recent.data?.items ?? [])].filter((row) => row.decision !== "allow").sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 5);
-  const maxClass = Math.max(1, ...dataClasses.map((row) => row.count));
-  const maxUser = Math.max(1, ...topUsers.map((row) => row.count));
-  const filteredTools = (tools.data ?? []).filter((tool) => toolFilter === "all" || tool.status === toolFilter);
-  const filteredToolUsage = filteredTools.reduce((sum, tool) => sum + tool.usage_count + tool.visit_count, 0);
-  const toolUsagePie = usageShareByHost(filteredTools);
-
-  return <main className="space-y-4 px-5 py-6 lg:px-7">
-    <header className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-3xl font-bold tracking-tight text-slate-950">Overview</h1><p className="mt-1 text-sm text-slate-500">Monitor AI usage, policy outcomes and current risk across the organization.</p></div><div className="flex items-center gap-4 pt-2 text-xs text-slate-600"><span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-emerald-600" /> Live</span><span>Updated every 3s</span><button type="button" onClick={() => void stats.refetch()} className="text-lg text-slate-700">↻</button></div></header>
-
-    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">{DECISIONS.map((decision) => <KpiCard key={decision} decision={decision} count={byDecision[decision] ?? 0} total={total} pending={decision === "hold" ? pending.data?.total : undefined} />)}</section>
-
-    <section className="overview-top-grid gap-3"><Card title="Verdict Activity by Day" subtitle="Inspection outcomes by day (last 7 days)"><div className="h-48"><ResponsiveContainer width="100%" height="100%"><BarChart data={byDay} margin={{ top: 12, right: 5, left: -18, bottom: 0 }}><CartesianGrid vertical={false} stroke="#e8edf4" /><XAxis dataKey="label" tick={{ fontSize: 11, fill: "#52627a" }} axisLine={false} tickLine={false} /><YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#52627a" }} axisLine={false} tickLine={false} /><Tooltip /><Legend iconType="square" iconSize={9} wrapperStyle={{ fontSize: 11 }} /><Bar dataKey="allow" stackId="verdict" name="Allow" fill={COLORS.allow.solid} /><Bar dataKey="redact" stackId="verdict" name="Redact" fill={COLORS.redact.solid} /><Bar dataKey="hold" stackId="verdict" name="Hold" fill={COLORS.hold.solid} /><Bar dataKey="deny" stackId="verdict" name="Deny" fill={COLORS.deny.solid} /></BarChart></ResponsiveContainer></div></Card><Card title="Attention Required"><AttentionItem tone="bg-violet-100 text-violet-700" symbol="Ⅱ" title={`${pending.data?.total ?? 0} Pending Reviews`} description="Requests waiting for an administrator decision" to="/approvals" action="Open Approval Queue" /><AttentionItem tone="bg-amber-100 text-amber-700" symbol="◇" title={`${unapprovedTools} Unapproved AI Tools`} description={`New hosts require approval or blocking · ${shadowVisitTotal} shadow visits detected`} to="/policy/ai-tools" action="Review AI Tools" /><AttentionItem tone="bg-blue-100 text-blue-700" symbol="⌘" title={`${cross.data?.total ?? 0} Cross-department Events`} description="Higher-risk department mismatch detected" to="/" action="View Audit Log" /></Card></section>
-
-    <section className="overview-middle-grid gap-3"><Card title="Top Detected Data Classes" subtitle="By number of detections (last 7 days)"><div className="space-y-2.5 pt-2">{dataClasses.length ? dataClasses.map((row, index) => <div key={row.name} className="grid grid-cols-[122px_1fr_28px] items-center gap-3 text-xs"><span className="font-semibold text-slate-700">{row.name}</span><span className="h-1.5 overflow-hidden rounded-full bg-slate-100"><span className="block h-full rounded-full" style={{ width: `${(row.count / maxClass) * 100}%`, backgroundColor: ["#7441dc", "#4e87ed", "#10a295", "#f59a20", "#f6b644", "#5392f5"][index % 6] }} /></span><span className="font-bold text-slate-700">{row.count}</span></div>) : <EmptyState title="No detections yet" />}</div></Card><Card title="Top Users by Risk Events" subtitle="Counts only Redact, Hold and Deny events."><div className="space-y-3 pt-1">{topUsers.length ? topUsers.map((row, index) => <div key={row.name} className="grid grid-cols-[170px_1fr_26px] items-center gap-3 text-xs"><span className="flex min-w-0 items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-100 font-bold text-violet-700">{row.name[0].toUpperCase()}</span><span className="min-w-0"><span className="block truncate font-semibold text-slate-700">{row.name}</span><span className="block text-slate-500">Risk activity</span></span></span><span className="h-1.5 overflow-hidden rounded-full bg-slate-100"><span className="block h-full rounded-full bg-violet-600" style={{ width: `${(row.count / maxUser) * 100}%` }} /></span><span className="font-bold text-slate-700">{row.count}</span></div>) : <EmptyState title="No risk events yet" />}</div></Card></section>
-
-    <Card title="AI Tool Usage" subtitle="Usage across every AI host the gateway has seen, real and shadow.">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-slate-500">{filteredTools.length} hosts · {filteredToolUsage} uses</p>
-        <select value={toolFilter} onChange={(e) => setToolFilter(e.target.value as "all" | ToolStatus)} className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs">
-          {TOOL_USAGE_FILTERS.map((status) => <option key={status} value={status}>{status === "all" ? "All statuses" : status[0].toUpperCase() + status.slice(1)}</option>)}
-        </select>
+  return (
+    <main className="p-6 space-y-6 bg-slate-50 min-h-screen">
+      {/* Page Subtitle */}
+      <div className="-mt-1">
+        <p className="text-xs text-slate-500 font-medium">
+          Real-time overview of AI usage, risk posture and governance activity across the organisation.
+        </p>
       </div>
-      {toolUsagePie.length === 0 ? <EmptyState title="No usage recorded yet" /> : <div className="h-56"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={toolUsagePie} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80}>{toolUsagePie.map((_entry, index) => <Cell key={index} fill={TOOL_PIE_COLORS[index % TOOL_PIE_COLORS.length]} />)}</Pie><Tooltip /><Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} /></PieChart></ResponsiveContainer></div>}
-    </Card>
 
-    <Card title="Recent High-Risk Activity" subtitle="Latest events with Hold, Redact or Deny verdicts."><div className="mb-3 flex justify-end"><Link to="/" className="text-xs font-semibold text-blue-700">View all in Audit Log ›</Link></div><div className="overflow-x-auto"><table className="min-w-[960px] w-full divide-y divide-slate-100 text-xs"><thead className="bg-slate-50 text-left text-slate-600"><tr>{["Time", "User (Department)", "Target Host (Tier)", "Data Classes", "Request / File", "Verdict", "Status"].map((title) => <th key={title} className="px-3 py-2.5 font-bold">{title}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{highRisk.map((row) => <tr key={row.log_id}><td className="whitespace-nowrap px-3 py-3 font-medium text-slate-700">{dateTime(row.ts)}</td><td className="px-3 py-3"><span className="block font-semibold text-slate-700">{row.user_id}</span><span className="block text-slate-500">{row.user_department ?? "—"}</span></td><td className="px-3 py-3"><span className="block font-semibold text-slate-700">{row.target_host}</span><span className="block text-slate-500">PUBLIC_AI</span></td><td className="px-3 py-3"><DataClassPills dataClasses={row.data_classes} /></td><td className="max-w-[320px] px-3 py-3"><span className="block text-slate-700">{row.filename ? `▧ ${row.filename}` : `“${promptExcerpt(row.prompt_text)}”`}</span><span className="block text-slate-500">{row.filename ? "Attachment" : "Prompt"}</span></td><td className="px-3 py-3"><VerdictBadge decision={row.decision} /></td><td className="px-3 py-3"><StatusBadge status={row.status} /></td></tr>)}</tbody></table>{highRisk.length === 0 && <EmptyState title="No high-risk activity yet" />}</div></Card>
-  </main>;
+      {/* 1. Top KPI Cards Row */}
+      <section className="space-y-2">
+        <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+          AI Prompt Inspection <span className="font-normal text-slate-500 uppercase">(Last 7 Days)</span>
+        </h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {/* Allowed */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 font-bold text-sm">
+                ✓
+              </div>
+              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-600">
+                64.2%
+              </span>
+            </div>
+            <div>
+              <div className="text-2xl font-bold tracking-tight text-slate-900">1,248</div>
+              <div className="text-xs font-semibold text-slate-500">Allowed</div>
+            </div>
+            <div className="text-[11px] font-medium text-emerald-600">
+              ↑ 12.6% <span className="text-slate-400 font-normal">vs previous 7 days</span>
+            </div>
+          </div>
+
+          {/* Redacted */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-amber-600 font-bold text-sm">
+                ✎
+              </div>
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-600">
+                21.2%
+              </span>
+            </div>
+            <div>
+              <div className="text-2xl font-bold tracking-tight text-slate-900">412</div>
+              <div className="text-xs font-semibold text-slate-500">Redacted</div>
+            </div>
+            <div className="text-[11px] font-medium text-rose-500">
+              ↓ 4.3% <span className="text-slate-400 font-normal">vs previous 7 days</span>
+            </div>
+          </div>
+
+          {/* Held for Review */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-100 text-rose-600 font-bold text-sm">
+                ⏸
+              </div>
+              <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-bold text-rose-600">
+                8.0%
+              </span>
+            </div>
+            <div>
+              <div className="text-2xl font-bold tracking-tight text-slate-900">156</div>
+              <div className="text-xs font-semibold text-slate-500">Held for Review</div>
+            </div>
+            <div className="text-[11px] font-medium text-rose-600">
+              ↑ 18.7% <span className="text-slate-400 font-normal">vs previous 7 days</span>
+            </div>
+          </div>
+
+          {/* Denied */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-100 text-purple-600 font-bold text-sm">
+                🚫
+              </div>
+              <span className="rounded-full bg-purple-50 px-2 py-0.5 text-xs font-bold text-purple-600">
+                6.6%
+              </span>
+            </div>
+            <div>
+              <div className="text-2xl font-bold tracking-tight text-slate-900">132</div>
+              <div className="text-xs font-semibold text-slate-500">Denied</div>
+            </div>
+            <div className="text-[11px] font-medium text-purple-600">
+              ↓ 8.1% <span className="text-slate-400 font-normal">vs previous 7 days</span>
+            </div>
+          </div>
+
+          {/* Total Inspections */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 font-bold text-sm">
+                📄
+              </div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold tracking-tight text-slate-900">1,948</div>
+              <div className="text-xs font-semibold text-slate-500">Total Inspections</div>
+            </div>
+            <div className="text-[11px] font-medium text-emerald-600">
+              ↑ 6.5% <span className="text-slate-400 font-normal">vs previous 7 days</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 2. Middle Section (3 Columns) */}
+      <section className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+        {/* Inspection Trend (Last 7 Days) */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-slate-800">Inspection Trend (Last 7 Days)</h3>
+            <select className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 outline-none shadow-sm cursor-pointer">
+              <option>Last 7 days</option>
+              <option>Last 30 days</option>
+            </select>
+          </div>
+
+          {/* Legends */}
+          <div className="flex items-center gap-4 text-xs font-semibold">
+            <div className="flex items-center gap-1.5 text-emerald-600">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block" />
+              Allowed
+            </div>
+            <div className="flex items-center gap-1.5 text-amber-500">
+              <span className="h-2.5 w-2.5 rounded-full bg-amber-500 inline-block" />
+              Redacted
+            </div>
+            <div className="flex items-center gap-1.5 text-rose-500">
+              <span className="h-2.5 w-2.5 rounded-full bg-rose-500 inline-block" />
+              Held
+            </div>
+            <div className="flex items-center gap-1.5 text-purple-600">
+              <span className="h-2.5 w-2.5 rounded-full bg-purple-500 inline-block" />
+              Denied
+            </div>
+          </div>
+
+          <div className="h-48 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={TREND_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} domain={[0, 500]} />
+                <Tooltip />
+                <Line type="monotone" dataKey="allowed" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="redacted" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="held" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="denied" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Pending Approval Donut */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-3 space-y-4 flex flex-col justify-between">
+          <h3 className="text-xs font-bold text-slate-800">Pending Approval</h3>
+
+          <div className="flex items-center justify-between gap-2">
+            {/* SVG Ring Gauge */}
+            <div className="relative flex h-28 w-28 shrink-0 items-center justify-center">
+              <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="38" stroke="#e2e8f0" strokeWidth="12" fill="transparent" />
+                {/* Green Segment (16%) */}
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="38"
+                  stroke="#10b981"
+                  strokeWidth="12"
+                  fill="transparent"
+                  strokeDasharray="238.76"
+                  strokeDashoffset="200.5"
+                />
+                {/* Yellow Segment (34%) */}
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="38"
+                  stroke="#f59e0b"
+                  strokeWidth="12"
+                  fill="transparent"
+                  strokeDasharray="238.76"
+                  strokeDashoffset="119.3"
+                />
+                {/* Red Segment (50%) */}
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="38"
+                  stroke="#ef4444"
+                  strokeWidth="12"
+                  fill="transparent"
+                  strokeDasharray="238.76"
+                  strokeDashoffset="0"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span className="text-xl font-bold text-slate-900">156</span>
+                <span className="text-[10px] font-medium text-slate-500">Held requests</span>
+              </div>
+            </div>
+
+            {/* Legend Right */}
+            <div className="space-y-1.5 text-xs font-medium text-slate-700">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-rose-600">
+                  <span className="h-2 w-2 rounded-full bg-rose-500" /> High risk
+                </span>
+                <span className="font-bold text-slate-900">78 (50.0%)</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-amber-600">
+                  <span className="h-2 w-2 rounded-full bg-amber-500" /> Medium risk
+                </span>
+                <span className="font-bold text-slate-900">53 (34.0%)</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-emerald-600">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" /> Low risk
+                </span>
+                <span className="font-bold text-slate-900">25 (16.0%)</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Alert Banner */}
+          <div className="flex items-center gap-3 rounded-lg border border-rose-100 bg-rose-50/70 p-2.5 text-xs">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600 font-bold">
+              ⏰
+            </div>
+            <div>
+              <div className="text-slate-600 font-medium">Oldest request waiting</div>
+              <div className="text-rose-600 font-bold">
+                18 minutes <span className="text-slate-400 font-normal">Since 12 May 2025, 10:18 AM</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Cross-department Activity Donut */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-3 space-y-4 flex flex-col justify-between">
+          <h3 className="text-xs font-bold text-slate-800">Cross-department Activity (Last 7 Days)</h3>
+
+          <div className="flex items-center gap-4">
+            {/* SVG Ring Gauge */}
+            <div className="relative flex h-28 w-28 shrink-0 items-center justify-center">
+              <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="38" stroke="#e2e8f0" strokeWidth="12" fill="transparent" />
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="38"
+                  stroke="#059669"
+                  strokeWidth="12"
+                  fill="transparent"
+                  strokeDasharray="238.76"
+                  strokeDashoffset="182.8"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span className="text-lg font-bold text-slate-900">23.4%</span>
+                <span className="text-[10px] font-medium text-slate-500">Cross-department</span>
+              </div>
+            </div>
+
+            {/* Right side stats */}
+            <div className="space-y-3">
+              <div>
+                <div className="text-xl font-bold text-slate-900">456</div>
+                <div className="text-[11px] font-medium text-slate-500">Cross-department events</div>
+              </div>
+              <div>
+                <div className="text-xl font-bold text-slate-900">1,948</div>
+                <div className="text-[11px] font-medium text-slate-500">Total inspections</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-[11px] font-medium text-slate-400">
+            Confidence threshold: 80% <span className="cursor-pointer text-slate-400">ⓘ</span>
+          </div>
+        </div>
+      </section>
+
+      {/* 3. Lower Middle Grid Row (3 Columns) */}
+      <section className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        {/* Top Data Classes Detected */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 flex flex-col justify-between">
+          <h3 className="text-xs font-bold text-slate-800">Top Data Classes Detected (Last 7 Days)</h3>
+          <div className="space-y-3">
+            {DATA_CLASSES.map((item) => (
+              <div key={item.name} className="flex items-center gap-3 text-xs">
+                <span className="w-28 shrink-0 font-medium text-slate-700 truncate">{item.name}</span>
+                <div className="flex-1 overflow-hidden rounded-full bg-slate-100 h-2">
+                  <div className="h-full rounded-full bg-emerald-600" style={{ width: item.pct }} />
+                </div>
+                <span className="w-20 text-right font-medium text-slate-600">
+                  {item.count} <span className="text-slate-400 font-normal">({item.pct})</span>
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="pt-2">
+            <Link to="/policy/rules" className="text-xs font-semibold text-blue-600 hover:text-blue-800">
+              View all data classes ›
+            </Link>
+          </div>
+        </div>
+
+        {/* Top AI Tools by Usage */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 flex flex-col justify-between">
+          <h3 className="text-xs font-bold text-slate-800">Top AI Tools by Usage (Last 7 Days)</h3>
+          <div className="space-y-3">
+            {AI_TOOLS.map((tool) => (
+              <div key={tool.name} className="flex items-center gap-3 text-xs">
+                <span className="w-36 shrink-0 font-medium text-slate-700 truncate">
+                  {tool.name} {tool.domain && <span className="text-slate-400 font-normal text-[11px]">({tool.domain})</span>}
+                </span>
+                <div className="flex-1 overflow-hidden rounded-full bg-slate-100 h-2">
+                  <div className="h-full rounded-full bg-emerald-600" style={{ width: tool.pct }} />
+                </div>
+                <span className="w-20 text-right font-medium text-slate-600">
+                  {tool.count} <span className="text-slate-400 font-normal">({tool.pct})</span>
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="pt-2">
+            <Link to="/policy/ai-tools" className="text-xs font-semibold text-blue-600 hover:text-blue-800">
+              View all AI tools ›
+            </Link>
+          </div>
+        </div>
+
+        {/* Top Risk Users */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 flex flex-col justify-between">
+          <h3 className="text-xs font-bold text-slate-800">Top Risk Users <span className="font-normal text-slate-400">(By risk events)</span></h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-100 text-slate-400 font-medium">
+                <tr>
+                  <th className="pb-2">User</th>
+                  <th className="pb-2">Department</th>
+                  <th className="pb-2 text-center">Risk Events</th>
+                  <th className="pb-2 text-right">Trend (7D)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {TOP_RISK_USERS.map((user) => (
+                  <tr key={user.name}>
+                    <td className="py-2.5 font-medium text-slate-800">{user.name}</td>
+                    <td className="py-2.5 text-slate-500">{user.dept}</td>
+                    <td className="py-2.5 text-center font-bold text-slate-800">{user.events}</td>
+                    <td className={`py-2.5 text-right font-semibold ${user.isUp ? "text-rose-500" : "text-emerald-600"}`}>
+                      {user.trend}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="pt-2">
+            <Link to="/policy/users" className="text-xs font-semibold text-blue-600 hover:text-blue-800">
+              View all users ›
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. Bottom Table: Recent High-risk Activity */}
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-bold text-slate-800">Recent High-risk Activity</h3>
+          <Link to="/" className="text-xs font-semibold text-blue-600 hover:text-blue-800">
+            View all in Audit Log ›
+          </Link>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="border-b border-slate-200 bg-slate-50/80 font-bold text-slate-700 align-middle text-center">
+              <tr>
+                <th className="px-3 py-2.5 whitespace-nowrap text-left">Date &amp; Time ↓</th>
+                <th className="px-3 py-2.5 whitespace-nowrap text-left">User</th>
+                <th className="px-3 py-2.5 whitespace-nowrap text-left">AI Tool</th>
+                <th className="px-3 py-2.5 whitespace-nowrap text-center">User Dept.</th>
+                <th className="px-3 py-2.5 whitespace-nowrap text-center">Predicted Content Dept.</th>
+                <th className="px-3 py-2.5 whitespace-nowrap text-center">Doc Similarity Detect</th>
+                <th className="px-3 py-2.5 whitespace-nowrap text-center">Confidential Sensitivity Score</th>
+                <th className="px-3 py-2.5 whitespace-nowrap text-center">Cross Dept. (Confidence)</th>
+                <th className="px-3 py-2.5 whitespace-nowrap text-center">Verdict</th>
+                <th className="px-3 py-2.5 whitespace-nowrap text-center">Review Status</th>
+                <th className="px-3 py-2.5 whitespace-nowrap text-center">Risk Level</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 align-middle">
+              {RECENT_HIGH_RISK.map((row, idx) => (
+                <tr key={idx} className="hover:bg-slate-50/60">
+                  <td className="px-3 py-3 whitespace-nowrap text-slate-600 text-left">{row.ts}</td>
+                  <td className="px-3 py-3 whitespace-nowrap font-medium text-slate-800 text-left">{row.user}</td>
+                  <td className="px-3 py-3 whitespace-nowrap text-slate-700 text-left">{row.tool}</td>
+                  <td className="px-3 py-3 whitespace-nowrap text-slate-600 text-center">{row.userDept}</td>
+                  <td className="px-3 py-3 whitespace-nowrap text-slate-700 font-medium text-center">{row.predDept}</td>
+                  <td className={`px-3 py-3 whitespace-nowrap text-center ${row.simTone}`}>{row.similarity}</td>
+                  <td className={`px-3 py-3 whitespace-nowrap text-center ${row.sensTone}`}>{row.sensitivity}</td>
+                  <td className={`px-3 py-3 whitespace-nowrap text-center ${row.crossTone}`}>{row.cross}</td>
+                  <td className="px-3 py-3 whitespace-nowrap text-center">
+                    <span className={`inline-block rounded-md px-2.5 py-1 text-[11px] font-bold ${row.verdictBadge}`}>
+                      {row.verdict}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 whitespace-nowrap text-center">
+                    <span className={`inline-block rounded-md px-2.5 py-1 text-[11px] font-semibold ${row.statusBadge}`}>
+                      {row.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 whitespace-nowrap text-center">
+                    <span className={`inline-block rounded-md px-2.5 py-1 text-[11px] font-bold ${row.riskBadge}`}>
+                      {row.risk}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  );
 }
