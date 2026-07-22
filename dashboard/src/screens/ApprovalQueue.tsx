@@ -88,8 +88,23 @@ function getAvatarBg(name: string): string {
   return AVATAR_COLORS[index];
 }
 
+function getRiskLevel(row: AuditRecord): "HIGH" | "MEDIUM" | "LOW" {
+  if (row.decision === "deny" || row.decision === "hold" || isCrossDepartment(row)) {
+    return "HIGH";
+  }
+  if (row.decision === "redact") {
+    return "MEDIUM";
+  }
+  return "LOW";
+}
+
 export default function ApprovalQueue() {
   const [crossDepartmentOnly, setCrossDepartmentOnly] = useState(false);
+  const [riskFilter, setRiskFilter] = useState<"ALL" | "HIGH" | "MEDIUM" | "LOW">("ALL");
+  const [toolFilter, setToolFilter] = useState("ALL");
+  const [deptFilter, setDeptFilter] = useState("ALL");
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+
   const [sort, setSort] = useState<"oldest" | "newest">("oldest");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -101,30 +116,57 @@ export default function ApprovalQueue() {
     limit: 200,
     offset: 0,
     status: "pending",
-    cross_department_only: crossDepartmentOnly || undefined,
   });
 
   const decision = useLogDecisionMutation();
 
+  const activeFilterCount =
+    (crossDepartmentOnly ? 1 : 0) +
+    (riskFilter !== "ALL" ? 1 : 0) +
+    (toolFilter !== "ALL" ? 1 : 0) +
+    (deptFilter !== "ALL" ? 1 : 0);
+
   const allItems = useMemo(() => {
     const raw = logs.data?.items ?? [];
-    return [...raw].sort((a, b) =>
-      sort === "oldest" ? a.ts.localeCompare(b.ts) : b.ts.localeCompare(a.ts)
-    );
-  }, [logs.data?.items, sort]);
+    return [...raw].filter((row) => row.status === "pending");
+  }, [logs.data?.items]);
 
   const items = useMemo(() => {
-    if (!searchTerm.trim()) return allItems;
-    const term = searchTerm.toLowerCase();
-    return allItems.filter(
-      (item) =>
-        item.user_id.toLowerCase().includes(term) ||
-        item.log_id.toLowerCase().includes(term) ||
-        item.target_host.toLowerCase().includes(term) ||
-        (item.user_department && item.user_department.toLowerCase().includes(term)) ||
-        (item.filename && item.filename.toLowerCase().includes(term))
-    );
-  }, [allItems, searchTerm]);
+    return allItems
+      .filter((row) => {
+        if (crossDepartmentOnly && !isCrossDepartment(row)) return false;
+
+        if (riskFilter !== "ALL") {
+          const risk = getRiskLevel(row);
+          if (risk !== riskFilter) return false;
+        }
+
+        if (toolFilter !== "ALL") {
+          if (!row.target_host.toLowerCase().includes(toolFilter.toLowerCase())) return false;
+        }
+
+        if (deptFilter !== "ALL") {
+          const userDept = (row.user_department ?? "").toLowerCase();
+          if (userDept !== deptFilter.toLowerCase()) return false;
+        }
+
+        if (searchTerm.trim()) {
+          const term = searchTerm.toLowerCase();
+          const matchesSearch =
+            row.user_id.toLowerCase().includes(term) ||
+            row.log_id.toLowerCase().includes(term) ||
+            row.target_host.toLowerCase().includes(term) ||
+            (row.user_department && row.user_department.toLowerCase().includes(term)) ||
+            (row.filename && row.filename.toLowerCase().includes(term));
+          if (!matchesSearch) return false;
+        }
+
+        return true;
+      })
+      .sort((a, b) =>
+        sort === "oldest" ? a.ts.localeCompare(b.ts) : b.ts.localeCompare(a.ts)
+      );
+  }, [allItems, crossDepartmentOnly, riskFilter, toolFilter, deptFilter, searchTerm, sort]);
 
   const selected = items.find((item) => item.log_id === selectedId) ?? items[0] ?? null;
 
@@ -141,17 +183,16 @@ export default function ApprovalQueue() {
   }, [selected?.log_id]);
 
   // Top summary KPIs
-  const totalPending = logs.data?.total ?? allItems.length;
+  const totalPending = allItems.length;
   const crossDeptCount = useMemo(
     () => allItems.filter((i) => isCrossDepartment(i)).length,
     [allItems]
   );
 
   const oldestWaitText = useMemo(() => {
-    const raw = logs.data?.items ?? [];
-    if (!raw.length) return "0 min";
-    let oldestTs = raw[0].ts;
-    for (const item of raw) {
+    if (!allItems.length) return "0 min";
+    let oldestTs = allItems[0].ts;
+    for (const item of allItems) {
       if (item.ts.localeCompare(oldestTs) < 0) {
         oldestTs = item.ts;
       }
@@ -163,7 +204,7 @@ export default function ApprovalQueue() {
     if (hrs < 24) return `${hrs} hr${hrs > 1 ? "s" : ""}`;
     const days = Math.floor(hrs / 24);
     return `${days} day${days > 1 ? "s" : ""}`;
-  }, [logs.data?.items]);
+  }, [allItems]);
 
   async function handleDownload() {
     if (!selected) return;
@@ -188,7 +229,15 @@ export default function ApprovalQueue() {
       {/* 1. Top Summary Banner Row (4 KPI Cards) */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Card 1: Awaiting Review */}
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex items-center gap-4">
+        <div
+          onClick={() => {
+            setCrossDepartmentOnly(false);
+            setRiskFilter("ALL");
+            setToolFilter("ALL");
+            setDeptFilter("ALL");
+          }}
+          className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex items-center gap-4 cursor-pointer hover:border-emerald-400 transition"
+        >
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
             <svg className="h-6 w-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -202,7 +251,12 @@ export default function ApprovalQueue() {
         </div>
 
         {/* Card 2: Cross-department */}
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex items-center gap-4">
+        <div
+          onClick={() => setCrossDepartmentOnly(!crossDepartmentOnly)}
+          className={`rounded-xl border p-4 shadow-sm flex items-center gap-4 cursor-pointer transition ${
+            crossDepartmentOnly ? "border-amber-500 bg-amber-50/40 ring-1 ring-amber-500" : "border-slate-200 bg-white hover:border-amber-400"
+          }`}
+        >
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
             <svg className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -216,7 +270,10 @@ export default function ApprovalQueue() {
         </div>
 
         {/* Card 3: Oldest Request */}
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex items-center gap-4">
+        <div
+          onClick={() => setSort("oldest")}
+          className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex items-center gap-4 cursor-pointer hover:border-rose-400 transition"
+        >
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
             <svg className="h-6 w-6 text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -260,20 +317,104 @@ export default function ApprovalQueue() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </div>
-            <button
-              type="button"
-              onClick={() => setCrossDepartmentOnly(!crossDepartmentOnly)}
-              className={`rounded-xl border px-3 py-2 text-xs font-semibold shadow-sm flex items-center gap-1.5 transition ${
-                crossDepartmentOnly
-                  ? "border-emerald-600 bg-emerald-50 text-emerald-800"
-                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-              </svg>
-              Filters
-            </button>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowFilterMenu(!showFilterMenu)}
+                className={`rounded-xl border px-3 py-2 text-xs font-semibold shadow-sm flex items-center gap-1.5 transition ${
+                  activeFilterCount > 0
+                    ? "border-emerald-600 bg-emerald-50 text-emerald-800"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                Filters {activeFilterCount > 0 && <span className="rounded-full bg-emerald-600 px-1.5 py-0.2 text-[10px] text-white font-bold">{activeFilterCount}</span>}
+              </button>
+
+              {showFilterMenu && (
+                <div className="absolute right-0 top-11 z-30 w-72 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl space-y-3.5 text-xs text-slate-700">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <span className="font-bold text-slate-900 text-xs">Filter Requests</span>
+                    {activeFilterCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCrossDepartmentOnly(false);
+                          setRiskFilter("ALL");
+                          setToolFilter("ALL");
+                          setDeptFilter("ALL");
+                        }}
+                        className="text-[11px] font-bold text-emerald-700 hover:underline"
+                      >
+                        Reset filters
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Filter 1: Cross-department */}
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={crossDepartmentOnly}
+                      onChange={(e) => setCrossDepartmentOnly(e.target.checked)}
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600"
+                    />
+                    <span>Cross-department requests only</span>
+                  </label>
+
+                  {/* Filter 2: Risk Level */}
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Risk Level</label>
+                    <select
+                      value={riskFilter}
+                      onChange={(e) => setRiskFilter(e.target.value as "ALL" | "HIGH" | "MEDIUM" | "LOW")}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none focus:border-emerald-600 cursor-pointer"
+                    >
+                      <option value="ALL">All Risk Levels</option>
+                      <option value="HIGH">HIGH Risk</option>
+                      <option value="MEDIUM">MEDIUM Risk</option>
+                      <option value="LOW">LOW Risk</option>
+                    </select>
+                  </div>
+
+                  {/* Filter 3: AI Tool */}
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">AI Tool</label>
+                    <select
+                      value={toolFilter}
+                      onChange={(e) => setToolFilter(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none focus:border-emerald-600 cursor-pointer"
+                    >
+                      <option value="ALL">All AI Tools</option>
+                      <option value="chatgpt">ChatGPT</option>
+                      <option value="gemini">Gemini</option>
+                      <option value="copilot">Microsoft Copilot</option>
+                      <option value="claude">Claude</option>
+                    </select>
+                  </div>
+
+                  {/* Filter 4: User Department */}
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">User Department</label>
+                    <select
+                      value={deptFilter}
+                      onChange={(e) => setDeptFilter(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none focus:border-emerald-600 cursor-pointer"
+                    >
+                      <option value="ALL">All Departments</option>
+                      <option value="engineering">Engineering</option>
+                      <option value="finance">Finance</option>
+                      <option value="hr">HR</option>
+                      <option value="legal">Legal</option>
+                      <option value="it">IT</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Sort bar & Pending count */}

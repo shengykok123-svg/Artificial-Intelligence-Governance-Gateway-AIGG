@@ -114,7 +114,7 @@ function VerdictBadge({ decision }: { decision: Decision }) {
 }
 
 function ReviewStatusCell({ status, decision, reviewer }: { status: LogStatus; decision: Decision; reviewer: string | null }) {
-  if (status === "pending" || decision === "hold") {
+  if (status === "pending") {
     return (
       <div>
         <span className="inline-block rounded bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
@@ -124,14 +124,15 @@ function ReviewStatusCell({ status, decision, reviewer }: { status: LogStatus; d
       </div>
     );
   }
-  if (status === "approved" || reviewer) {
+  if (status === "approved" || status === "denied" || reviewer) {
+    const isDenied = status === "denied";
     return (
       <div>
-        <span className="inline-block rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-          APPROVED
+        <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold ${isDenied ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"}`}>
+          {isDenied ? "DENIED" : "APPROVED"}
         </span>
         <span className="block text-[11px] font-normal text-slate-500 mt-0.5">
-          Approved by {reviewer ?? "Sarah C."}
+          {isDenied ? "Denied" : "Approved"} by {reviewer ?? "Sarah C."}
         </span>
       </div>
     );
@@ -192,7 +193,7 @@ function EvidenceDrawer({
     );
   }
 
-  const isPending = row.status === "pending" || row.decision === "hold";
+  const isPending = row.status === "pending";
   const cross = isCrossDepartment(row);
   const toolMeta = getToolMeta(row.target_host);
 

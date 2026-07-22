@@ -175,11 +175,18 @@ export function useLogDecisionMutation() {
           ...old,
           items: old.items.map((row) =>
             row.log_id === logId
-              ? { ...row, status: body.approve ? "approved" : "denied", remark: body.remark }
+              ? {
+                  ...row,
+                  status: body.approve ? "approved" : "denied",
+                  reviewer: "Sarah Chong",
+                  reviewed_at: new Date().toISOString(),
+                  remark: body.remark,
+                }
               : row,
           ),
         };
       });
+      void queryClient.invalidateQueries({ queryKey: ["stats"] });
     },
   });
 }
