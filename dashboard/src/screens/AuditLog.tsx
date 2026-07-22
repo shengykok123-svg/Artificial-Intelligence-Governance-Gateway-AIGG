@@ -552,9 +552,60 @@ export default function AuditLog() {
           </div>
         </section>
 
-        {/* Results Counter */}
-        <div className="px-1 text-xs font-medium text-slate-500">
-          1 - 25 of 1,248 events
+        {/* Results Counter & Top-Right Pagination Controls */}
+        <div className="flex items-center justify-between px-1 text-xs font-semibold text-slate-600">
+          <div className="font-medium text-slate-500">
+            {total === 0 ? "0 results" : `${offset + 1} - ${Math.min(offset + PAGE_SIZE, total)} of ${total.toLocaleString()} events`}
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={offset === 0}
+                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 shadow-sm"
+              >
+                ‹
+              </button>
+              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-600 text-white font-bold shadow-sm">
+                1
+              </button>
+              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 shadow-sm">
+                2
+              </button>
+              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 shadow-sm">
+                3
+              </button>
+              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 shadow-sm">
+                4
+              </button>
+              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 shadow-sm">
+                5
+              </button>
+              <span className="px-0.5 text-slate-400">...</span>
+              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 shadow-sm">
+                50
+              </button>
+              <button
+                type="button"
+                disabled={offset + PAGE_SIZE >= total}
+                onClick={() => setOffset(offset + PAGE_SIZE)}
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 shadow-sm"
+              >
+                ›
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 font-medium">Rows per page:</span>
+              <select className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 outline-none shadow-sm">
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+          </div>
         </div>
 
         {/* Audit Log Data Table */}
@@ -699,56 +750,6 @@ export default function AuditLog() {
               </tbody>
             </table>
           </div>
-
-          {/* Footer Pagination */}
-          <footer className="flex items-center justify-between border-t border-slate-200 px-6 py-3 text-xs font-semibold text-slate-600 bg-slate-50/50">
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-                className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40"
-              >
-                ‹
-              </button>
-              <button type="button" className="flex h-7 w-7 items-center justify-center rounded bg-blue-600 text-white font-bold">
-                1
-              </button>
-              <button type="button" className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100">
-                2
-              </button>
-              <button type="button" className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100">
-                3
-              </button>
-              <button type="button" className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100">
-                4
-              </button>
-              <button type="button" className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100">
-                5
-              </button>
-              <span className="px-1 text-slate-400">...</span>
-              <button type="button" className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100">
-                50
-              </button>
-              <button
-                type="button"
-                disabled={offset + PAGE_SIZE >= total}
-                onClick={() => setOffset(offset + PAGE_SIZE)}
-                className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40"
-              >
-                ›
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500">Rows per page:</span>
-              <select className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 outline-none">
-                <option value="25">25</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
-            </div>
-          </footer>
         </section>
       </main>
 
