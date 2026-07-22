@@ -633,40 +633,39 @@ export default function AuditLog() {
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="border-b border-slate-200 bg-slate-50/80 font-bold text-slate-700 align-bottom">
+              <thead className="border-b border-slate-200 bg-slate-50/80 font-bold text-slate-700 align-bottom text-center">
                 <tr>
-                  <th className="px-4 py-2.5 whitespace-nowrap">
+                  <th className="px-4 py-2.5 whitespace-nowrap text-center">
                     <span className="block">Date &amp; Time</span>
-                    <span className="block text-[11px] text-slate-400 font-normal">↓</span>
                   </th>
-                  <th className="px-4 py-2.5 whitespace-nowrap">
+                  <th className="px-4 py-2.5 whitespace-nowrap text-center">
                     <span className="block">User</span>
                   </th>
-                  <th className="px-4 py-2.5 whitespace-nowrap">
+                  <th className="px-4 py-2.5 whitespace-nowrap text-center">
                     <span className="block">AI Tool</span>
                   </th>
-                  <th className="px-4 py-2.5 whitespace-nowrap">
+                  <th className="px-4 py-2.5 whitespace-nowrap text-center">
                     <span className="block">Document Similarity</span>
                     <span className="block font-medium text-slate-500">Detect <span className="text-slate-400 font-normal">ⓘ</span></span>
                   </th>
-                  <th className="px-4 py-2.5 whitespace-nowrap">
+                  <th className="px-4 py-2.5 whitespace-nowrap text-center">
                     <span className="block">Predicted Content</span>
                     <span className="block font-medium text-slate-500">(Sensitivity) <span className="text-slate-400 font-normal">ⓘ</span></span>
                   </th>
-                  <th className="px-4 py-2.5 whitespace-nowrap">
+                  <th className="px-4 py-2.5 whitespace-nowrap text-center">
                     <span className="block">Cross Department</span>
                     <span className="block font-medium text-slate-500">(Confidence) <span className="text-slate-400 font-normal">ⓘ</span></span>
                   </th>
-                  <th className="px-4 py-2.5 whitespace-nowrap">
+                  <th className="px-4 py-2.5 whitespace-nowrap text-center">
                     <span className="block">Verdict</span>
                   </th>
-                  <th className="px-4 py-2.5 whitespace-nowrap">
+                  <th className="px-4 py-2.5 whitespace-nowrap text-center">
                     <span className="block">Review Status</span>
                   </th>
                 </tr>
               </thead>
 
-              <tbody className="divide-y divide-slate-100 font-medium">
+              <tbody className="divide-y divide-slate-100 font-medium text-center">
                 {items.map((row, idx) => {
                   const isSelected = row.log_id === selectedId || (selectedId === null && idx === 0);
                   const cross = isCrossDepartment(row);
@@ -706,13 +705,13 @@ export default function AuditLog() {
                       }`}
                     >
                       {/* 1. Date & Time */}
-                      <td className="px-4 py-3.5 whitespace-nowrap">
+                      <td className="px-4 py-3.5 whitespace-nowrap text-center">
                         <span className="block font-semibold text-slate-900">{formattedDate}, {formattedTime}</span>
                         <span className="block text-[11px] text-slate-400 font-mono mt-0.5">{row.log_id}</span>
                       </td>
 
                       {/* 2. User */}
-                      <td className="px-4 py-3.5 whitespace-nowrap">
+                      <td className="px-4 py-3.5 whitespace-nowrap text-left">
                         <div className="flex items-center gap-2.5">
                           <div className={`flex h-7 w-7 items-center justify-center rounded-full ${avatar.bg} ${avatar.text} text-[11px] font-bold shadow-sm`}>
                             {avatar.initials}
@@ -725,7 +724,7 @@ export default function AuditLog() {
                       </td>
 
                       {/* 3. AI Tool */}
-                      <td className="px-4 py-3.5 whitespace-nowrap">
+                      <td className="px-4 py-3.5 whitespace-nowrap text-left">
                         <div className="flex items-center gap-2">
                           <div className="flex h-6 w-6 items-center justify-center rounded bg-slate-100">
                             {toolMeta.icon}
@@ -738,13 +737,13 @@ export default function AuditLog() {
                       </td>
 
                       {/* 4. Document Similarity Detect */}
-                      <td className="px-4 py-3.5 whitespace-nowrap">
+                      <td className="px-4 py-3.5 whitespace-nowrap text-center">
                         <span className={`block text-xs ${simColor}`}>{similarity}%</span>
                         <span className={`block text-[11px] ${simColor}`}>{simLevel}</span>
                       </td>
 
                       {/* 5. Predicted Content & Sensitivity */}
-                      <td className="px-4 py-3.5 whitespace-nowrap">
+                      <td className="px-4 py-3.5 whitespace-nowrap text-center">
                         <div>
                           <span className="block font-bold text-slate-900 leading-tight">
                             {formatDepartment(dept)} <span className="text-[11px] font-normal text-slate-400">({deptConf}%)</span>
@@ -756,7 +755,7 @@ export default function AuditLog() {
                       </td>
 
                       {/* 6. Cross Department (Confidence) */}
-                      <td className="px-4 py-3.5 whitespace-nowrap">
+                      <td className="px-4 py-3.5 whitespace-nowrap text-center">
                         <span className={`block text-xs ${cross ? "text-rose-600 font-bold" : "text-slate-700 font-semibold"}`}>
                           {cross ? "Yes" : "No"}
                         </span>
@@ -766,12 +765,14 @@ export default function AuditLog() {
                       </td>
 
                       {/* 7. Verdict */}
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <VerdictBadge decision={row.decision} />
+                      <td className="px-4 py-3.5 whitespace-nowrap text-center">
+                        <div className="flex justify-center">
+                          <VerdictBadge decision={row.decision} />
+                        </div>
                       </td>
 
                       {/* 8. Review Status */}
-                      <td className="px-4 py-3.5 whitespace-nowrap">
+                      <td className="px-4 py-3.5 whitespace-nowrap text-center">
                         <ReviewStatusCell status={row.status} decision={row.decision} reviewer={row.reviewer} />
                       </td>
                     </tr>
