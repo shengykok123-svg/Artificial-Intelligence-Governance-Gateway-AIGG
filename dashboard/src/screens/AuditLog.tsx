@@ -489,8 +489,28 @@ export default function AuditLog() {
   });
   const tools = useToolsQuery();
 
-  const items = logs.data?.items ?? [];
-  const total = logs.data?.total ?? items.length;
+  const rawItems = logs.data?.items ?? [];
+
+  const items = useMemo(() => {
+    if (!search.trim()) return rawItems;
+    const q = search.toLowerCase().trim();
+    return rawItems.filter((row) => {
+      const toolMeta = getToolMeta(row.target_host);
+      return (
+        row.user_id.toLowerCase().includes(q) ||
+        (row.user_department && row.user_department.toLowerCase().includes(q)) ||
+        (row.content_department && row.content_department.toLowerCase().includes(q)) ||
+        row.prompt_text.toLowerCase().includes(q) ||
+        row.log_id.toLowerCase().includes(q) ||
+        row.target_host.toLowerCase().includes(q) ||
+        toolMeta.name.toLowerCase().includes(q) ||
+        (row.reason && row.reason.toLowerCase().includes(q)) ||
+        (row.filename && row.filename.toLowerCase().includes(q))
+      );
+    });
+  }, [rawItems, search]);
+
+  const total = search.trim() ? items.length : (logs.data?.total ?? rawItems.length);
   const selected = items.find((item) => item.log_id === selectedId) ?? (items.length > 0 ? items[0] : null);
   const toolByHost = useMemo(() => new Map((tools.data ?? []).map((tool) => [tool.host, tool])), [tools.data]);
 
@@ -584,9 +604,12 @@ export default function AuditLog() {
               <input
                 type="text"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setOffset(0);
+                }}
                 placeholder="Search user, prompt, AI tool, event ID..."
-                className="w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 py-2 text-xs outline-none focus:border-blue-600"
+                className="w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 py-2 text-xs outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
               />
               <svg className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
