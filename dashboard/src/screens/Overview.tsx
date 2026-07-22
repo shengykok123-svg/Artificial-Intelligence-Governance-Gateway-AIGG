@@ -170,6 +170,22 @@ export default function Overview() {
   const stats = useStatsQuery();
   const logs = useLogsQuery({ limit: 5, offset: 0 });
 
+  const byDecision = stats.data?.by_decision ?? {};
+  const allowedCount = byDecision.allow ?? 1248;
+  const redactedCount = byDecision.redact ?? 412;
+  const heldCount = byDecision.hold ?? 156;
+  const deniedCount = byDecision.deny ?? 132;
+  const totalCount = (allowedCount + redactedCount + heldCount + deniedCount) || 1948;
+
+  const allowedPct = ((allowedCount / totalCount) * 100).toFixed(1);
+  const redactedPct = ((redactedCount / totalCount) * 100).toFixed(1);
+  const heldPct = ((heldCount / totalCount) * 100).toFixed(1);
+  const deniedPct = ((deniedCount / totalCount) * 100).toFixed(1);
+
+  const trendData = stats.data?.by_day && stats.data.by_day.length > 0
+    ? pivotByDay(stats.data.by_day)
+    : TREND_DATA;
+
   return (
     <main className="p-6 space-y-6 bg-slate-50 min-h-screen">
       {/* 1. Top KPI Cards Row */}
@@ -188,8 +204,8 @@ export default function Overview() {
               </div>
               <div className="flex-1">
                 <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-bold tracking-tight text-slate-900">1,248</span>
-                  <span className="text-xs font-bold text-emerald-600">64.2%</span>
+                  <span className="text-2xl font-bold tracking-tight text-slate-900">{allowedCount.toLocaleString()}</span>
+                  <span className="text-xs font-bold text-emerald-600">{allowedPct}%</span>
                 </div>
                 <div className="text-xs font-bold text-slate-800">Allowed</div>
               </div>
@@ -209,8 +225,8 @@ export default function Overview() {
               </div>
               <div className="flex-1">
                 <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-bold tracking-tight text-slate-900">412</span>
-                  <span className="text-xs font-bold text-amber-600">21.2%</span>
+                  <span className="text-2xl font-bold tracking-tight text-slate-900">{redactedCount.toLocaleString()}</span>
+                  <span className="text-xs font-bold text-amber-600">{redactedPct}%</span>
                 </div>
                 <div className="text-xs font-bold text-slate-800">Redacted</div>
               </div>
@@ -230,8 +246,8 @@ export default function Overview() {
               </div>
               <div className="flex-1">
                 <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-bold tracking-tight text-slate-900">156</span>
-                  <span className="text-xs font-bold text-rose-600">8.0%</span>
+                  <span className="text-2xl font-bold tracking-tight text-slate-900">{heldCount.toLocaleString()}</span>
+                  <span className="text-xs font-bold text-rose-600">{heldPct}%</span>
                 </div>
                 <div className="text-xs font-bold text-slate-800">Held for Review</div>
               </div>
@@ -251,8 +267,8 @@ export default function Overview() {
               </div>
               <div className="flex-1">
                 <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-bold tracking-tight text-slate-900">132</span>
-                  <span className="text-xs font-bold text-purple-600">6.6%</span>
+                  <span className="text-2xl font-bold tracking-tight text-slate-900">{deniedCount.toLocaleString()}</span>
+                  <span className="text-xs font-bold text-purple-600">{deniedPct}%</span>
                 </div>
                 <div className="text-xs font-bold text-slate-800">Denied</div>
               </div>
@@ -272,7 +288,7 @@ export default function Overview() {
               </div>
               <div className="flex-1">
                 <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-bold tracking-tight text-slate-900">1,948</span>
+                  <span className="text-2xl font-bold tracking-tight text-slate-900">{totalCount.toLocaleString()}</span>
                 </div>
                 <div className="text-xs font-bold text-slate-800">Total Inspections</div>
               </div>
@@ -320,7 +336,7 @@ export default function Overview() {
 
           <div className="h-48 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={TREND_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <LineChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} domain={[0, 500]} />
