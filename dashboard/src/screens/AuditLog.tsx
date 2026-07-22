@@ -15,6 +15,27 @@ export function isCrossDepartment(row: AuditRecord): boolean {
   );
 }
 
+function formatDepartment(dept: string | null): string {
+  if (!dept) return "—";
+  const normalized = dept.toLowerCase().trim();
+  const map: Record<string, string> = {
+    hr: "HR Dept",
+    finance: "Finance Dept",
+    it: "IT Dept",
+    legal: "Legal Dept",
+    engineering: "Engineering Dept",
+    marketing: "Marketing Dept",
+    sales: "Sales Dept",
+    operations: "Operations Dept",
+    other: "Other Dept",
+  };
+  if (map[normalized]) return map[normalized];
+  if (normalized.endsWith(" dept") || normalized.endsWith(" department")) {
+    return dept.replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  return `${dept.charAt(0).toUpperCase()}${dept.slice(1)} Dept`;
+}
+
 function getAvatarColor(name: string): { bg: string; text: string; initials: string } {
   const parts = name.trim().split(" ");
   const initials = parts.length >= 2 ? `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase() : name.slice(0, 2).toUpperCase();
@@ -248,7 +269,7 @@ function EvidenceDrawer({
             </div>
             <div className="flex justify-between py-1 border-b border-slate-100">
               <span className="text-slate-500">User</span>
-              <span className="font-medium text-slate-900">{row.user_id} ({row.user_department || "Finance Department"})</span>
+              <span className="font-medium text-slate-900">{row.user_id} ({formatDepartment(row.user_department)})</span>
             </div>
             <div className="flex justify-between py-1 border-b border-slate-100">
               <span className="text-slate-500">AI Tool</span>
@@ -256,7 +277,7 @@ function EvidenceDrawer({
             </div>
             <div className="flex justify-between py-1">
               <span className="text-slate-500">User Department</span>
-              <span className="font-medium text-slate-900">{row.user_department || "Finance Department"}</span>
+              <span className="font-medium text-slate-900">{formatDepartment(row.user_department)}</span>
             </div>
           </div>
         </section>
@@ -330,7 +351,7 @@ function EvidenceDrawer({
             </div>
             <div className="flex justify-between py-1 border-b border-slate-100">
               <span className="text-slate-500">Predicted Content Department</span>
-              <span className="font-medium text-slate-900">{predictedDept} (Confidence: {deptConf})</span>
+              <span className="font-medium text-slate-900">{formatDepartment(predictedDept)} (Confidence: {deptConf})</span>
             </div>
             <div className="flex justify-between py-1 border-b border-slate-100">
               <span className="text-slate-500">Confidential Sensitivity Score</span>
@@ -339,7 +360,7 @@ function EvidenceDrawer({
             <div className="flex justify-between py-1">
               <span className="text-slate-500">Cross Department (Confidence)</span>
               <span className="font-semibold text-rose-600">
-                {cross ? `Yes (${row.user_department || "Finance"} → ${predictedDept}) ${crossConf}%` : `No 15%`}
+                {cross ? `Yes (${formatDepartment(row.user_department)} → ${formatDepartment(predictedDept)}) ${crossConf}%` : `No 15%`}
               </span>
             </div>
           </div>
@@ -686,7 +707,7 @@ export default function AuditLog() {
                           </div>
                           <div>
                             <span className="block font-bold text-slate-900 leading-tight">{row.user_id}</span>
-                            <span className="block text-[11px] text-slate-400">{row.user_department || "Finance Dept"}</span>
+                            <span className="block text-[11px] text-slate-400">{formatDepartment(row.user_department)}</span>
                           </div>
                         </div>
                       </td>
@@ -714,7 +735,7 @@ export default function AuditLog() {
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <div>
                           <span className="block font-bold text-slate-900 leading-tight">
-                            {dept} <span className="text-[11px] font-normal text-slate-400">({deptConf}%)</span>
+                            {formatDepartment(dept)} <span className="text-[11px] font-normal text-slate-400">({deptConf}%)</span>
                           </span>
                           <span className={`block text-[11px] ${sensColor} mt-0.5`}>
                             Sensitivity: {sensitivity} ({sensLevel})
