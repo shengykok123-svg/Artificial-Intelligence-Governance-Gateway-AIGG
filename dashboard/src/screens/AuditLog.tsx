@@ -633,24 +633,36 @@ export default function AuditLog() {
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="border-b border-slate-200 bg-slate-50/80 font-bold text-slate-700">
+              <thead className="border-b border-slate-200 bg-slate-50/80 font-bold text-slate-700 align-bottom">
                 <tr>
-                  <th className="px-4 py-3 whitespace-nowrap">
-                    Date &amp; Time <span className="text-slate-400">↓</span>
+                  <th className="px-4 py-2.5 whitespace-nowrap">
+                    <span className="block">Date &amp; Time</span>
+                    <span className="block text-[11px] text-slate-400 font-normal">↓</span>
                   </th>
-                  <th className="px-4 py-3">User</th>
-                  <th className="px-4 py-3">AI Tool</th>
-                  <th className="px-4 py-3 whitespace-nowrap">
-                    Document Similarity Detect <span className="text-slate-400 font-normal">ⓘ</span>
+                  <th className="px-4 py-2.5 whitespace-nowrap">
+                    <span className="block">User</span>
                   </th>
-                  <th className="px-4 py-3 whitespace-nowrap">
-                    Predicted Content &amp; Sensitivity <span className="text-slate-400 font-normal">ⓘ</span>
+                  <th className="px-4 py-2.5 whitespace-nowrap">
+                    <span className="block">AI Tool</span>
                   </th>
-                  <th className="px-4 py-3 whitespace-nowrap">
-                    Cross Department (Confidence) <span className="text-slate-400 font-normal">ⓘ</span>
+                  <th className="px-4 py-2.5 whitespace-nowrap">
+                    <span className="block">Document Similarity</span>
+                    <span className="block font-medium text-slate-500">Detect <span className="text-slate-400 font-normal">ⓘ</span></span>
                   </th>
-                  <th className="px-4 py-3">Verdict</th>
-                  <th className="px-4 py-3 whitespace-nowrap">Review Status</th>
+                  <th className="px-4 py-2.5 whitespace-nowrap">
+                    <span className="block">Predicted Content</span>
+                    <span className="block font-medium text-slate-500">(Sensitivity) <span className="text-slate-400 font-normal">ⓘ</span></span>
+                  </th>
+                  <th className="px-4 py-2.5 whitespace-nowrap">
+                    <span className="block">Cross Department</span>
+                    <span className="block font-medium text-slate-500">(Confidence) <span className="text-slate-400 font-normal">ⓘ</span></span>
+                  </th>
+                  <th className="px-4 py-2.5 whitespace-nowrap">
+                    <span className="block">Verdict</span>
+                  </th>
+                  <th className="px-4 py-2.5 whitespace-nowrap">
+                    <span className="block">Review Status</span>
+                  </th>
                 </tr>
               </thead>
 
