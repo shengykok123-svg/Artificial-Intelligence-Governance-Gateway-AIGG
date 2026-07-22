@@ -180,100 +180,112 @@ export default function Overview() {
       </div>
 
       {/* 1. Top KPI Cards Row */}
-      <section className="space-y-2">
-        <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-          AI Prompt Inspection <span className="font-normal text-slate-500 uppercase">(Last 7 Days)</span>
+      <section className="space-y-3">
+        <h2 className="text-xs font-bold text-slate-900 tracking-tight">
+          AI Prompt Inspection (Last 7 Days)
         </h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {/* Allowed */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 font-bold text-sm">
-                ✓
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-between">
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100/80 text-emerald-700">
+                <svg className="h-7 w-7 text-emerald-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
               </div>
-              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-600">
-                64.2%
-              </span>
+              <div className="flex-1">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-bold tracking-tight text-slate-900">1,248</span>
+                  <span className="text-xs font-bold text-emerald-600">64.2%</span>
+                </div>
+                <div className="text-xs font-bold text-slate-800">Allowed</div>
+              </div>
             </div>
-            <div>
-              <div className="text-2xl font-bold tracking-tight text-slate-900">1,248</div>
-              <div className="text-xs font-semibold text-slate-500">Allowed</div>
-            </div>
-            <div className="text-[11px] font-medium text-emerald-600">
-              ↑ 12.6% <span className="text-slate-400 font-normal">vs previous 7 days</span>
+            <div className="mt-3 text-[11px] font-medium text-slate-500">
+              <span className="text-emerald-600 font-semibold">↑ 12.6%</span> vs previous 7 days
             </div>
           </div>
 
           {/* Redacted */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-amber-600 font-bold text-sm">
-                ✎
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-between">
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-100/80 text-amber-700">
+                <svg className="h-6 w-6 text-amber-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
               </div>
-              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-600">
-                21.2%
-              </span>
+              <div className="flex-1">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-bold tracking-tight text-slate-900">412</span>
+                  <span className="text-xs font-bold text-amber-600">21.2%</span>
+                </div>
+                <div className="text-xs font-bold text-slate-800">Redacted</div>
+              </div>
             </div>
-            <div>
-              <div className="text-2xl font-bold tracking-tight text-slate-900">412</div>
-              <div className="text-xs font-semibold text-slate-500">Redacted</div>
-            </div>
-            <div className="text-[11px] font-medium text-rose-500">
-              ↓ 4.3% <span className="text-slate-400 font-normal">vs previous 7 days</span>
+            <div className="mt-3 text-[11px] font-medium text-slate-500">
+              <span className="text-rose-500 font-semibold">↓ 4.3%</span> vs previous 7 days
             </div>
           </div>
 
           {/* Held for Review */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-100 text-rose-600 font-bold text-sm">
-                ⏸
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-between">
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-rose-100/80 text-rose-700">
+                <svg className="h-7 w-7 text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
               </div>
-              <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-bold text-rose-600">
-                8.0%
-              </span>
+              <div className="flex-1">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-bold tracking-tight text-slate-900">156</span>
+                  <span className="text-xs font-bold text-rose-600">8.0%</span>
+                </div>
+                <div className="text-xs font-bold text-slate-800">Held for Review</div>
+              </div>
             </div>
-            <div>
-              <div className="text-2xl font-bold tracking-tight text-slate-900">156</div>
-              <div className="text-xs font-semibold text-slate-500">Held for Review</div>
-            </div>
-            <div className="text-[11px] font-medium text-rose-600">
-              ↑ 18.7% <span className="text-slate-400 font-normal">vs previous 7 days</span>
+            <div className="mt-3 text-[11px] font-medium text-slate-500">
+              <span className="text-rose-600 font-semibold">↑ 18.7%</span> vs previous 7 days
             </div>
           </div>
 
           {/* Denied */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-100 text-purple-600 font-bold text-sm">
-                🚫
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-between">
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-purple-100/80 text-purple-700">
+                <svg className="h-7 w-7 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                </svg>
               </div>
-              <span className="rounded-full bg-purple-50 px-2 py-0.5 text-xs font-bold text-purple-600">
-                6.6%
-              </span>
+              <div className="flex-1">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-bold tracking-tight text-slate-900">132</span>
+                  <span className="text-xs font-bold text-purple-600">6.6%</span>
+                </div>
+                <div className="text-xs font-bold text-slate-800">Denied</div>
+              </div>
             </div>
-            <div>
-              <div className="text-2xl font-bold tracking-tight text-slate-900">132</div>
-              <div className="text-xs font-semibold text-slate-500">Denied</div>
-            </div>
-            <div className="text-[11px] font-medium text-purple-600">
-              ↓ 8.1% <span className="text-slate-400 font-normal">vs previous 7 days</span>
+            <div className="mt-3 text-[11px] font-medium text-slate-500">
+              <span className="text-purple-600 font-semibold">↓ 8.1%</span> vs previous 7 days
             </div>
           </div>
 
           {/* Total Inspections */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 font-bold text-sm">
-                📄
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-between">
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                <svg className="h-6 w-6 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-bold tracking-tight text-slate-900">1,948</span>
+                </div>
+                <div className="text-xs font-bold text-slate-800">Total Inspections</div>
               </div>
             </div>
-            <div>
-              <div className="text-2xl font-bold tracking-tight text-slate-900">1,948</div>
-              <div className="text-xs font-semibold text-slate-500">Total Inspections</div>
-            </div>
-            <div className="text-[11px] font-medium text-emerald-600">
-              ↑ 6.5% <span className="text-slate-400 font-normal">vs previous 7 days</span>
+            <div className="mt-3 text-[11px] font-medium text-slate-500">
+              <span className="text-emerald-600 font-semibold">↑ 6.5%</span> vs previous 7 days
             </div>
           </div>
         </div>
