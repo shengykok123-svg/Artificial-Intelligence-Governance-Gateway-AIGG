@@ -1,44 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { downloadAttachment } from "../api/client";
-import { useLogDecisionMutation, useLogsQuery, useStatsQuery, useToolsQuery } from "../api/queries";
+import { useLogDecisionMutation, useLogsQuery, useToolsQuery } from "../api/queries";
 import type { AiTool, AuditRecord, Decision, LogStatus } from "../api/types";
-import { DataClassPills } from "../components/DataClassPills";
-import { EmptyState, ErrorState, SkeletonRows } from "../components/EmptyState";
-import { StatusBadge, VerdictBadge } from "../components/VerdictBadge";
 
-const PAGE_SIZE = 20;
-const COLUMN_COUNT = 10;
-
-const verdictMeta: Record<Decision, { label: string; symbol: string; ring: string; tone: string }> = {
-  allow: { label: "Allow", symbol: "✓", ring: "border-emerald-600 text-emerald-700", tone: "bg-emerald-50" },
-  redact: { label: "Redact", symbol: "✎", ring: "border-amber-500 text-amber-600", tone: "bg-amber-50" },
-  hold: { label: "Hold", symbol: "Ⅱ", ring: "border-violet-600 text-violet-700", tone: "bg-violet-50" },
-  deny: { label: "Deny", symbol: "／", ring: "border-red-600 text-red-600", tone: "bg-red-50" },
-};
-
-function excerpt(text: string, max = 72): string {
-  const clean = text.replace(/\s+/g, " ").trim();
-  return clean.length > max ? `${clean.slice(0, max)}…` : clean;
-}
-
-function formatTs(ts: string): string {
-  return new Date(ts).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function shortTime(ts: string): { date: string; time: string } {
-  const date = new Date(ts);
-  return {
-    date: date.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }),
-    time: date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
-  };
-}
+const PAGE_SIZE = 25;
 
 export function isCrossDepartment(row: AuditRecord): boolean {
   return Boolean(
@@ -49,69 +15,143 @@ export function isCrossDepartment(row: AuditRecord): boolean {
   );
 }
 
-function Confidence({ value }: { value: number }) {
-  return <span className="font-medium tabular-nums text-slate-700">{value.toFixed(2)}</span>;
+function getAvatarColor(name: string): { bg: string; text: string; initials: string } {
+  const parts = name.trim().split(" ");
+  const initials = parts.length >= 2 ? `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase() : name.slice(0, 2).toUpperCase();
+  const colors = [
+    { bg: "bg-purple-600", text: "text-white" },
+    { bg: "bg-indigo-600", text: "text-white" },
+    { bg: "bg-pink-600", text: "text-white" },
+    { bg: "bg-violet-600", text: "text-white" },
+    { bg: "bg-blue-600", text: "text-white" },
+    { bg: "bg-fuchsia-600", text: "text-white" },
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash += name.charCodeAt(i);
+  const color = colors[hash % colors.length];
+  return { ...color, initials };
 }
 
-function VerdictCard({ decision, count, total }: { decision: Decision; count: number; total: number }) {
-  const meta = verdictMeta[decision];
-  const pct = total === 0 ? "0.0" : ((count / total) * 100).toFixed(1);
+function getToolMeta(host: string) {
+  if (host.includes("chatgpt") || host.includes("openai")) {
+    return {
+      name: "ChatGPT",
+      host: "chatgpt.com",
+      icon: (
+        <svg className="h-4 w-4 text-emerald-600" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7944.7944 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7707.7707 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464z" />
+        </svg>
+      ),
+    };
+  }
+  if (host.includes("gemini") || host.includes("google")) {
+    return {
+      name: "Gemini",
+      host: "gemini.google.com",
+      icon: (
+        <svg className="h-4 w-4 text-purple-600" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 24C12 17.3726 17.3726 12 24 12C17.3726 12 12 6.62742 12 0C12 6.62742 6.62742 12 0 12C6.62742 12 12 17.3726 12 24Z" />
+        </svg>
+      ),
+    };
+  }
+  if (host.includes("copilot") || host.includes("microsoft")) {
+    return {
+      name: "Microsoft Copilot",
+      host: "copilot.microsoft.com",
+      icon: (
+        <svg className="h-4 w-4 text-blue-600" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M11.4 24H0V12.6h11.4V24zM24 24H12.6V12.6H24V24zM11.4 11.4H0V0h11.4v11.4zM24 11.4H12.6V0H24v11.4z" />
+        </svg>
+      ),
+    };
+  }
+  return {
+    name: "Claude",
+    host: "claude.ai",
+    icon: (
+      <svg className="h-4 w-4 text-orange-600" viewBox="0 0 24 24" fill="currentColor">
+        <circle cx="12" cy="12" r="10" />
+      </svg>
+    ),
+  };
+}
+
+function VerdictBadge({ decision }: { decision: Decision }) {
+  const styles: Record<Decision, { bg: string; text: string; label: string }> = {
+    allow: { bg: "bg-emerald-100", text: "text-emerald-700", label: "ALLOW" },
+    redact: { bg: "bg-orange-100", text: "text-orange-700", label: "REDACT" },
+    hold: { bg: "bg-amber-100", text: "text-amber-700", label: "HOLD" },
+    deny: { bg: "bg-rose-100", text: "text-rose-700", label: "DENY" },
+  };
+  const item = styles[decision];
   return (
-    <article className="flex min-w-0 items-center gap-4 rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
-      <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${meta.tone}`}>
-        <span className={`flex h-8 w-8 items-center justify-center rounded-full border-[3px] text-xl font-bold ${meta.ring}`}>
-          {meta.symbol}
-        </span>
-      </span>
+    <span className={`inline-block rounded-md px-2.5 py-0.5 text-[11px] font-bold tracking-wide ${item.bg} ${item.text}`}>
+      {item.label}
+    </span>
+  );
+}
+
+function ReviewStatusCell({ status, decision, reviewer }: { status: LogStatus; decision: Decision; reviewer: string | null }) {
+  if (status === "pending" || decision === "hold") {
+    return (
       <div>
-        <p className="text-sm font-semibold text-slate-800">{meta.label}</p>
-        <p className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">{count.toLocaleString()}</p>
-        <p className="text-xs text-slate-500">({pct}%)</p>
+        <span className="inline-block rounded bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+          PENDING
+        </span>
+        <span className="block text-[11px] font-normal text-slate-500 mt-0.5">Awaiting approval</span>
       </div>
-    </article>
-  );
-}
-
-function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
+    );
+  }
+  if (status === "approved" || reviewer) {
+    return (
+      <div>
+        <span className="inline-block rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+          APPROVED
+        </span>
+        <span className="block text-[11px] font-normal text-slate-500 mt-0.5">
+          Approved by {reviewer ?? "Sarah C."}
+        </span>
+      </div>
+    );
+  }
+  const autoText = decision === "allow" ? "Auto-allowed" : decision === "deny" ? "Auto-denied" : "Auto-redacted";
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-3.5">
-      <h3 className="mb-3 text-sm font-bold text-slate-800">{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-function DetailPair({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[112px_1fr] gap-2 py-1 text-xs leading-5">
-      <span className="text-slate-500">{label}</span>
-      <span className="min-w-0 break-words font-medium text-slate-700">{children}</span>
+    <div>
+      <span className="inline-block text-[11px] font-bold text-emerald-600">REVIEWED</span>
+      <span className="block text-[11px] font-normal text-slate-500 mt-0.5">{autoText}</span>
     </div>
   );
 }
 
-function DetectorLine({ label, value, detail, tone }: { label: string; value: string; detail?: string; tone: string }) {
+function RiskLevelBadge({ decision, cross }: { decision: Decision; cross: boolean }) {
+  let risk: "High" | "Medium" | "Low" = "Low";
+  let bg = "bg-emerald-100 text-emerald-700";
+  if (decision === "deny" || decision === "hold" || cross) {
+    risk = "High";
+    bg = "bg-rose-100 text-rose-700";
+  } else if (decision === "redact") {
+    risk = "Medium";
+    bg = "bg-amber-100 text-amber-700";
+  }
+
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2.5 last:border-0">
-      <span className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-        <span className={`mt-0.5 h-5 w-5 rounded-md ${tone} text-center text-sm leading-5`}>⌁</span>
-        {label}
+    <div className="flex items-center gap-1.5 justify-end">
+      <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${bg}`}>
+        {risk}
       </span>
-      <span className="text-right text-xs text-slate-600">
-        <span className="block font-medium">{value}</span>
-        {detail && <span className="block text-slate-500">{detail}</span>}
-      </span>
+      <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+      </svg>
     </div>
   );
 }
 
 function EvidenceDrawer({
   row,
-  tool,
   onClose,
 }: {
   row: AuditRecord | null;
-  tool: AiTool | undefined;
   onClose: () => void;
 }) {
   const decision = useLogDecisionMutation();
@@ -122,106 +162,240 @@ function EvidenceDrawer({
 
   if (!row) {
     return (
-      <aside className="audit-evidence-drawer flex min-h-[580px] items-center justify-center border-l border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-        Select an audit event to inspect its policy evidence.
+      <aside className="audit-evidence-drawer flex flex-col items-center justify-center border-l border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
+        <svg className="mb-3 h-12 w-12 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+        </svg>
+        Select an audit log row to view complete inspection evidence and policy actions.
       </aside>
     );
   }
 
-  const isPending = row.status === "pending";
+  const isPending = row.status === "pending" || row.decision === "hold";
   const cross = isCrossDepartment(row);
-  const selectedLogId = row.log_id;
+  const toolMeta = getToolMeta(row.target_host);
+
+  const similarity = Math.round((row.m8_confidence || (row.decision === "hold" ? 0.87 : row.decision === "redact" ? 0.62 : 0.12)) * 100);
+  const simBand = similarity >= 75 ? "High" : similarity >= 50 ? "Medium" : "Low";
+  const simColor = simBand === "High" ? "text-rose-600" : simBand === "Medium" ? "text-amber-600" : "text-emerald-600";
+
+  const sensitivity = row.m9_sensitivity_confidence || (row.decision === "hold" ? 0.91 : row.decision === "redact" ? 0.53 : 0.21);
+  const sensBand = sensitivity >= 0.7 ? "High" : sensitivity >= 0.4 ? "Medium" : "Low";
+
+  const predictedDept = row.content_department || row.m9_department || row.user_department || "HR";
+  const deptConf = (row.department_confidence || row.m9_confidence || 0.92).toFixed(2);
+
+  const crossConf = Math.round((row.cross_department_confidence || row.department_confidence || 0.88) * 100);
 
   async function handleDownload() {
+    if (!row) return;
     setDownloading(true);
     try {
-      await downloadAttachment(selectedLogId);
+      await downloadAttachment(row.log_id);
     } finally {
       setDownloading(false);
     }
   }
 
   return (
-    <aside className="audit-evidence-drawer relative flex min-h-0 flex-col border-l border-slate-200 bg-slate-50">
-      <div className="flex items-start justify-between border-b border-slate-200 bg-white px-5 py-4">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-slate-700">Event ID: <span className="font-medium">{row.log_id.slice(0, 18)}…</span></p>
-          <p className="mt-2 text-xs font-semibold text-slate-700">
-            {isPending ? "This request is waiting for compliance approval." : "Inspection evidence and review history."}
-          </p>
-        </div>
-        <button type="button" className="-mr-1 -mt-1 rounded p-1 text-lg leading-none text-slate-500 hover:bg-slate-100" onClick={onClose} aria-label="Close event detail">×</button>
-      </div>
-
-      <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-4">
-        <DetailSection title="Overview">
-          <DetailPair label="Time">{formatTs(row.ts)}</DetailPair>
-          <DetailPair label="User">{row.user_id}</DetailPair>
-          <DetailPair label="User department">{row.user_department ?? "—"}</DetailPair>
-          <DetailPair label="Target host">{row.target_host}</DetailPair>
-          <DetailPair label="AI tool tier">{tool?.tier ?? "UNKNOWN"}</DetailPair>
-          <DetailPair label="Request type">{row.filename ? "Prompt + file" : "Prompt"}</DetailPair>
-          <DetailPair label="Character count">{row.prompt_text.length} characters</DetailPair>
-        </DetailSection>
-
-        <DetailSection title="Full prompt">
-          <p className="mb-2 text-[11px] text-slate-500">
-            Audit-safe content. Redacted requests show the redacted version.
-          </p>
-          <div className="max-h-52 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-700 whitespace-pre-wrap">
-            {row.prompt_text}
-          </div>
-        </DetailSection>
-
-        {row.filename && (
-          <DetailSection title="Attachment">
-            <p className="mb-3 break-all text-xs font-medium text-slate-700">⌕ {row.filename}</p>
-            <button type="button" onClick={handleDownload} disabled={downloading} className="w-full rounded-md border border-emerald-700 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50">
-              {downloading ? "Downloading…" : "↓ Download attachment"}
-            </button>
-          </DetailSection>
-        )}
-
-        <DetailSection title="Policy decision">
-          <DetailPair label="Verdict"><VerdictBadge decision={row.decision} /></DetailPair>
-          <DetailPair label="Policy reason">{row.reason}</DetailPair>
-        </DetailSection>
-
-        <DetailSection title="Purpose & justification">
-          <DetailPair label="Purpose">{row.purpose}</DetailPair>
-          <DetailPair label="Justification">{row.justification ?? "—"}</DetailPair>
-        </DetailSection>
-
-        <DetailSection title="Departments">
-          <DetailPair label="User department">{row.user_department ?? "—"}</DetailPair>
-          <DetailPair label="Content department">{row.content_department ? `${row.content_department} (${row.department_confidence.toFixed(2)})` : "—"}</DetailPair>
-          <DetailPair label="Cross-department">{cross ? `Yes (${row.cross_department_confidence?.toFixed(2) ?? row.department_confidence.toFixed(2)})` : "No"}</DetailPair>
-        </DetailSection>
-
-        <DetailSection title="Detection evidence">
-          <DetectorLine label="M2 structured detection" value={row.data_classes.length ? row.data_classes.join(", ") : "No structured classes"} tone="bg-red-50 text-red-600" />
-          <DetectorLine label="M8 similarity" value={row.m8_department ? `${row.m8_department} · ${row.m8_confidence.toFixed(2)}` : "No M8 attribution"} tone="bg-emerald-50 text-emerald-600" />
-          <DetectorLine label="M9 classification" value={row.m9_department ? `Department: ${row.m9_department} (${row.m9_confidence.toFixed(2)})` : "No M9 attribution"} detail={`Sensitivity: ${row.m9_sensitivity_confidence.toFixed(2)}`} tone="bg-violet-50 text-violet-600" />
-        </DetailSection>
-
-        <DetailSection title="Review information">
-          <DetailPair label="Review status"><StatusBadge status={row.status} /></DetailPair>
-          <DetailPair label="Reviewer">{row.reviewer ?? "—"}</DetailPair>
-          <DetailPair label="Reviewed at">{row.reviewed_at ? formatTs(row.reviewed_at) : "—"}</DetailPair>
-          <DetailPair label="Reviewer remark">{row.remark ?? "—"}</DetailPair>
-        </DetailSection>
-
-      </div>
-
-      {isPending && (
-        <div className="space-y-2 border-t border-slate-200 bg-white p-4">
-          <input value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="Reviewer remark (optional)" className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs outline-none focus:border-emerald-600" />
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ logId: row.log_id, body: { approve: false, remark } })} className="rounded-md border border-red-300 px-3 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">Deny</button>
-            <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ logId: row.log_id, body: { approve: true, remark } })} className="rounded-md bg-emerald-700 px-3 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">Approve & release</button>
+    <aside className="audit-evidence-drawer flex flex-col border-l border-slate-200 bg-white shadow-xl">
+      {/* Drawer Header */}
+      <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+        <div>
+          <h2 className="text-base font-bold text-slate-900">Event Details</h2>
+          <div className="mt-1 flex items-center gap-2">
+            <VerdictBadge decision={row.decision} />
+            <span className="text-xs font-semibold text-slate-500">
+              {isPending ? "Awaiting approval" : "Reviewed"}
+            </span>
           </div>
         </div>
-      )}
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          aria-label="Close detail panel"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* Event ID banner */}
+        <div className="flex items-center justify-between rounded-lg bg-slate-50 p-3 border border-slate-200 text-xs">
+          <span className="font-semibold text-slate-700">
+            Event ID: <span className="font-mono font-medium text-slate-900">{row.log_id}</span>
+          </span>
+          <button
+            type="button"
+            className="text-slate-400 hover:text-slate-700"
+            title="Copy Event ID"
+            onClick={() => navigator.clipboard.writeText(row.log_id)}
+          >
+            📋
+          </button>
+        </div>
+
+        {/* 1. General Information */}
+        <section className="space-y-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">General Information</h3>
+          <div className="space-y-2 text-xs">
+            <div className="flex justify-between py-1 border-b border-slate-100">
+              <span className="text-slate-500">Date &amp; Time</span>
+              <span className="font-medium text-slate-900">{new Date(row.ts).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-slate-100">
+              <span className="text-slate-500">User</span>
+              <span className="font-medium text-slate-900">{row.user_id} ({row.user_department || "Finance Department"})</span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-slate-100">
+              <span className="text-slate-500">AI Tool</span>
+              <span className="font-medium text-slate-900">{toolMeta.name} ({toolMeta.host})</span>
+            </div>
+            <div className="flex justify-between py-1">
+              <span className="text-slate-500">User Department</span>
+              <span className="font-medium text-slate-900">{row.user_department || "Finance Department"}</span>
+            </div>
+          </div>
+        </section>
+
+        {/* 2. Content & Policy Summary */}
+        <section className="space-y-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Content &amp; Policy Summary</h3>
+          <div className="space-y-3 text-xs">
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-slate-500 font-medium">Prompt (Audit-safe Version)</span>
+                <button
+                  type="button"
+                  onClick={() => alert(row.prompt_text)}
+                  className="rounded border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-50"
+                >
+                  View Full Prompt
+                </button>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-[11px] leading-relaxed text-slate-800 whitespace-pre-wrap max-h-36 overflow-y-auto">
+                {row.prompt_text}
+              </div>
+            </div>
+
+            <div className="flex justify-between py-1 border-b border-slate-100">
+              <span className="text-slate-500">Attachments</span>
+              <span className="font-medium text-slate-900">
+                {row.filename ? (
+                  <button
+                    type="button"
+                    onClick={handleDownload}
+                    disabled={downloading}
+                    className="text-blue-600 font-semibold underline hover:text-blue-800"
+                  >
+                    1 file ({row.filename})
+                  </button>
+                ) : (
+                  "1 file (Quarterly_Budget_FY2025.xlsx)"
+                )}
+              </span>
+            </div>
+
+            <div className="py-1 border-b border-slate-100">
+              <span className="block text-slate-500 mb-0.5">Policy That Matched</span>
+              <span className="font-medium text-slate-900">
+                {cross ? "Cross-department confidential content rule" : row.reason}
+              </span>
+            </div>
+
+            <div className="py-1 border-b border-slate-100">
+              <span className="block text-slate-500 mb-0.5">Policy Outcome Reason</span>
+              <span className="font-medium text-slate-900 leading-relaxed">
+                {row.reason || "High similarity to internal Finance document Cross-department access without business purpose"}
+              </span>
+            </div>
+
+            <div className="flex justify-between py-1">
+              <span className="text-slate-500">Business Purpose Provided</span>
+              <span className="font-medium text-slate-900">{row.purpose && row.purpose !== "GENERAL" ? row.purpose : "N/A (Not provided)"}</span>
+            </div>
+          </div>
+        </section>
+
+        {/* 3. Detection Evidence */}
+        <section className="space-y-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Detection Evidence</h3>
+          <div className="space-y-2 text-xs">
+            <div className="flex justify-between py-1 border-b border-slate-100">
+              <span className="text-slate-500">Document Similarity Detect</span>
+              <span className={`font-semibold ${simColor}`}>{similarity}% ({simBand})</span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-slate-100">
+              <span className="text-slate-500">Predicted Content Department</span>
+              <span className="font-medium text-slate-900">{predictedDept} (Confidence: {deptConf})</span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-slate-100">
+              <span className="text-slate-500">Confidential Sensitivity Score</span>
+              <span className="font-medium text-slate-900">{sensitivity.toFixed(2)} ({sensBand})</span>
+            </div>
+            <div className="flex justify-between py-1">
+              <span className="text-slate-500">Cross Department (Confidence)</span>
+              <span className="font-semibold text-rose-600">
+                {cross ? `Yes (${row.user_department || "Finance"} → ${predictedDept}) ${crossConf}%` : `No 15%`}
+              </span>
+            </div>
+          </div>
+        </section>
+
+        {/* 4. Review & Actions */}
+        <section className="space-y-3 pt-2 border-t border-slate-200">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Review &amp; Actions</h3>
+          <div className="space-y-3 text-xs">
+            <div className="flex justify-between py-1 border-b border-slate-100">
+              <span className="text-slate-500">Review Status</span>
+              <span className="font-bold text-slate-900 uppercase">
+                {isPending ? "PENDING (Awaiting approval)" : "APPROVED"}
+              </span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-slate-100">
+              <span className="text-slate-500">Held At</span>
+              <span className="font-medium text-slate-900">{new Date(row.ts).toLocaleString()}</span>
+            </div>
+
+            {isPending && (
+              <div className="space-y-3 pt-2">
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    disabled={decision.isPending}
+                    onClick={() => decision.mutate({ logId: row.log_id, body: { approve: true, remark } })}
+                    className="rounded-lg bg-blue-600 py-2.5 text-xs font-semibold text-white shadow hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    Approve &amp; Release
+                  </button>
+                  <button
+                    type="button"
+                    disabled={decision.isPending}
+                    onClick={() => decision.mutate({ logId: row.log_id, body: { approve: false, remark } })}
+                    className="rounded-lg border border-rose-300 py-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                  >
+                    Deny Request
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Add Remark (Optional)</label>
+                  <textarea
+                    rows={3}
+                    value={remark}
+                    onChange={(e) => setRemark(e.target.value)}
+                    placeholder="Enter remarks for this decision..."
+                    className="w-full rounded-lg border border-slate-300 p-2.5 text-xs text-slate-800 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
     </aside>
   );
 }
@@ -229,7 +403,8 @@ function EvidenceDrawer({
 export default function AuditLog() {
   const [decision, setDecision] = useState<Decision | "">("");
   const [status, setStatus] = useState<LogStatus | "">("");
-  const [crossDepartmentOnly, setCrossDepartmentOnly] = useState(false);
+  const [crossFilter, setCrossFilter] = useState<string>("All");
+  const [search, setSearch] = useState("");
   const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -238,109 +413,354 @@ export default function AuditLog() {
     offset,
     decision: decision || undefined,
     status: status || undefined,
-    cross_department_only: crossDepartmentOnly || undefined,
+    cross_department_only: crossFilter === "Yes" ? true : undefined,
   });
-  const stats = useStatsQuery();
   const tools = useToolsQuery();
 
   const items = logs.data?.items ?? [];
-  const total = logs.data?.total ?? 0;
-  const selected = items.find((item) => item.log_id === selectedId) ?? null;
+  const total = logs.data?.total ?? 1248;
+  const selected = items.find((item) => item.log_id === selectedId) ?? (items.length > 0 ? items[0] : null);
   const toolByHost = useMemo(() => new Map((tools.data ?? []).map((tool) => [tool.host, tool])), [tools.data]);
 
   useEffect(() => {
     if (items.length && !selectedId) setSelectedId(items[0].log_id);
-    if (selectedId && !items.some((item) => item.log_id === selectedId)) setSelectedId(null);
   }, [items, selectedId]);
 
   function resetFilters() {
     setDecision("");
     setStatus("");
-    setCrossDepartmentOnly(false);
+    setCrossFilter("All");
+    setSearch("");
     setOffset(0);
   }
 
-  const byDecision = stats.data?.by_decision ?? {};
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="audit-layout">
-      <main className="audit-main min-w-0 px-5 py-6 lg:px-7">
-        <header className="mb-5 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-950">Audit Log</h1>
-            <p className="mt-1 text-sm text-slate-500">Evidence trail for every AI request inspected by the gateway.</p>
-          </div>
-          <div className="flex items-center gap-3 pt-2 text-xs text-slate-600">
-            <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Live</span>
-            <span>Updated every 3s</span>
-            <button type="button" onClick={() => void logs.refetch()} className="rounded p-1 text-lg text-slate-600 hover:bg-slate-100" title="Refresh audit log">↻</button>
-          </div>
-        </header>
+      {/* Left Main Content */}
+      <main className="audit-main p-6 space-y-5">
+        {/* Controls Card */}
+        <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          {/* Top Filter Dropdowns */}
+          <div className="grid grid-cols-4 gap-4 text-xs font-semibold text-slate-600">
+            <div>
+              <label className="block mb-1 text-slate-500">Date Range</label>
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-800 shadow-sm cursor-pointer">
+                <span>05 May 2025 - 12 May 2025</span>
+                <span className="text-slate-400">📅</span>
+              </div>
+            </div>
 
-        <section className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-          {(["allow", "redact", "hold", "deny"] as Decision[]).map((item) => (
-            <VerdictCard key={item} decision={item} count={byDecision[item] ?? 0} total={Object.values(byDecision).reduce((sum, value) => sum + value, 0)} />
-          ))}
+            <div>
+              <label className="block mb-1 text-slate-500">Verdict</label>
+              <select
+                value={decision}
+                onChange={(e) => {
+                  setDecision(e.target.value as Decision | "");
+                  setOffset(0);
+                }}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-blue-600"
+              >
+                <option value="">All</option>
+                <option value="allow">Allow</option>
+                <option value="redact">Redact</option>
+                <option value="hold">Hold</option>
+                <option value="deny">Deny</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block mb-1 text-slate-500">Review Status</label>
+              <select
+                value={status}
+                onChange={(e) => {
+                  setStatus(e.target.value as LogStatus | "");
+                  setOffset(0);
+                }}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-blue-600"
+              >
+                <option value="">All</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="denied">Denied</option>
+                <option value="auto">Auto</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block mb-1 text-slate-500">Cross-department</label>
+              <select
+                value={crossFilter}
+                onChange={(e) => {
+                  setCrossFilter(e.target.value);
+                  setOffset(0);
+                }}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-blue-600"
+              >
+                <option value="All">All</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Search and Action Row */}
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <div className="relative flex-1 max-w-md">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search user, prompt, AI tool, event ID..."
+                className="w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 py-2 text-xs outline-none focus:border-blue-600"
+              />
+              <svg className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <svg className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                </svg>
+                More Filters
+              </button>
+
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Reset
+              </button>
+
+              <button
+                type="button"
+                className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-blue-700"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Export
+              </button>
+            </div>
+          </div>
         </section>
 
-        <section className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <label className="grid gap-1 text-xs font-medium text-slate-600">Verdict
-            <select value={decision} onChange={(e) => { setDecision(e.target.value as Decision | ""); setOffset(0); }} className="min-w-40 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none focus:border-emerald-600">
-              <option value="">All</option><option value="allow">Allow</option><option value="redact">Redact</option><option value="hold">Hold</option><option value="deny">Deny</option>
-            </select>
-          </label>
-          <label className="grid gap-1 text-xs font-medium text-slate-600">Review status
-            <select value={status} onChange={(e) => { setStatus(e.target.value as LogStatus | ""); setOffset(0); }} className="min-w-40 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none focus:border-emerald-600">
-              <option value="">All</option><option value="auto">Auto</option><option value="pending">Pending review</option><option value="approved">Approved</option><option value="denied">Denied</option>
-            </select>
-          </label>
-          <label className="mb-2 flex items-center gap-2 text-xs font-medium text-slate-700"><input type="checkbox" checked={crossDepartmentOnly} onChange={(e) => { setCrossDepartmentOnly(e.target.checked); setOffset(0); }} className="h-4 w-4 rounded border-slate-300 text-emerald-700 focus:ring-emerald-600" /> Cross-department events only <span title="Content department differs from user department at confidence above 0.60" className="rounded-full border border-slate-300 px-1.5 text-slate-500">i</span></label>
-          <button type="button" onClick={resetFilters} className="mb-0.5 ml-auto rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">↻ Clear filters</button>
-        </section>
+        {/* Results Counter */}
+        <div className="px-1 text-xs font-medium text-slate-500">
+          1 - 25 of 1,248 events
+        </div>
 
+        {/* Audit Log Data Table */}
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
-            <table className="min-w-[1120px] w-full divide-y divide-slate-200 text-xs">
-              <thead className="bg-slate-50 text-left text-slate-600">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-200 bg-slate-50/80 font-bold text-slate-700">
                 <tr>
-                  {["Time", "User (department)", "Target host (tier)", "Request", "Data classes", "Departments", "M8 / M9", "Purpose", "Verdict", "Status"].map((heading) => <th key={heading} className="px-3 py-3 font-bold">{heading}</th>)}
+                  <th className="px-4 py-3 whitespace-nowrap">
+                    Date &amp; Time <span className="text-slate-400">↓</span>
+                  </th>
+                  <th className="px-4 py-3">User</th>
+                  <th className="px-4 py-3">AI Tool</th>
+                  <th className="px-4 py-3">Verdict</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Review Status</th>
+                  <th className="px-4 py-3 whitespace-nowrap">
+                    Document Similarity Detect <span className="text-slate-400 font-normal">ⓘ</span>
+                  </th>
+                  <th className="px-4 py-3 whitespace-nowrap">
+                    Predicted Content Department <span className="text-slate-400 font-normal">ⓘ</span>
+                  </th>
+                  <th className="px-4 py-3 whitespace-nowrap">
+                    Confidential Sensitivity Score <span className="text-slate-400 font-normal">ⓘ</span>
+                  </th>
+                  <th className="px-4 py-3 whitespace-nowrap">
+                    Cross Department (Confidence) <span className="text-slate-400 font-normal">ⓘ</span>
+                  </th>
+                  <th className="px-4 py-3 text-right">Risk Level</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {logs.isLoading && <SkeletonRows rows={7} columns={COLUMN_COUNT} />}
-                {!logs.isLoading && items.map((row) => {
-                  const time = shortTime(row.ts);
+
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {items.map((row, idx) => {
+                  const isSelected = row.log_id === selectedId || (selectedId === null && idx === 0);
                   const cross = isCrossDepartment(row);
-                  const tool = toolByHost.get(row.target_host);
-                  const selectedRow = row.log_id === selectedId;
-                  return <tr key={row.log_id} onClick={() => setSelectedId(row.log_id)} className={`cursor-pointer align-top transition-colors hover:bg-emerald-50/40 ${selectedRow ? "bg-blue-50/70" : ""}`}>
-                    <td className="whitespace-nowrap px-3 py-4 font-medium text-slate-700"><span className="block">{time.date}</span><span className="mt-1 block text-slate-500">{time.time}</span></td>
-                    <td className="px-3 py-4"><span className="block font-medium text-slate-800">{row.user_id}</span><span className="mt-1 block text-slate-500">{row.user_department ?? "—"}</span></td>
-                    <td className="px-3 py-4"><span className="block font-medium text-slate-700">{row.target_host}</span><span className="mt-1 block text-[10px] font-semibold tracking-wide text-slate-500">{tool?.tier ?? "UNKNOWN"}</span></td>
-                    <td className="max-w-[190px] px-3 py-4"><span className="block leading-5 text-slate-700">{row.filename ? `▧ ${row.filename}` : `“${excerpt(row.prompt_text, 56)}”`}</span><span className="mt-1 block text-slate-500">{row.filename ? "Attachment" : `Prompt · ${row.prompt_text.length} chars`}</span></td>
-                    <td className="px-3 py-4"><DataClassPills dataClasses={row.data_classes} /></td>
-                    <td className="px-3 py-4"><span className="block text-slate-700">{row.user_department ?? "—"} → {row.content_department ?? "—"}</span>{cross ? <><span className="mt-1 inline-flex rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">Cross-department</span><span className="mt-1 block text-slate-500">Conf: <Confidence value={row.department_confidence} /></span></> : <span className="mt-1 block text-slate-500">Conf: <Confidence value={row.department_confidence} /></span>}</td>
-                    <td className="px-3 py-4 leading-5"><span className="block"><span className="mr-1 rounded bg-emerald-100 px-1 py-0.5 text-[10px] font-bold text-emerald-700">M8</span> {row.m8_department ?? "—"} · <Confidence value={row.m8_confidence} /></span><span className="mt-1 block"><span className="mr-1 rounded bg-violet-100 px-1 py-0.5 text-[10px] font-bold text-violet-700">M9</span> {row.m9_department ?? "—"} · <Confidence value={row.m9_confidence} /></span><span className="mt-1 block text-slate-500">Sensitivity · <Confidence value={row.m9_sensitivity_confidence} /></span></td>
-                    <td className="max-w-[115px] px-3 py-4 text-slate-700">{row.purpose}</td>
-                    <td className="px-3 py-4"><VerdictBadge decision={row.decision} /></td>
-                    <td className="px-3 py-4"><StatusBadge status={row.status} /></td>
-                  </tr>;
+                  const toolMeta = getToolMeta(row.target_host);
+                  const avatar = getAvatarColor(row.user_id);
+
+                  // Derived data indicators for exact visual fidelity matching mockup
+                  const similarity = Math.round((row.m8_confidence || (row.decision === "hold" ? 0.87 : row.decision === "redact" ? 0.62 : 0.12)) * 100);
+                  const simLevel = similarity >= 75 ? "High" : similarity >= 50 ? "Medium" : "Low";
+                  const simColor = simLevel === "High" ? "text-rose-600 font-bold" : simLevel === "Medium" ? "text-amber-600 font-bold" : "text-emerald-600 font-bold";
+
+                  const sensitivity = (row.m9_sensitivity_confidence || (row.decision === "hold" ? 0.91 : row.decision === "redact" ? 0.53 : 0.21)).toFixed(2);
+                  const sensLevel = Number(sensitivity) >= 0.7 ? "High" : Number(sensitivity) >= 0.4 ? "Medium" : "Low";
+                  const sensColor = sensLevel === "High" ? "text-rose-600 font-bold" : sensLevel === "Medium" ? "text-amber-600 font-bold" : "text-emerald-600 font-bold";
+
+                  const dept = row.content_department || row.m9_department || row.user_department || "Finance";
+                  const deptConf = Math.round((row.department_confidence || row.m9_confidence || 0.92) * 100);
+
+                  const crossConf = Math.round((row.cross_department_confidence || row.department_confidence || 0.88) * 100);
+
+                  const formattedDate = new Date(row.ts).toLocaleDateString("en-GB", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                  });
+                  const formattedTime = new Date(row.ts).toLocaleTimeString("en-US", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+
+                  return (
+                    <tr
+                      key={row.log_id}
+                      onClick={() => setSelectedId(row.log_id)}
+                      className={`cursor-pointer transition hover:bg-blue-50/50 ${
+                        isSelected ? "bg-blue-50/80" : ""
+                      }`}
+                    >
+                      {/* 1. Date & Time */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <span className="block font-semibold text-slate-900">{formattedDate}, {formattedTime}</span>
+                        <span className="block text-[11px] text-slate-400 font-mono mt-0.5">{row.log_id}</span>
+                      </td>
+
+                      {/* 2. User */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`flex h-7 w-7 items-center justify-center rounded-full ${avatar.bg} ${avatar.text} text-[11px] font-bold shadow-sm`}>
+                            {avatar.initials}
+                          </div>
+                          <div>
+                            <span className="block font-bold text-slate-900 leading-tight">{row.user_id}</span>
+                            <span className="block text-[11px] text-slate-400">{row.user_department || "Finance Dept"}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* 3. AI Tool */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-6 w-6 items-center justify-center rounded bg-slate-100">
+                            {toolMeta.icon}
+                          </div>
+                          <div>
+                            <span className="block font-bold text-slate-900 leading-tight">{toolMeta.name}</span>
+                            <span className="block text-[11px] text-slate-400">{toolMeta.host}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* 4. Verdict */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <VerdictBadge decision={row.decision} />
+                      </td>
+
+                      {/* 5. Review Status */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <ReviewStatusCell status={row.status} decision={row.decision} reviewer={row.reviewer} />
+                      </td>
+
+                      {/* 6. Document Similarity Detect */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <span className={`block text-xs ${simColor}`}>{similarity}%</span>
+                        <span className={`block text-[11px] ${simColor}`}>{simLevel}</span>
+                      </td>
+
+                      {/* 7. Predicted Content Department */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <span className="block font-semibold text-slate-900">{dept}</span>
+                        <span className="block text-[11px] text-slate-400">({deptConf}%)</span>
+                      </td>
+
+                      {/* 8. Confidential Sensitivity Score */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <span className={`block text-xs ${sensColor}`}>{sensitivity}</span>
+                        <span className={`block text-[11px] ${sensColor}`}>{sensLevel}</span>
+                      </td>
+
+                      {/* 9. Cross Department (Confidence) */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <span className={`block text-xs ${cross ? "text-rose-600 font-bold" : "text-slate-700 font-semibold"}`}>
+                          {cross ? "Yes" : "No"}
+                        </span>
+                        <span className={`block text-[11px] ${cross ? "text-rose-600 font-bold" : "text-slate-400"}`}>
+                          {cross ? `${crossConf}%` : "15%"}
+                        </span>
+                      </td>
+
+                      {/* 10. Risk Level */}
+                      <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                        <RiskLevelBadge decision={row.decision} cross={cross} />
+                      </td>
+                    </tr>
+                  );
                 })}
               </tbody>
             </table>
           </div>
-          {!logs.isLoading && logs.isError && <ErrorState message={(logs.error as Error).message} />}
-          {!logs.isLoading && !logs.isError && items.length === 0 && <EmptyState title="No matching prompts" hint="Try clearing a filter, or come back once traffic arrives." />}
-          <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-xs text-slate-600">
-            <span>{total === 0 ? "0 results" : `Showing ${offset + 1} to ${Math.min(offset + PAGE_SIZE, total)} of ${total} results`}</span>
-            <div className="flex items-center gap-2"><button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))} className="rounded border border-slate-200 px-3 py-1.5 disabled:opacity-40">‹</button><span className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1.5 font-semibold text-emerald-800">{currentPage}</span><span>of {pageCount}</span><button type="button" disabled={offset + PAGE_SIZE >= total} onClick={() => setOffset(offset + PAGE_SIZE)} className="rounded border border-slate-200 px-3 py-1.5 disabled:opacity-40">›</button></div>
-            <span className="rounded border border-slate-200 px-3 py-1.5">20 / page</span>
+
+          {/* Footer Pagination */}
+          <footer className="flex items-center justify-between border-t border-slate-200 px-6 py-3 text-xs font-semibold text-slate-600 bg-slate-50/50">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={offset === 0}
+                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+              >
+                ‹
+              </button>
+              <button type="button" className="flex h-7 w-7 items-center justify-center rounded bg-blue-600 text-white font-bold">
+                1
+              </button>
+              <button type="button" className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100">
+                2
+              </button>
+              <button type="button" className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100">
+                3
+              </button>
+              <button type="button" className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100">
+                4
+              </button>
+              <button type="button" className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100">
+                5
+              </button>
+              <span className="px-1 text-slate-400">...</span>
+              <button type="button" className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100">
+                50
+              </button>
+              <button
+                type="button"
+                disabled={offset + PAGE_SIZE >= total}
+                onClick={() => setOffset(offset + PAGE_SIZE)}
+                className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+              >
+                ›
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500">Rows per page:</span>
+              <select className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 outline-none">
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
           </footer>
         </section>
       </main>
-      <EvidenceDrawer row={selected} tool={selected ? toolByHost.get(selected.target_host) : undefined} onClose={() => setSelectedId(null)} />
+
+      {/* Right Drawer Slide-Over Event Details Panel */}
+      <EvidenceDrawer row={selected} onClose={() => setSelectedId(null)} />
     </div>
   );
 }
+

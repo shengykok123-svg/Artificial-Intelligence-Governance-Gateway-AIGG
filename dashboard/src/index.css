@@ -28,8 +28,8 @@ button, select, input {
 
 .audit-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  height: 100vh;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  height: calc(100vh - 64px);
   overflow: hidden;
 }
 
