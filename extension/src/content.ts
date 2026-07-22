@@ -51,9 +51,6 @@ function init(site: SiteKey): void {
   let activeLogId: string | null = null;
   let activeHoldSnapshot: { logId: string; prompt: string; replayMode: "composer" | "edit" } | null = null;
   let holdPollTimer: number | null = null;
-  // "State & allow": remembered for the life of this composer session so a
-  // second message in the same conversation does not re-prompt.
-  let sessionPurpose = "GENERAL";
 
   window.addEventListener("change", onFileInputChange, true);
   document.addEventListener("input", onComposerMutation, true);
@@ -124,20 +121,21 @@ function init(site: SiteKey): void {
     });
   }
 
-  /** "State & allow": pass 1 with the remembered purpose. If the policy
-   * requires an attested purpose we do not have yet, show the picker banner
-   * and resubmit the IDENTICAL prompt+files once, carrying pass 1's log_id
-   * so the backend updates that record in place rather than creating a
-   * sibling pending row for what is one interaction. A rule that still
-   * demands a purpose after a real one was given is misconfigured -- never
-   * loop, treat it as a deny instead. */
+  /** Pass 1 always starts from "GENERAL" -- no purpose is remembered across
+   * requests, so every request that needs one shows the picker, every time.
+   * If the policy requires an attested purpose, show the picker banner and
+   * resubmit the IDENTICAL prompt+files once, carrying pass 1's log_id so
+   * the backend updates that record in place rather than creating a sibling
+   * pending row for what is one interaction. A rule that still demands a
+   * purpose after a real one was given is misconfigured -- never loop, treat
+   * it as a deny instead. */
   async function inspectWithPurpose(
     prompt: string, files: AttachmentPayload[], anchor: HTMLElement | null,
   ): Promise<InspectOutcome> {
-    const first = await sendInspect(prompt, files, sessionPurpose);
+    const first = await sendInspect(prompt, files, "GENERAL");
     if (!first.ok || !first.result.require_purpose) return first;
 
-    if (sessionPurpose !== "GENERAL" || !anchor) {
+    if (!anchor) {
       return {
         ok: true,
         result: {
@@ -160,7 +158,6 @@ function init(site: SiteKey): void {
         },
       };
     }
-    sessionPurpose = chosen.category;
 
     const second = await sendInspect(prompt, files, chosen.category, first.result.log_id, chosen.justification);
     if (second.ok && second.result.require_purpose) {
