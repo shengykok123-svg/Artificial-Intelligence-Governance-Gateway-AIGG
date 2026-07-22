@@ -10,7 +10,7 @@ import {
   YAxis,
 } from "recharts";
 
-import type { Decision } from "../api/types";
+import type { AuditRecord, Decision } from "../api/types";
 import { useLogsQuery, useStatsQuery, useToolsQuery } from "../api/queries";
 
 export interface DayPoint {
@@ -49,6 +49,39 @@ function formatUserName(email: string) {
   const prefix = email.split("@")[0];
   const parts = prefix.split(".");
   return parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+}
+
+function getOldestPendingInfo(pendingItems?: AuditRecord[]) {
+  if (!pendingItems || pendingItems.length === 0) {
+    return {
+      durationText: "18 minutes",
+      sinceText: "Since 12 May 2025, 10:18 AM",
+    };
+  }
+
+  const sorted = [...pendingItems].sort(
+    (a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime()
+  );
+  const oldest = sorted[0];
+  const oldestMs = new Date(oldest.ts).getTime();
+  const diffMs = Math.max(0, Date.now() - oldestMs);
+  const totalMins = Math.floor(diffMs / (1000 * 60));
+  const hours = Math.floor(totalMins / 60);
+  const days = Math.floor(hours / 24);
+
+  let durationText = "";
+  if (days > 0) {
+    durationText = `${days} day${days > 1 ? "s" : ""} ${hours % 24} hr${hours % 24 > 1 ? "s" : ""}`;
+  } else if (hours > 0) {
+    durationText = `${hours} hour${hours > 1 ? "s" : ""} ${totalMins % 60} min${totalMins % 60 > 1 ? "s" : ""}`;
+  } else {
+    durationText = `${Math.max(1, totalMins)} minutes`;
+  }
+
+  return {
+    durationText,
+    sinceText: `Since ${formatTs(oldest.ts)}`,
+  };
 }
 
 const TREND_DATA: DayPoint[] = [
@@ -188,6 +221,9 @@ export default function Overview() {
   const stats = useStatsQuery();
   const logs = useLogsQuery({ limit: 5, offset: 0 });
   const tools = useToolsQuery();
+  const pendingLogsQuery = useLogsQuery({ status: "pending" });
+
+  const oldestPendingInfo = getOldestPendingInfo(pendingLogsQuery.data?.items);
 
   const byDecision = stats.data?.by_decision ?? {};
   const allowedCount = byDecision.allow ?? 1248;
@@ -538,7 +574,7 @@ export default function Overview() {
             <div>
               <div className="text-slate-700 font-semibold">Oldest request waiting</div>
               <div className="text-rose-600 font-bold">
-                18 minutes <span className="text-slate-400 font-normal">Since 12 May 2025, 10:18 AM</span>
+                {oldestPendingInfo.durationText} <span className="text-slate-400 font-normal">{oldestPendingInfo.sinceText}</span>
               </div>
             </div>
           </div>
