@@ -511,12 +511,10 @@ export default function AuditLog() {
       return (
         row.user_id.toLowerCase().includes(q) ||
         (row.user_department && row.user_department.toLowerCase().includes(q)) ||
-        (row.content_department && row.content_department.toLowerCase().includes(q)) ||
         row.prompt_text.toLowerCase().includes(q) ||
         row.log_id.toLowerCase().includes(q) ||
         row.target_host.toLowerCase().includes(q) ||
         toolMeta.name.toLowerCase().includes(q) ||
-        (row.reason && row.reason.toLowerCase().includes(q)) ||
         (row.filename && row.filename.toLowerCase().includes(q))
       );
     });

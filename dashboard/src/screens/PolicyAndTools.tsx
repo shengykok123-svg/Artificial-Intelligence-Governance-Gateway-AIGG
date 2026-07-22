@@ -50,6 +50,27 @@ function sourceGroups(items: InternalDocChunk[]): DocGroup[] {
   return [...groups.values()].sort((a, b) => b.latestCreatedAt.localeCompare(a.latestCreatedAt));
 }
 
+function formatDepartment(dept: string | null): string {
+  if (!dept) return "—";
+  const normalized = dept.toLowerCase().trim();
+  const map: Record<string, string> = {
+    hr: "HR Dept",
+    finance: "Finance Dept",
+    it: "IT Dept",
+    legal: "Legal Dept",
+    engineering: "Engineering Dept",
+    marketing: "Marketing Dept",
+    sales: "Sales Dept",
+    operations: "Operations Dept",
+    other: "Other Dept",
+  };
+  if (map[normalized]) return map[normalized];
+  if (normalized.endsWith(" dept") || normalized.endsWith(" department")) {
+    return dept.replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  return `${dept.charAt(0).toUpperCase()}${dept.slice(1)} Dept`;
+}
+
 function fileKind(filename: string) {
   const kind = filename.split(".").pop()?.toUpperCase() ?? "DOC";
   const tone = kind === "PDF" ? "bg-red-100 text-red-700" : kind === "XLSX" || kind === "CSV" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700";
@@ -217,7 +238,7 @@ function InternalDocsPanel() {
                   className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
                 >
                   {DEPARTMENTS.map((item) => (
-                    <option key={item}>{item}</option>
+                    <option key={item} value={item}>{formatDepartment(item)}</option>
                   ))}
                 </select>
               </div>
@@ -402,7 +423,7 @@ function InternalDocsPanel() {
               >
                 <option value="all">All Departments</option>
                 {DEPARTMENTS.map((item) => (
-                  <option key={item} value={item}>{item.toUpperCase()}</option>
+                  <option key={item} value={item}>{formatDepartment(item)}</option>
                 ))}
               </select>
 
