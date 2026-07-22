@@ -421,7 +421,58 @@ function EvidenceDrawer({
   );
 }
 
+function renderPaginationButtons(
+  currentPage: number,
+  totalPages: number,
+  onPageChange: (page: number) => void
+) {
+  const pages: (number | "...")[] = [];
+
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (currentPage > 3) pages.push("...");
+
+    const start = Math.max(2, currentPage - 1);
+    const end = Math.min(totalPages - 1, currentPage + 1);
+
+    for (let i = start; i <= end; i++) {
+      if (!pages.includes(i)) pages.push(i);
+    }
+
+    if (currentPage < totalPages - 2) pages.push("...");
+    pages.push(totalPages);
+  }
+
+  return pages.map((p, idx) => {
+    if (p === "...") {
+      return (
+        <span key={`dots-${idx}`} className="px-1 text-slate-400 text-xs select-none">
+          ...
+        </span>
+      );
+    }
+    const isCurrent = p === currentPage;
+    return (
+      <button
+        key={`page-${p}`}
+        type="button"
+        onClick={() => onPageChange(p as number)}
+        className={`flex h-7 w-7 items-center justify-center rounded-md text-xs font-bold transition shadow-sm ${
+          isCurrent
+            ? "bg-blue-600 text-white"
+            : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
+        }`}
+      >
+        {p}
+      </button>
+    );
+  });
+}
+
 export default function AuditLog() {
+  const [pageSize, setPageSize] = useState(25);
   const [decision, setDecision] = useState<Decision | "">("");
   const [status, setStatus] = useState<LogStatus | "">("");
   const [crossFilter, setCrossFilter] = useState<string>("All");
@@ -430,7 +481,7 @@ export default function AuditLog() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const logs = useLogsQuery({
-    limit: PAGE_SIZE,
+    limit: pageSize,
     offset,
     decision: decision || undefined,
     status: status || undefined,
@@ -439,7 +490,7 @@ export default function AuditLog() {
   const tools = useToolsQuery();
 
   const items = logs.data?.items ?? [];
-  const total = logs.data?.total ?? 1248;
+  const total = logs.data?.total ?? items.length;
   const selected = items.find((item) => item.log_id === selectedId) ?? (items.length > 0 ? items[0] : null);
   const toolByHost = useMemo(() => new Map((tools.data ?? []).map((tool) => [tool.host, tool])), [tools.data]);
 
@@ -455,7 +506,8 @@ export default function AuditLog() {
     setOffset(0);
   }
 
-  const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(totalPages, Math.floor(offset / pageSize) + 1);
 
   return (
     <div className="audit-layout">
@@ -576,43 +628,33 @@ export default function AuditLog() {
         {/* Results Counter & Top-Right Pagination Controls */}
         <div className="flex items-center justify-between px-1 text-xs font-semibold text-slate-600">
           <div className="font-medium text-slate-500">
-            {total === 0 ? "0 results" : `${offset + 1} - ${Math.min(offset + PAGE_SIZE, total)} of ${total.toLocaleString()} events`}
+            {total === 0
+              ? "0 events"
+              : `${offset + 1} - ${Math.min(offset + pageSize, total)} of ${total.toLocaleString()} events`}
           </div>
 
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                disabled={currentPage <= 1}
+                onClick={() => setOffset((currentPage - 2) * pageSize)}
                 className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 shadow-sm"
+                aria-label="Previous page"
               >
                 ‹
               </button>
-              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-600 text-white font-bold shadow-sm">
-                1
-              </button>
-              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 shadow-sm">
-                2
-              </button>
-              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 shadow-sm">
-                3
-              </button>
-              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 shadow-sm">
-                4
-              </button>
-              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 shadow-sm">
-                5
-              </button>
-              <span className="px-0.5 text-slate-400">...</span>
-              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 shadow-sm">
-                50
-              </button>
+
+              {renderPaginationButtons(currentPage, totalPages, (p) => {
+                setOffset((p - 1) * pageSize);
+              })}
+
               <button
                 type="button"
-                disabled={offset + PAGE_SIZE >= total}
-                onClick={() => setOffset(offset + PAGE_SIZE)}
+                disabled={currentPage >= totalPages}
+                onClick={() => setOffset(currentPage * pageSize)}
                 className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 shadow-sm"
+                aria-label="Next page"
               >
                 ›
               </button>
@@ -620,10 +662,17 @@ export default function AuditLog() {
 
             <div className="flex items-center gap-2">
               <span className="text-slate-500 font-medium">Rows per page:</span>
-              <select className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 outline-none shadow-sm">
-                <option value="25">25</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setOffset(0);
+                }}
+                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 outline-none shadow-sm cursor-pointer hover:border-slate-300"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
               </select>
             </div>
           </div>
