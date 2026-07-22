@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, Navigate, Route, HashRouter, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, HashRouter, Routes, useLocation } from "react-router-dom";
 
 import { useHealthQuery, useLogsQuery } from "./api/queries";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -235,13 +235,28 @@ function Sidebar() {
 }
 
 function HeaderBar() {
+  const location = useLocation();
+  const path = location.pathname;
+
+  let title = "Audit Log";
+  let subtitle = "Complete audit trail of all AI prompt inspections, policy decisions, and review actions.";
+
+  if (path.startsWith("/overview")) {
+    title = "Overview";
+    subtitle = "Real-time overview of AI usage, risk posture and governance activity across the organisation.";
+  } else if (path.startsWith("/approvals")) {
+    title = "Approval Queue";
+    subtitle = "Pending review requests requiring compliance administrator decision.";
+  } else if (path.startsWith("/policy")) {
+    title = "Policy & Tools";
+    subtitle = "Configure detection rules, redaction classes, internal document embeddings and AI tools.";
+  }
+
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-8">
       <div>
-        <h1 className="text-xl font-bold tracking-tight text-slate-900">Audit Log</h1>
-        <p className="text-xs text-slate-500">
-          Complete audit trail of all AI prompt inspections, policy decisions, and review actions.
-        </p>
+        <h1 className="text-xl font-bold tracking-tight text-slate-900">{title}</h1>
+        <p className="text-xs text-slate-500">{subtitle}</p>
       </div>
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 text-xs text-slate-500">

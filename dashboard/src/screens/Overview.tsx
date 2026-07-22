@@ -172,13 +172,6 @@ export default function Overview() {
 
   return (
     <main className="p-6 space-y-6 bg-slate-50 min-h-screen">
-      {/* Page Subtitle */}
-      <div className="-mt-1">
-        <p className="text-xs text-slate-500 font-medium">
-          Real-time overview of AI usage, risk posture and governance activity across the organisation.
-        </p>
-      </div>
-
       {/* 1. Top KPI Cards Row */}
       <section className="space-y-3">
         <h2 className="text-xs font-bold text-slate-900 tracking-tight">
