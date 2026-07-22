@@ -338,9 +338,19 @@ function EvidenceDrawer({
               </span>
             </div>
 
-            <div className="flex justify-between py-1">
-              <span className="text-slate-500">Business Purpose Provided</span>
-              <span className="font-medium text-slate-900">{row.purpose && row.purpose !== "GENERAL" ? row.purpose : "N/A (Not provided)"}</span>
+            <div className="py-1">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Business Purpose Provided</span>
+                <span className="font-medium text-slate-900">{row.purpose && row.purpose !== "GENERAL" ? row.purpose : "N/A (Not provided)"}</span>
+              </div>
+              {row.justification && (
+                <div className="mt-2.5 rounded-lg border border-slate-200 bg-slate-50/80 p-2.5">
+                  <span className="text-slate-500 block text-[11px] font-semibold mb-1">Employee Justification</span>
+                  <div className="text-slate-800 italic text-[11px] leading-relaxed">
+                    &ldquo;{row.justification}&rdquo;
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </section>
