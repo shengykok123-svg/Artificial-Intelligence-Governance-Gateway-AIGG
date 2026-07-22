@@ -294,31 +294,33 @@ export default function Overview() {
       {/* 2. Middle Section (3 Columns) */}
       <section className="grid grid-cols-1 gap-5 lg:grid-cols-12">
         {/* Inspection Trend (Last 7 Days) */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-6 space-y-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-6 space-y-4 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <h3 className="text-xs font-bold text-slate-800">Inspection Trend (Last 7 Days)</h3>
-            <select className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 outline-none shadow-sm cursor-pointer">
+            <h3 className="text-xs font-bold text-slate-900">
+              Inspection Trend <span className="font-normal text-slate-400">(Last 7 Days)</span>
+            </h3>
+            <select className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 outline-none shadow-sm cursor-pointer hover:border-slate-300">
               <option>Last 7 days</option>
               <option>Last 30 days</option>
             </select>
           </div>
 
-          {/* Legends */}
+          {/* Legends with horizontal line dash symbol */}
           <div className="flex items-center gap-4 text-xs font-semibold">
             <div className="flex items-center gap-1.5 text-emerald-600">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block" />
+              <span className="h-0.5 w-4 rounded-full bg-emerald-500 inline-block" />
               Allowed
             </div>
             <div className="flex items-center gap-1.5 text-amber-500">
-              <span className="h-2.5 w-2.5 rounded-full bg-amber-500 inline-block" />
+              <span className="h-0.5 w-4 rounded-full bg-amber-500 inline-block" />
               Redacted
             </div>
             <div className="flex items-center gap-1.5 text-rose-500">
-              <span className="h-2.5 w-2.5 rounded-full bg-rose-500 inline-block" />
+              <span className="h-0.5 w-4 rounded-full bg-rose-500 inline-block" />
               Held
             </div>
             <div className="flex items-center gap-1.5 text-purple-600">
-              <span className="h-2.5 w-2.5 rounded-full bg-purple-500 inline-block" />
+              <span className="h-0.5 w-4 rounded-full bg-purple-500 inline-block" />
               Denied
             </div>
           </div>
@@ -330,10 +332,10 @@ export default function Overview() {
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} domain={[0, 500]} />
                 <Tooltip />
-                <Line type="monotone" dataKey="allowed" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="redacted" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="held" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="denied" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="allowed" stroke="#16a34a" strokeWidth={2} dot={{ r: 3.5, fill: "#16a34a", strokeWidth: 0 }} />
+                <Line type="monotone" dataKey="redacted" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3.5, fill: "#f59e0b", strokeWidth: 0 }} />
+                <Line type="monotone" dataKey="held" stroke="#ef4444" strokeWidth={2} dot={{ r: 3.5, fill: "#ef4444", strokeWidth: 0 }} />
+                <Line type="monotone" dataKey="denied" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3.5, fill: "#8b5cf6", strokeWidth: 0 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -341,36 +343,15 @@ export default function Overview() {
 
         {/* Pending Approval Donut */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-3 space-y-4 flex flex-col justify-between">
-          <h3 className="text-xs font-bold text-slate-800">Pending Approval</h3>
+          <h3 className="text-xs font-bold text-slate-900">Pending Approval</h3>
 
           <div className="flex items-center justify-between gap-2">
-            {/* SVG Ring Gauge */}
+            {/* SVG Multi-color Ring Gauge */}
             <div className="relative flex h-28 w-28 shrink-0 items-center justify-center">
               <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="38" stroke="#e2e8f0" strokeWidth="12" fill="transparent" />
-                {/* Green Segment (16%) */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="38"
-                  stroke="#10b981"
-                  strokeWidth="12"
-                  fill="transparent"
-                  strokeDasharray="238.76"
-                  strokeDashoffset="200.5"
-                />
-                {/* Yellow Segment (34%) */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="38"
-                  stroke="#f59e0b"
-                  strokeWidth="12"
-                  fill="transparent"
-                  strokeDasharray="238.76"
-                  strokeDashoffset="119.3"
-                />
-                {/* Red Segment (50%) */}
+                {/* Light Rose Background Track */}
+                <circle cx="50" cy="50" r="38" stroke="#ffe4e6" strokeWidth="12" fill="transparent" />
+                {/* Red Segment (High risk 50%) */}
                 <circle
                   cx="50"
                   cy="50"
@@ -378,32 +359,54 @@ export default function Overview() {
                   stroke="#ef4444"
                   strokeWidth="12"
                   fill="transparent"
-                  strokeDasharray="238.76"
+                  strokeDasharray="119.38 238.76"
                   strokeDashoffset="0"
+                />
+                {/* Yellow Segment (Medium risk 34%) */}
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="38"
+                  stroke="#f59e0b"
+                  strokeWidth="12"
+                  fill="transparent"
+                  strokeDasharray="81.18 238.76"
+                  strokeDashoffset="-119.38"
+                />
+                {/* Green Segment (Low risk 16%) */}
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="38"
+                  stroke="#10b981"
+                  strokeWidth="12"
+                  fill="transparent"
+                  strokeDasharray="38.20 238.76"
+                  strokeDashoffset="-200.56"
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className="text-xl font-bold text-slate-900">156</span>
+                <span className="text-2xl font-bold text-slate-900">156</span>
                 <span className="text-[10px] font-medium text-slate-500">Held requests</span>
               </div>
             </div>
 
             {/* Legend Right */}
-            <div className="space-y-1.5 text-xs font-medium text-slate-700">
-              <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 text-rose-600">
+            <div className="space-y-2 text-xs font-medium text-slate-700">
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-rose-600 font-semibold">
                   <span className="h-2 w-2 rounded-full bg-rose-500" /> High risk
                 </span>
                 <span className="font-bold text-slate-900">78 (50.0%)</span>
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 text-amber-600">
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-amber-600 font-semibold">
                   <span className="h-2 w-2 rounded-full bg-amber-500" /> Medium risk
                 </span>
                 <span className="font-bold text-slate-900">53 (34.0%)</span>
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 text-emerald-600">
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-emerald-600 font-semibold">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" /> Low risk
                 </span>
                 <span className="font-bold text-slate-900">25 (16.0%)</span>
@@ -412,12 +415,12 @@ export default function Overview() {
           </div>
 
           {/* Bottom Alert Banner */}
-          <div className="flex items-center gap-3 rounded-lg border border-rose-100 bg-rose-50/70 p-2.5 text-xs">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600 font-bold">
+          <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50/70 p-3 text-xs">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-100/90 text-rose-600 font-bold text-sm">
               ⏰
             </div>
             <div>
-              <div className="text-slate-600 font-medium">Oldest request waiting</div>
+              <div className="text-slate-700 font-semibold">Oldest request waiting</div>
               <div className="text-rose-600 font-bold">
                 18 minutes <span className="text-slate-400 font-normal">Since 12 May 2025, 10:18 AM</span>
               </div>
@@ -427,7 +430,9 @@ export default function Overview() {
 
         {/* Cross-department Activity Donut */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-3 space-y-4 flex flex-col justify-between">
-          <h3 className="text-xs font-bold text-slate-800">Cross-department Activity (Last 7 Days)</h3>
+          <h3 className="text-xs font-bold text-slate-900">
+            Cross-department Activity <span className="font-normal text-slate-400">(Last 7 Days)</span>
+          </h3>
 
           <div className="flex items-center gap-4">
             {/* SVG Ring Gauge */}
@@ -441,12 +446,12 @@ export default function Overview() {
                   stroke="#059669"
                   strokeWidth="12"
                   fill="transparent"
-                  strokeDasharray="238.76"
-                  strokeDashoffset="182.8"
+                  strokeDasharray="55.87 238.76"
+                  strokeDashoffset="0"
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className="text-lg font-bold text-slate-900">23.4%</span>
+                <span className="text-xl font-bold text-slate-900">23.4%</span>
                 <span className="text-[10px] font-medium text-slate-500">Cross-department</span>
               </div>
             </div>
@@ -454,11 +459,11 @@ export default function Overview() {
             {/* Right side stats */}
             <div className="space-y-3">
               <div>
-                <div className="text-xl font-bold text-slate-900">456</div>
+                <div className="text-2xl font-bold text-slate-900">456</div>
                 <div className="text-[11px] font-medium text-slate-500">Cross-department events</div>
               </div>
               <div>
-                <div className="text-xl font-bold text-slate-900">1,948</div>
+                <div className="text-2xl font-bold text-slate-900">1,948</div>
                 <div className="text-[11px] font-medium text-slate-500">Total inspections</div>
               </div>
             </div>
