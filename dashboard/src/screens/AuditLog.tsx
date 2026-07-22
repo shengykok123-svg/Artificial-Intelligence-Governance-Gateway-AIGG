@@ -483,7 +483,7 @@ export default function AuditLog() {
   const isSearching = Boolean(search.trim());
 
   const logs = useLogsQuery({
-    limit: isSearching ? 1000 : pageSize,
+    limit: 100,
     offset: isSearching ? 0 : offset,
     decision: decision || undefined,
     status: status || undefined,
@@ -513,7 +513,7 @@ export default function AuditLog() {
   }, [rawItems, search, isSearching]);
 
   const total = isSearching ? filteredLogs.length : (logs.data?.total ?? rawItems.length);
-  const items = isSearching ? filteredLogs.slice(offset, offset + pageSize) : filteredLogs;
+  const items = filteredLogs.slice(isSearching ? 0 : offset, (isSearching ? 0 : offset) + pageSize);
   const selected = items.find((item) => item.log_id === selectedId) ?? (items.length > 0 ? items[0] : null);
   const toolByHost = useMemo(() => new Map((tools.data ?? []).map((tool) => [tool.host, tool])), [tools.data]);
 
