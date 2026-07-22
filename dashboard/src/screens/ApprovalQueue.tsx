@@ -7,12 +7,11 @@ import { DataClassPills } from "../components/DataClassPills";
 import { EmptyState, ErrorState, SkeletonRows } from "../components/EmptyState";
 
 function isCrossDepartment(row: AuditRecord): boolean {
-  return Boolean(
-    row.cross_department_confidence != null ||
-      (row.content_department &&
-        row.user_department &&
-        row.content_department !== row.user_department)
-  );
+  if (row.cross_department_confidence != null) return true;
+  if (row.content_department && row.user_department) {
+    return row.content_department.trim().toLowerCase() !== row.user_department.trim().toLowerCase();
+  }
+  return false;
 }
 
 function formatTs(ts: string): string {

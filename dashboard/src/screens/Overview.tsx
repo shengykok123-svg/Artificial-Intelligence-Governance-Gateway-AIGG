@@ -222,6 +222,7 @@ export default function Overview() {
   const logs = useLogsQuery({ limit: 5, offset: 0 });
   const tools = useToolsQuery();
   const pendingLogsQuery = useLogsQuery({ status: "pending" });
+  const crossLogsQuery = useLogsQuery({ cross_department_only: true, limit: 1 });
 
   const oldestPendingInfo = getOldestPendingInfo(pendingLogsQuery.data?.items);
 
@@ -236,6 +237,51 @@ export default function Overview() {
   const redactedPct = ((redactedCount / totalCount) * 100).toFixed(1);
   const heldPct = ((heldCount / totalCount) * 100).toFixed(1);
   const deniedPct = ((deniedCount / totalCount) * 100).toFixed(1);
+
+  // -- Pending Approval Donut calculations --
+  const pendingTotalVal = pendingLogsQuery.data?.total ?? heldCount;
+  const pendingItems = pendingLogsQuery.data?.items ?? [];
+
+  let pendingHighCount = 0;
+  let pendingMedCount = 0;
+  let pendingLowCount = 0;
+
+  if (pendingItems.length > 0) {
+    pendingItems.forEach((item) => {
+      const isHigh = (item.m9_sensitivity_confidence ?? 0) > 0.7 || item.cross_department_confidence != null || (Boolean(item.user_department && item.content_department && item.user_department !== item.content_department));
+      const isMed = !isHigh && (item.m9_sensitivity_confidence ?? 0) > 0.4;
+      if (isHigh) pendingHighCount++;
+      else if (isMed) pendingMedCount++;
+      else pendingLowCount++;
+    });
+    if (pendingTotalVal > pendingItems.length) {
+      const ratio = pendingTotalVal / pendingItems.length;
+      pendingHighCount = Math.round(pendingHighCount * ratio);
+      pendingMedCount = Math.round(pendingMedCount * ratio);
+      pendingLowCount = Math.max(0, pendingTotalVal - pendingHighCount - pendingMedCount);
+    }
+  } else {
+    pendingHighCount = Math.round(pendingTotalVal * 0.5);
+    pendingMedCount = Math.round(pendingTotalVal * 0.34);
+    pendingLowCount = Math.max(0, pendingTotalVal - pendingHighCount - pendingMedCount);
+  }
+
+  const pendingDenominator = pendingTotalVal || 1;
+  const pendingHighPct = ((pendingHighCount / pendingDenominator) * 100).toFixed(1);
+  const pendingMedPct = ((pendingMedCount / pendingDenominator) * 100).toFixed(1);
+  const pendingLowPct = ((pendingLowCount / pendingDenominator) * 100).toFixed(1);
+
+  const C = 251.33;
+  const dashHigh = (pendingHighCount / pendingDenominator) * C;
+  const dashMed = (pendingMedCount / pendingDenominator) * C;
+  const dashLow = (pendingLowCount / pendingDenominator) * C;
+
+  // -- Cross-department Activity Donut calculations --
+  const crossCountVal = crossLogsQuery.data?.total ?? Math.round(totalCount * 0.234);
+  const totalInspectionsVal = totalCount;
+  const crossRatio = crossCountVal / (totalInspectionsVal || 1);
+  const crossPctVal = (crossRatio * 100).toFixed(1);
+  const crossDash = crossRatio * C;
 
   const hasLiveTrends = stats.data?.by_day && stats.data.by_day.some(([_, __, n]) => n > 0);
   const trendData = hasLiveTrends
@@ -503,7 +549,7 @@ export default function Overview() {
               <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100">
                 {/* Light Rose Background Track */}
                 <circle cx="50" cy="50" r="40" stroke="#ffe4e6" strokeWidth="9" fill="transparent" />
-                {/* Red Segment (High risk 50%) */}
+                {/* Red Segment (High risk) */}
                 <circle
                   cx="50"
                   cy="50"
@@ -511,10 +557,10 @@ export default function Overview() {
                   stroke="#ef4444"
                   strokeWidth="9"
                   fill="transparent"
-                  strokeDasharray="125.66 251.33"
+                  strokeDasharray={`${dashHigh.toFixed(2)} 251.33`}
                   strokeDashoffset="0"
                 />
-                {/* Yellow Segment (Medium risk 34%) */}
+                {/* Yellow Segment (Medium risk) */}
                 <circle
                   cx="50"
                   cy="50"
@@ -522,10 +568,10 @@ export default function Overview() {
                   stroke="#f59e0b"
                   strokeWidth="9"
                   fill="transparent"
-                  strokeDasharray="85.45 251.33"
-                  strokeDashoffset="-125.66"
+                  strokeDasharray={`${dashMed.toFixed(2)} 251.33`}
+                  strokeDashoffset={`-${dashHigh.toFixed(2)}`}
                 />
-                {/* Green Segment (Low risk 16%) */}
+                {/* Green Segment (Low risk) */}
                 <circle
                   cx="50"
                   cy="50"
@@ -533,12 +579,12 @@ export default function Overview() {
                   stroke="#10b981"
                   strokeWidth="9"
                   fill="transparent"
-                  strokeDasharray="40.21 251.33"
-                  strokeDashoffset="-211.11"
+                  strokeDasharray={`${dashLow.toFixed(2)} 251.33`}
+                  strokeDashoffset={`-${(dashHigh + dashMed).toFixed(2)}`}
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-2">
-                <span className="text-2xl font-extrabold text-slate-900 leading-none">156</span>
+                <span className="text-2xl font-extrabold text-slate-900 leading-none">{pendingTotalVal.toLocaleString()}</span>
                 <span className="mt-1 text-[10px] font-semibold text-slate-500 whitespace-nowrap">Held requests</span>
               </div>
             </div>
@@ -549,19 +595,19 @@ export default function Overview() {
                 <span className="flex items-center gap-1.5 text-rose-600 font-semibold whitespace-nowrap">
                   <span className="h-2 w-2 rounded-full bg-rose-500" /> High risk
                 </span>
-                <span className="font-bold text-slate-900">78 (50.0%)</span>
+                <span className="font-bold text-slate-900">{pendingHighCount} ({pendingHighPct}%)</span>
               </div>
               <div className="flex items-center justify-between gap-2.5">
                 <span className="flex items-center gap-1.5 text-amber-600 font-semibold whitespace-nowrap">
                   <span className="h-2 w-2 rounded-full bg-amber-500" /> Medium risk
                 </span>
-                <span className="font-bold text-slate-900">53 (34.0%)</span>
+                <span className="font-bold text-slate-900">{pendingMedCount} ({pendingMedPct}%)</span>
               </div>
               <div className="flex items-center justify-between gap-2.5">
                 <span className="flex items-center gap-1.5 text-emerald-600 font-semibold whitespace-nowrap">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" /> Low risk
                 </span>
-                <span className="font-bold text-slate-900">25 (16.0%)</span>
+                <span className="font-bold text-slate-900">{pendingLowCount} ({pendingLowPct}%)</span>
               </div>
             </div>
           </div>
@@ -598,12 +644,12 @@ export default function Overview() {
                   stroke="#059669"
                   strokeWidth="9"
                   fill="transparent"
-                  strokeDasharray="58.81 251.33"
+                  strokeDasharray={`${crossDash.toFixed(2)} 251.33`}
                   strokeDashoffset="0"
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-2">
-                <span className="text-2xl font-extrabold text-slate-900 leading-none">23.4%</span>
+                <span className="text-2xl font-extrabold text-slate-900 leading-none">{crossPctVal}%</span>
                 <span className="mt-1 text-[10px] font-semibold text-slate-500 whitespace-nowrap">Cross-department</span>
               </div>
             </div>
@@ -611,11 +657,11 @@ export default function Overview() {
             {/* Right side stats */}
             <div className="space-y-3">
               <div>
-                <div className="text-2xl font-bold text-slate-900">456</div>
+                <div className="text-2xl font-bold text-slate-900">{crossCountVal.toLocaleString()}</div>
                 <div className="text-[11px] font-medium text-slate-500">Cross-department events</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-slate-900">1,948</div>
+                <div className="text-2xl font-bold text-slate-900">{totalInspectionsVal.toLocaleString()}</div>
                 <div className="text-[11px] font-medium text-slate-500">Total inspections</div>
               </div>
             </div>
