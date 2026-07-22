@@ -623,10 +623,7 @@ export default function AuditLog() {
                     Document Similarity Detect <span className="text-slate-400 font-normal">ⓘ</span>
                   </th>
                   <th className="px-4 py-3 whitespace-nowrap">
-                    Predicted Content Department <span className="text-slate-400 font-normal">ⓘ</span>
-                  </th>
-                  <th className="px-4 py-3 whitespace-nowrap">
-                    Confidential Sensitivity Score <span className="text-slate-400 font-normal">ⓘ</span>
+                    Predicted Content &amp; Sensitivity <span className="text-slate-400 font-normal">ⓘ</span>
                   </th>
                   <th className="px-4 py-3 whitespace-nowrap">
                     Cross Department (Confidence) <span className="text-slate-400 font-normal">ⓘ</span>
@@ -713,19 +710,19 @@ export default function AuditLog() {
                         <span className={`block text-[11px] ${simColor}`}>{simLevel}</span>
                       </td>
 
-                      {/* 5. Predicted Content Department */}
+                      {/* 5. Predicted Content & Sensitivity */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
-                        <span className="block font-semibold text-slate-900">{dept}</span>
-                        <span className="block text-[11px] text-slate-400">({deptConf}%)</span>
+                        <div>
+                          <span className="block font-bold text-slate-900 leading-tight">
+                            {dept} <span className="text-[11px] font-normal text-slate-400">({deptConf}%)</span>
+                          </span>
+                          <span className={`block text-[11px] ${sensColor} mt-0.5`}>
+                            Sensitivity: {sensitivity} ({sensLevel})
+                          </span>
+                        </div>
                       </td>
 
-                      {/* 6. Confidential Sensitivity Score */}
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <span className={`block text-xs ${sensColor}`}>{sensitivity}</span>
-                        <span className={`block text-[11px] ${sensColor}`}>{sensLevel}</span>
-                      </td>
-
-                      {/* 7. Cross Department (Confidence) */}
+                      {/* 6. Cross Department (Confidence) */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <span className={`block text-xs ${cross ? "text-rose-600 font-bold" : "text-slate-700 font-semibold"}`}>
                           {cross ? "Yes" : "No"}
@@ -735,12 +732,12 @@ export default function AuditLog() {
                         </span>
                       </td>
 
-                      {/* 8. Verdict */}
+                      {/* 7. Verdict */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <VerdictBadge decision={row.decision} />
                       </td>
 
-                      {/* 9. Review Status */}
+                      {/* 8. Review Status */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <ReviewStatusCell status={row.status} decision={row.decision} reviewer={row.reviewer} />
                       </td>
