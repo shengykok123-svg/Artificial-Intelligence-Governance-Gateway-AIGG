@@ -633,7 +633,7 @@ export default function AuditLog() {
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="border-b border-slate-200 bg-slate-50/80 font-bold text-slate-700 align-bottom text-center">
+              <thead className="border-b border-slate-200 bg-slate-50/80 font-bold text-slate-700 align-middle text-center">
                 <tr>
                   <th className="px-4 py-2.5 whitespace-nowrap text-center">
                     <span className="block">Date &amp; Time</span>
