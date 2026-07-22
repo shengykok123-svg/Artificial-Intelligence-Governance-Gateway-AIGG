@@ -568,8 +568,6 @@ export default function AuditLog() {
                   </th>
                   <th className="px-4 py-3">User</th>
                   <th className="px-4 py-3">AI Tool</th>
-                  <th className="px-4 py-3">Verdict</th>
-                  <th className="px-4 py-3 whitespace-nowrap">Review Status</th>
                   <th className="px-4 py-3 whitespace-nowrap">
                     Document Similarity Detect <span className="text-slate-400 font-normal">ⓘ</span>
                   </th>
@@ -582,6 +580,8 @@ export default function AuditLog() {
                   <th className="px-4 py-3 whitespace-nowrap">
                     Cross Department (Confidence) <span className="text-slate-400 font-normal">ⓘ</span>
                   </th>
+                  <th className="px-4 py-3">Verdict</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Review Status</th>
                 </tr>
               </thead>
 
@@ -656,35 +656,25 @@ export default function AuditLog() {
                         </div>
                       </td>
 
-                      {/* 4. Verdict */}
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <VerdictBadge decision={row.decision} />
-                      </td>
-
-                      {/* 5. Review Status */}
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <ReviewStatusCell status={row.status} decision={row.decision} reviewer={row.reviewer} />
-                      </td>
-
-                      {/* 6. Document Similarity Detect */}
+                      {/* 4. Document Similarity Detect */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <span className={`block text-xs ${simColor}`}>{similarity}%</span>
                         <span className={`block text-[11px] ${simColor}`}>{simLevel}</span>
                       </td>
 
-                      {/* 7. Predicted Content Department */}
+                      {/* 5. Predicted Content Department */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <span className="block font-semibold text-slate-900">{dept}</span>
                         <span className="block text-[11px] text-slate-400">({deptConf}%)</span>
                       </td>
 
-                      {/* 8. Confidential Sensitivity Score */}
+                      {/* 6. Confidential Sensitivity Score */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <span className={`block text-xs ${sensColor}`}>{sensitivity}</span>
                         <span className={`block text-[11px] ${sensColor}`}>{sensLevel}</span>
                       </td>
 
-                      {/* 9. Cross Department (Confidence) */}
+                      {/* 7. Cross Department (Confidence) */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <span className={`block text-xs ${cross ? "text-rose-600 font-bold" : "text-slate-700 font-semibold"}`}>
                           {cross ? "Yes" : "No"}
@@ -692,6 +682,16 @@ export default function AuditLog() {
                         <span className={`block text-[11px] ${cross ? "text-rose-600 font-bold" : "text-slate-400"}`}>
                           {cross ? `${crossConf}%` : "15%"}
                         </span>
+                      </td>
+
+                      {/* 8. Verdict */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <VerdictBadge decision={row.decision} />
+                      </td>
+
+                      {/* 9. Review Status */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <ReviewStatusCell status={row.status} decision={row.decision} reviewer={row.reviewer} />
                       </td>
                     </tr>
                   );
