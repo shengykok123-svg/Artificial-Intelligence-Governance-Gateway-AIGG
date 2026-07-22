@@ -85,7 +85,7 @@ export default function ApprovalQueue() {
   const [sort, setSort] = useState<"oldest" | "newest">("oldest");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "content" | "evidence" | "policy" | "history">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "content" | "details">("overview");
   const [remark, setRemark] = useState("");
   const [downloading, setDownloading] = useState(false);
 
@@ -423,18 +423,22 @@ export default function ApprovalQueue() {
 
               {/* Tab Navigation */}
               <div className="flex border-b border-slate-200 bg-white px-5 text-xs font-semibold text-slate-500">
-                {(["overview", "content", "evidence", "policy", "history"] as const).map((tab) => (
+                {[
+                  { id: "overview", label: "Overview" },
+                  { id: "content", label: "Content" },
+                  { id: "details", label: "Evidence & Policy" },
+                ].map((t) => (
                   <button
-                    key={tab}
+                    key={t.id}
                     type="button"
-                    onClick={() => setActiveTab(tab)}
-                    className={`capitalize px-4 py-3 border-b-2 transition ${
-                      activeTab === tab
+                    onClick={() => setActiveTab(t.id as "overview" | "content" | "details")}
+                    className={`px-4 py-3 border-b-2 transition ${
+                      activeTab === t.id
                         ? "border-emerald-600 text-emerald-700 font-bold"
                         : "border-transparent text-slate-500 hover:text-slate-800"
                     }`}
                   >
-                    {tab}
+                    {t.label}
                   </button>
                 ))}
               </div>
@@ -677,28 +681,50 @@ export default function ApprovalQueue() {
                   </div>
                 )}
 
-                {activeTab === "evidence" && (
-                  <div className="space-y-3 text-xs">
-                    <h4 className="text-xs font-bold text-slate-900">Matched Data Classes &amp; Evidence</h4>
-                    <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 space-y-2">
-                      <DataClassPills dataClasses={selected.data_classes} />
+                {activeTab === "details" && (
+                  <div className="space-y-5 text-xs">
+                    {/* Section 1: Evidence */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <svg className="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Matched Data Classes &amp; Evidence
+                      </h4>
+                      <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm space-y-2">
+                        <DataClassPills dataClasses={selected.data_classes} />
+                      </div>
                     </div>
-                  </div>
-                )}
 
-                {activeTab === "policy" && (
-                  <div className="space-y-3 text-xs">
-                    <h4 className="text-xs font-bold text-slate-900">Policy Trigger Reason</h4>
-                    <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 text-slate-800 font-medium">
-                      {selected.reason || "High confidential sensitivity detected cross-department."}
+                    {/* Section 2: Policy Reason */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <svg className="h-4 w-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        Policy Trigger Reason
+                      </h4>
+                      <div className="rounded-xl border border-amber-200/80 bg-amber-50/50 p-4 text-slate-800 font-medium leading-relaxed">
+                        {selected.reason || "High confidential sensitivity detected cross-department."}
+                      </div>
                     </div>
-                  </div>
-                )}
 
-                {activeTab === "history" && (
-                  <div className="space-y-3 text-xs text-slate-500">
-                    <h4 className="text-xs font-bold text-slate-900">Audit History</h4>
-                    <div>Logged at {formatTs(selected.ts)} — Status: Pending Review</div>
+                    {/* Section 3: History */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <svg className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Audit History
+                      </h4>
+                      <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm text-slate-600 space-y-1.5 font-medium leading-relaxed">
+                        <div>• Request logged and paused at <span className="font-semibold text-slate-900">{formatTs(selected.ts)}</span></div>
+                        <div>• Initial Gate Verdict: <span className="font-semibold text-amber-700">Held for Manual Approval</span></div>
+                        {selected.reviewer && (
+                          <div>• Reviewed by <span className="font-semibold text-slate-900">{selected.reviewer}</span> at {selected.reviewed_at ? formatTs(selected.reviewed_at) : "N/A"}</div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
