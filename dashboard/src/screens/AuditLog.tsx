@@ -750,7 +750,7 @@ export default function AuditLog() {
                             {formatDepartment(dept)} <span className="text-[11px] font-normal text-slate-400">({deptConf}%)</span>
                           </span>
                           <span className={`block text-[11px] ${sensColor} mt-0.5`}>
-                            Sensitivity: {sensitivity} ({sensLevel})
+                            {sensitivity} {sensLevel}
                           </span>
                         </div>
                       </td>
