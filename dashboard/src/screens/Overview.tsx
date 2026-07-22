@@ -472,82 +472,103 @@ export default function Overview() {
       <section className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {/* Top Data Classes Detected */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 flex flex-col justify-between">
-          <h3 className="text-xs font-bold text-slate-800">Top Data Classes Detected (Last 7 Days)</h3>
-          <div className="space-y-3">
-            {DATA_CLASSES.map((item) => (
-              <div key={item.name} className="flex items-center gap-3 text-xs">
-                <span className="w-28 shrink-0 font-medium text-slate-700 truncate">{item.name}</span>
-                <div className="flex-1 overflow-hidden rounded-full bg-slate-100 h-2">
-                  <div className="h-full rounded-full bg-emerald-600" style={{ width: item.pct }} />
+          <div>
+            <h3 className="text-xs font-bold text-slate-900 mb-4">
+              Top Data Classes Detected <span className="font-normal text-slate-400">(Last 7 Days)</span>
+            </h3>
+            <div className="space-y-3.5">
+              {DATA_CLASSES.map((item) => (
+                <div key={item.name} className="flex items-center justify-between gap-3 text-xs">
+                  <span className="w-28 shrink-0 font-bold text-slate-800 truncate">{item.name}</span>
+                  <div className="flex-1 max-w-[140px]">
+                    <div
+                      className="h-2.5 rounded-full bg-emerald-700"
+                      style={{ width: item.pct }}
+                    />
+                  </div>
+                  <span className="shrink-0 text-right font-semibold text-slate-800">
+                    {item.count} <span className="text-slate-400 font-normal">({item.pct})</span>
+                  </span>
                 </div>
-                <span className="w-20 text-right font-medium text-slate-600">
-                  {item.count} <span className="text-slate-400 font-normal">({item.pct})</span>
-                </span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-          <div className="pt-2">
-            <Link to="/policy/rules" className="text-xs font-semibold text-blue-600 hover:text-blue-800">
-              View all data classes ›
+          <div className="border-t border-slate-100 pt-3">
+            <Link to="/policy/rules" className="flex items-center justify-between text-xs font-bold text-blue-600 hover:text-blue-800">
+              <span>View all data classes</span>
+              <span>&gt;</span>
             </Link>
           </div>
         </div>
 
         {/* Top AI Tools by Usage */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 flex flex-col justify-between">
-          <h3 className="text-xs font-bold text-slate-800">Top AI Tools by Usage (Last 7 Days)</h3>
-          <div className="space-y-3">
-            {AI_TOOLS.map((tool) => (
-              <div key={tool.name} className="flex items-center gap-3 text-xs">
-                <span className="w-36 shrink-0 font-medium text-slate-700 truncate">
-                  {tool.name} {tool.domain && <span className="text-slate-400 font-normal text-[11px]">({tool.domain})</span>}
-                </span>
-                <div className="flex-1 overflow-hidden rounded-full bg-slate-100 h-2">
-                  <div className="h-full rounded-full bg-emerald-600" style={{ width: tool.pct }} />
+          <div>
+            <h3 className="text-xs font-bold text-slate-900 mb-4">
+              Top AI Tools by Usage <span className="font-normal text-slate-400">(Last 7 Days)</span>
+            </h3>
+            <div className="space-y-3.5">
+              {AI_TOOLS.map((tool) => (
+                <div key={tool.name} className="flex items-center justify-between gap-3 text-xs">
+                  <span className="w-36 shrink-0 font-bold text-slate-800 truncate">
+                    {tool.name} {tool.domain && <span className="text-slate-400 font-normal text-[11px]">({tool.domain})</span>}
+                  </span>
+                  <div className="flex-1 max-w-[120px]">
+                    <div
+                      className="h-2.5 rounded-full bg-emerald-700"
+                      style={{ width: tool.pct }}
+                    />
+                  </div>
+                  <span className="shrink-0 text-right font-semibold text-slate-800">
+                    {tool.count} <span className="text-slate-400 font-normal">({tool.pct})</span>
+                  </span>
                 </div>
-                <span className="w-20 text-right font-medium text-slate-600">
-                  {tool.count} <span className="text-slate-400 font-normal">({tool.pct})</span>
-                </span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-          <div className="pt-2">
-            <Link to="/policy/ai-tools" className="text-xs font-semibold text-blue-600 hover:text-blue-800">
-              View all AI tools ›
+          <div className="border-t border-slate-100 pt-3">
+            <Link to="/policy/ai-tools" className="flex items-center justify-between text-xs font-bold text-blue-600 hover:text-blue-800">
+              <span>View all AI tools</span>
+              <span>&gt;</span>
             </Link>
           </div>
         </div>
 
         {/* Top Risk Users */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 flex flex-col justify-between">
-          <h3 className="text-xs font-bold text-slate-800">Top Risk Users <span className="font-normal text-slate-400">(By risk events)</span></h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-slate-100 text-slate-400 font-medium">
-                <tr>
-                  <th className="pb-2">User</th>
-                  <th className="pb-2">Department</th>
-                  <th className="pb-2 text-center">Risk Events</th>
-                  <th className="pb-2 text-right">Trend (7D)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {TOP_RISK_USERS.map((user) => (
-                  <tr key={user.name}>
-                    <td className="py-2.5 font-medium text-slate-800">{user.name}</td>
-                    <td className="py-2.5 text-slate-500">{user.dept}</td>
-                    <td className="py-2.5 text-center font-bold text-slate-800">{user.events}</td>
-                    <td className={`py-2.5 text-right font-semibold ${user.isUp ? "text-rose-500" : "text-emerald-600"}`}>
-                      {user.trend}
-                    </td>
+          <div>
+            <h3 className="text-xs font-bold text-slate-900 mb-3">
+              Top Risk Users <span className="font-normal text-slate-400">(By risk events)</span>
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-slate-100 text-slate-400 font-medium">
+                  <tr>
+                    <th className="pb-2 text-left font-medium">User</th>
+                    <th className="pb-2 text-left font-medium">Department</th>
+                    <th className="pb-2 text-center font-medium">Risk Events</th>
+                    <th className="pb-2 text-right font-medium">Trend (7D)</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {TOP_RISK_USERS.map((user) => (
+                    <tr key={user.name}>
+                      <td className="py-2.5 font-bold text-slate-800 text-left">{user.name}</td>
+                      <td className="py-2.5 text-slate-600 text-left">{user.dept}</td>
+                      <td className="py-2.5 text-center font-bold text-slate-900">{user.events}</td>
+                      <td className={`py-2.5 text-right font-semibold ${user.isUp ? "text-rose-500" : "text-emerald-600"}`}>
+                        {user.trend}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div className="pt-2">
-            <Link to="/policy/users" className="text-xs font-semibold text-blue-600 hover:text-blue-800">
-              View all users ›
+          <div className="border-t border-slate-100 pt-3">
+            <Link to="/policy/users" className="flex items-center justify-between text-xs font-bold text-blue-600 hover:text-blue-800">
+              <span>View all users</span>
+              <span>&gt;</span>
             </Link>
           </div>
         </div>
