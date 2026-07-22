@@ -186,6 +186,26 @@ Policy & Tools has four functional sections:
 The following sections describe **what information and actions must be
 available**, without prescribing any layout.
 
+## Latest implementation update
+
+The latest dashboard commits introduced a more operational Approval Queue and
+more live metrics in Overview. These are current product data requirements,
+not design instructions:
+
+- Approval Queue now exposes live queue KPIs for awaiting-review count,
+  cross-department count and oldest waiting request duration.
+- Each pending request has a derived risk level (`HIGH`, `MEDIUM` or `LOW`)
+  based on semantic confidence, sensitivity confidence and cross-department
+  context.
+- Pending requests expose explicit Content, Overview and Evidence & Policy
+  information states. Evidence, policy reasoning and audit history are
+  treated as one related evidence domain.
+- Overview now exposes live inspection trends, pending-approval risk bands,
+  cross-department activity, top data classes, top AI tools, top risk users and
+  recent high-risk records.
+- Multi-line prompt text is normalised so accidental blank-line spacing does
+  not obscure the actual content.
+
 ---
 
 ## 1. Overview
@@ -210,10 +230,23 @@ For Hold, also show the number of events currently pending administrator
 review. Each outcome should explain its operational meaning: sent, protected,
 waiting for review or blocked.
 
+The current Overview also treats the following as live operational indicators:
+
+- total inspections for the selected time window;
+- change versus the previous seven-day period, when available;
+- number of pending held requests by risk band: high, medium and low;
+- oldest pending request duration and when it was created;
+- cross-department event count, percentage of inspections and confidence
+  threshold used for the indicator.
+
 #### Verdict activity over time
 
 For the latest seven days, show daily counts split by allow, redact, hold and
 deny. This should make changes in risk volume and decision mix visible.
+
+The current implementation also exposes the series as an inspection trend and
+supports a longer comparison window such as the last 30 days when data is
+available.
 
 #### Attention required
 
@@ -234,6 +267,9 @@ DEPT_CONFIDENTIAL.
 
 Users ranked by events with Redact, Hold or Deny outcomes. This is a risk
 activity count, not a judgement of employee intent.
+
+The current user summary may also include the user's department and a seven-day
+trend direction/value.
 
 #### AI tool usage
 
@@ -259,6 +295,14 @@ available summary data is:
 - review status.
 
 The administrator needs a way to go from this summary to full audit detail.
+
+The current high-risk summary can additionally expose:
+
+- predicted content department;
+- document-similarity confidence;
+- confidential-sensitivity score;
+- cross-department state and confidence;
+- derived risk level: high, medium or low.
 
 ---
 
@@ -392,6 +436,7 @@ sent back to the employee browser by polling, typically within a few seconds.
 - sort: oldest first or newest first;
 - cross-department-only filter;
 - clear filters;
+- search by employee, AI host, event ID or keyword;
 - a placeholder Queue Settings control exists, but no advanced queue-settings
   behaviour is currently implemented.
 
@@ -408,6 +453,10 @@ Every pending item can show:
 - attachment indicator;
 - detected data-class pills.
 
+The current queue also derives and labels each item's risk level (`HIGH`,
+`MEDIUM` or `LOW`) using semantic similarity confidence, M9 sensitivity
+confidence and cross-department context.
+
 ### Selected pending-request evidence
 
 The selected item exposes:
@@ -419,6 +468,12 @@ The selected item exposes:
 - user department;
 - target host;
 - AI tool tier.
+
+The current request summary also includes:
+
+- request type: prompt only or attachment + prompt;
+- minutes waiting;
+- full event ID.
 
 #### Full prompt
 
@@ -440,11 +495,22 @@ The selected item exposes:
 - employee purpose;
 - employee free-text justification.
 
+The current summary treats the purpose as a business-purpose value and shows
+the employee's justification as a separate explanation. They must not be
+merged into one field.
+
 #### Detection evidence
 
 - M2 structured detections;
 - M8 similarity department and confidence;
 - M9 department confidence and separate sensitivity confidence.
+
+The current evidence data also supports a compact risk interpretation:
+
+- predicted content-department confidence;
+- confidential sensitivity score and risk band;
+- cross-department yes/no, confidence and direction;
+- combined risk level.
 
 #### Review information
 
@@ -452,6 +518,10 @@ The selected item exposes:
 - reviewer;
 - reviewed time;
 - reviewer remark.
+
+The current Evidence & Policy information also includes the policy trigger
+reason and a history section for the audit/review state, so an administrator
+can understand why the request was held and what happened to it.
 
 ### Approval actions
 
@@ -671,4 +741,3 @@ prompt inspection on that site.
 > configuration and a strong distinction between AI usage visibility and
 > enforcement. Preserve every information type and action described in the
 > brief, but feel free to rethink the structure and visual design completely.
-

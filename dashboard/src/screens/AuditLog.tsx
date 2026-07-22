@@ -59,8 +59,8 @@ function getToolMeta(host: string) {
       name: "ChatGPT",
       host: "chatgpt.com",
       icon: (
-        <svg className="h-4 w-4 text-emerald-600" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7944.7944 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7707.7707 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464z" />
+        <svg className="h-4 w-4 text-emerald-600" viewBox="0 0 20 20" fill="currentColor" aria-label="ChatGPT">
+          <path d="M11.248 18.25q-.825 0-1.568-.314a4.3 4.3 0 0 1-1.32-.874 4 4 0 0 1-1.304.214 4 4 0 0 1-2.046-.544 4.27 4.27 0 0 1-1.518-1.485 4 4 0 0 1-.56-2.095q0-.48.131-1.04A4.4 4.4 0 0 1 2.04 10.71a4.07 4.07 0 0 1 .017-3.4 4.2 4.2 0 0 1 1.056-1.418 3.8 3.8 0 0 1 1.6-.842 3.9 3.9 0 0 1 .76-1.683q.593-.759 1.451-1.188a4.04 4.04 0 0 1 1.832-.429q.825 0 1.567.313.742.314 1.32.875a4 4 0 0 1 1.304-.215q1.106 0 2.046.545a4.14 4.14 0 0 1 1.501 1.485q.578.941.578 2.095 0 .48-.132 1.04.66.61 1.023 1.419.363.792.363 1.666 0 .892-.38 1.717a4.3 4.3 0 0 1-1.072 1.435 3.8 3.8 0 0 1-1.584.825 3.8 3.8 0 0 1-.775 1.683 4.06 4.06 0 0 1-1.436 1.188 4.04 4.04 0 0 1-1.832.429m-4.076-2.062q.825 0 1.435-.347l3.103-1.782a.36.36 0 0 0 .164-.313v-1.42L7.881 14.62a.67.67 0 0 1-.726 0l-3.118-1.798a.5.5 0 0 1-.017.115v.198q0 .841.396 1.551.413.693 1.139 1.089a3.2 3.2 0 0 0 1.617.412m.165-2.69a.4.4 0 0 0 .181.05q.083 0 .165-.05l1.238-.71-3.977-2.31a.7.7 0 0 1-.363-.643v-3.58q-.825.362-1.32 1.122a2.9 2.9 0 0 0-.495 1.65q0 .809.413 1.55.412.743 1.072 1.123zm3.91 3.663q.875 0 1.585-.396a2.96 2.96 0 0 0 1.534-2.64v-3.564a.32.32 0 0 0-.165-.297l-1.254-.726v4.604a.7.7 0 0 1-.363.643l-3.119 1.799a3 3 0 0 0 1.783.577m.627-6.039V8.878L10.01 7.822 8.129 8.878v2.244l1.881 1.056zM7.057 5.859a.7.7 0 0 1 .363-.644l3.119-1.798a3 3 0 0 0-1.782-.578q-.874 0-1.584.396A2.96 2.96 0 0 0 6.05 4.324a3.07 3.07 0 0 0-.396 1.551v3.547q0 .199.165.314l1.237.726zm8.383 7.887q.825-.364 1.303-1.123.495-.758.495-1.65a3.15 3.15 0 0 0-.412-1.55q-.413-.743-1.073-1.123l-3.086-1.782q-.099-.065-.181-.049a.3.3 0 0 0-.165.05l-1.238.692 3.993 2.327a.6.6 0 0 1 .264.264.64.64 0 0 1 .1.363zm-3.317-8.382a.63.63 0 0 1 .726 0l3.135 1.831v-.297q0-.792-.396-1.501a2.86 2.86 0 0 0-1.105-1.155q-.71-.43-1.65-.43-.825 0-1.436.347L8.294 5.941a.36.36 0 0 0-.165.314v1.418z" />
         </svg>
       ),
     };
@@ -251,11 +251,14 @@ function EvidenceDrawer({
           </span>
           <button
             type="button"
-            className="text-slate-400 hover:text-slate-700"
+            className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
             title="Copy Event ID"
             onClick={() => navigator.clipboard.writeText(row.log_id)}
           >
-            📋
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+              <rect x="8" y="8" width="11" height="11" rx="1.5" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8" />
+            </svg>
           </button>
         </div>
 
@@ -477,14 +480,17 @@ export default function AuditLog() {
   const [status, setStatus] = useState<LogStatus | "">("");
   const [crossFilter, setCrossFilter] = useState<string>("All");
   const [search, setSearch] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const isSearching = Boolean(search.trim());
+  const hasClientFilter = isSearching || Boolean(startDate) || Boolean(endDate);
 
   const logs = useLogsQuery({
     limit: 100,
-    offset: isSearching ? 0 : offset,
+    offset: hasClientFilter ? 0 : offset,
     decision: decision || undefined,
     status: status || undefined,
     cross_department_only: crossFilter === "Yes" ? true : undefined,
@@ -494,9 +500,12 @@ export default function AuditLog() {
   const rawItems = logs.data?.items ?? [];
 
   const filteredLogs = useMemo(() => {
-    if (!isSearching) return rawItems;
     const q = search.toLowerCase().trim();
     return rawItems.filter((row) => {
+      const eventDate = new Date(row.ts);
+      if (startDate && eventDate < new Date(`${startDate}T00:00:00`)) return false;
+      if (endDate && eventDate > new Date(`${endDate}T23:59:59.999`)) return false;
+      if (!q) return true;
       const toolMeta = getToolMeta(row.target_host);
       return (
         row.user_id.toLowerCase().includes(q) ||
@@ -510,10 +519,10 @@ export default function AuditLog() {
         (row.filename && row.filename.toLowerCase().includes(q))
       );
     });
-  }, [rawItems, search, isSearching]);
+  }, [rawItems, search, startDate, endDate]);
 
-  const total = isSearching ? filteredLogs.length : (logs.data?.total ?? rawItems.length);
-  const items = filteredLogs.slice(isSearching ? 0 : offset, (isSearching ? 0 : offset) + pageSize);
+  const total = hasClientFilter ? filteredLogs.length : (logs.data?.total ?? rawItems.length);
+  const items = filteredLogs.slice(hasClientFilter ? 0 : offset, (hasClientFilter ? 0 : offset) + pageSize);
   const selected = items.find((item) => item.log_id === selectedId) ?? (items.length > 0 ? items[0] : null);
   const toolByHost = useMemo(() => new Map((tools.data ?? []).map((tool) => [tool.host, tool])), [tools.data]);
 
@@ -526,7 +535,52 @@ export default function AuditLog() {
     setStatus("");
     setCrossFilter("All");
     setSearch("");
+    setStartDate("");
+    setEndDate("");
     setOffset(0);
+  }
+
+  function exportCsv() {
+    const columns = [
+      "Event ID", "Date & Time", "User", "User Department", "AI Tool", "Document Similarity",
+      "Predicted Content Department", "Sensitivity", "Cross Department", "Cross Department Confidence",
+      "Data Classes", "Verdict", "Review Status", "Policy Reason", "Prompt", "Attachment",
+      "Purpose", "Justification", "Reviewer", "Reviewed At", "Reviewer Remark",
+    ];
+    const quote = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const formatExportDate = (value: string) => new Date(value).toLocaleString();
+    const rows = filteredLogs.map((row) => [
+      row.log_id,
+      formatExportDate(row.ts),
+      row.user_id,
+      row.user_department,
+      getToolMeta(row.target_host).name,
+      `${Math.round(row.m8_confidence * 100)}%`,
+      row.content_department,
+      `${Math.round(row.m9_sensitivity_confidence * 100)}%`,
+      isCrossDepartment(row) ? "Yes" : "No",
+      row.cross_department_confidence == null ? "" : `${Math.round(row.cross_department_confidence * 100)}%`,
+      row.data_classes.join(", "),
+      row.decision,
+      row.status,
+      row.reason,
+      row.prompt_text,
+      row.filename,
+      row.purpose,
+      row.justification,
+      row.reviewer,
+      row.reviewed_at ? formatExportDate(row.reviewed_at) : "",
+      row.remark,
+    ]);
+    const csv = [columns, ...rows].map((row) => row.map(quote).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -542,9 +596,13 @@ export default function AuditLog() {
           <div className="grid grid-cols-4 gap-4 text-xs font-semibold text-slate-600">
             <div>
               <label className="block mb-1 text-slate-500">Date Range</label>
-              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-800 shadow-sm cursor-pointer">
-                <span>05 May 2025 - 12 May 2025</span>
+              <div className="flex items-center rounded-lg border border-slate-200 bg-white text-slate-800 shadow-sm focus-within:border-blue-600 focus-within:ring-1 focus-within:ring-blue-600">
+                <input type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setOffset(0); }} aria-label="Start date" className="min-w-0 flex-1 rounded-l-lg bg-transparent px-3 py-2 text-xs font-medium outline-none" />
+                <span className="text-slate-400">–</span>
+                <input type="date" value={endDate} min={startDate || undefined} onChange={(e) => { setEndDate(e.target.value); setOffset(0); }} aria-label="End date" className="min-w-0 flex-1 rounded-r-lg bg-transparent px-3 py-2 text-xs font-medium outline-none" />
+                {false && <>
                 <span className="text-slate-400">📅</span>
+                </>}
               </div>
             </div>
 
@@ -622,16 +680,6 @@ export default function AuditLog() {
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                <svg className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                </svg>
-                More Filters
-              </button>
-
-              <button
-                type="button"
                 onClick={resetFilters}
                 className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
               >
@@ -640,6 +688,8 @@ export default function AuditLog() {
 
               <button
                 type="button"
+                onClick={exportCsv}
+                disabled={filteredLogs.length === 0}
                 className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-blue-700"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -863,4 +913,3 @@ export default function AuditLog() {
     </div>
   );
 }
-

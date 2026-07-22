@@ -22,6 +22,21 @@ export interface DayPoint {
 }
 
 const DECISIONS: Decision[] = ["allow", "redact", "hold", "deny"];
+const SYSTEM_SUPPORTED_AI_HOSTS = new Set(["chatgpt.com", "gemini.google.com"]);
+
+function aiToolDisplayName(host: string): string {
+  const names: Record<string, string> = {
+    "chatgpt.com": "ChatGPT",
+    "gemini.google.com": "Gemini",
+    "copilot.microsoft.com": "Copilot",
+    "www.deepseek.com": "DeepSeek",
+    "deepseek.com": "DeepSeek",
+    "claude.ai": "Claude",
+  };
+  if (names[host]) return names[host];
+  const bare = host.replace(/^www\./i, "").split(".")[0];
+  return bare ? bare[0].toUpperCase() + bare.slice(1) : "Other / Unlisted";
+}
 
 export function pivotByDay(byDay: [string, string, number][]): DayPoint[] {
   const map = new Map<string, DayPoint>();
@@ -304,17 +319,17 @@ export default function Overview() {
   // 2. Top AI Tools
   const liveAiTools = tools.data && tools.data.length > 0
     ? (() => {
-        const toolUsagesTotal = tools.data.reduce((acc, t) => acc + t.usage_count, 0) || 1;
-        const maxToolUsage = Math.max(...tools.data.map(t => t.usage_count)) || 1;
+        const toolUsagesTotal = tools.data.reduce((acc, t) => acc + t.usage_count + t.visit_count, 0) || 1;
+        const maxToolUsage = Math.max(...tools.data.map(t => t.usage_count + t.visit_count)) || 1;
         return tools.data.map((t) => ({
-          name: t.host,
-          domain: t.host,
-          count: t.usage_count.toLocaleString(),
-          pct: `${((t.usage_count / toolUsagesTotal) * 100).toFixed(1)}%`,
-          barPct: `${Math.round((t.usage_count / maxToolUsage) * 100)}%`,
+          name: aiToolDisplayName(t.host),
+          supported: SYSTEM_SUPPORTED_AI_HOSTS.has(t.host),
+          count: (t.usage_count + t.visit_count).toLocaleString(),
+          pct: `${(((t.usage_count + t.visit_count) / toolUsagesTotal) * 100).toFixed(1)}%`,
+          barPct: `${Math.round(((t.usage_count + t.visit_count) / maxToolUsage) * 100)}%`,
         }));
       })()
-    : AI_TOOLS;
+    : AI_TOOLS.map((tool) => ({ ...tool, supported: SYSTEM_SUPPORTED_AI_HOSTS.has(tool.domain) }));
 
   // 3. Top Risk Users
   const liveTopUsers = stats.data?.top_users && stats.data.top_users.length > 0
@@ -329,7 +344,7 @@ export default function Overview() {
 
   // 4. Recent High-risk Activity
   const liveRecentLogs = logs.data?.items && logs.data.items.length > 0
-    ? logs.data.items.slice(0, 5).map((log) => {
+    ? logs.data.items.map((log) => {
         const simVal = Math.round((log.department_confidence ?? 0.8) * 100);
         const simBand = simVal > 70 ? "High" : simVal > 40 ? "Medium" : "Low";
         const sensVal = (log.m9_sensitivity_confidence ?? 0.85).toFixed(2);
@@ -357,6 +372,7 @@ export default function Overview() {
           ts: formatTs(log.ts),
           user: formatUserName(log.user_id),
           tool: log.target_host,
+          hasAttachment: Boolean(log.filename),
           userDept: log.user_department ?? "Finance",
           predDept: log.content_department ? `${log.content_department} (${confVal}%)` : `${log.user_department ?? "Finance"} (${confVal}%)`,
           similarity: `${simVal}% (${simBand})`,
@@ -372,7 +388,7 @@ export default function Overview() {
           risk: riskLevel,
           riskBadge: rBadge,
         };
-      })
+      }).filter((row) => row.risk === "High").slice(0, 5)
     : RECENT_HIGH_RISK;
 
   return (
@@ -715,8 +731,11 @@ export default function Overview() {
             <div className="space-y-3.5">
               {liveAiTools.map((tool) => (
                 <div key={tool.name} className="flex items-center justify-between gap-3 text-xs">
-                  <span className="w-36 shrink-0 font-bold text-slate-800 truncate">
-                    {tool.name} {tool.domain && <span className="text-slate-400 font-normal text-[11px]">({tool.domain})</span>}
+                  <span className="flex w-44 shrink-0 items-center gap-2 truncate font-bold text-slate-800">
+                    <span className="truncate">{tool.name}</span>
+                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${tool.supported ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                      {tool.supported ? "Approved" : "Unapproved"}
+                    </span>
                   </span>
                   <div className="flex-1 flex items-center px-1">
                     <div
@@ -811,7 +830,18 @@ export default function Overview() {
                 <tr key={idx} className="hover:bg-slate-50/50">
                   <td className="px-3 py-3.5 whitespace-nowrap text-slate-500 text-left font-normal">{row.ts}</td>
                   <td className="px-3 py-3.5 whitespace-nowrap font-bold text-slate-800 text-left">{row.user}</td>
-                  <td className="px-3 py-3.5 whitespace-nowrap font-medium text-slate-700 text-left">{row.tool}</td>
+                  <td className="px-3 py-3.5 whitespace-nowrap font-medium text-slate-700 text-left">
+                    <span className="inline-flex items-center gap-2">
+                      {row.tool}
+                      {Boolean("hasAttachment" in row && row.hasAttachment) && (
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-slate-100 text-slate-500" title="Attachment included" aria-label="Attachment included">
+                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="m15.17 7-6.59 6.59a2 2 0 1 0 2.83 2.83l6.41-6.59a4 4 0 0 0-5.65-5.66l-6.42 6.59a6 6 0 0 0 8.49 8.49L20.5 13" />
+                          </svg>
+                        </span>
+                      )}
+                    </span>
+                  </td>
                   <td className="px-3 py-3.5 whitespace-nowrap text-slate-600 text-left">{row.userDept}</td>
                   <td className="px-3 py-3.5 whitespace-nowrap text-slate-700 font-medium text-left">{row.predDept}</td>
                   <td className={`px-3 py-3.5 whitespace-nowrap text-center ${row.simTone}`}>{row.similarity}</td>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, HashRouter, Routes, useLocation } from "react-router-dom";
 
 import { useHealthQuery, useLogsQuery } from "./api/queries";
@@ -7,6 +7,7 @@ import ApprovalQueue from "./screens/ApprovalQueue";
 import AuditLog from "./screens/AuditLog";
 import Overview from "./screens/Overview";
 import PolicyAndTools from "./screens/PolicyAndTools";
+import brandLogo from "../../logo.svg";
 
 const LOGIN_STORAGE_KEY = "aigg-dashboard-logged-in";
 
@@ -90,17 +91,15 @@ function Sidebar() {
   const live = Boolean(health.data && health.data.mocked.length === 0);
 
   return (
-    <aside className="sticky top-0 flex h-screen w-64 shrink-0 flex-col bg-[#0b1426] px-4 py-5 text-white">
+    <aside className="fixed inset-y-0 left-0 z-20 flex h-screen w-64 flex-col bg-[#0b1426] px-4 py-5 text-white">
       {/* Brand Header */}
       <div className="mb-8 flex items-center gap-3 px-2">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white shadow">
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-          </svg>
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center">
+          <img src={brandLogo} alt="AI Governance Gateway" className="h-full w-full object-contain" />
         </div>
         <div>
           <span className="block text-xs font-extrabold uppercase tracking-wider text-white">
-            AI GOVERNANCE GATEWAY
+            AI GOVERNANCE <span className="text-sky-300">GATEWAY</span>
           </span>
           <span className="block text-[11px] font-medium text-slate-400">Employer Dashboard</span>
         </div>
@@ -237,6 +236,20 @@ function Sidebar() {
 function HeaderBar() {
   const location = useLocation();
   const path = location.pathname;
+  const [updatedAt, setUpdatedAt] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setUpdatedAt(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const dataAsOf = updatedAt.toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
   let title = "Audit Log";
   let subtitle = "Complete audit trail of all AI prompt inspections, policy decisions, and review actions.";
@@ -247,6 +260,9 @@ function HeaderBar() {
   } else if (path.startsWith("/approvals")) {
     title = "Approval Queue";
     subtitle = "Pending review requests requiring compliance administrator decision.";
+  } else if (path.startsWith("/policy/internal-documents")) {
+    title = "Internal Documents";
+    subtitle = "Manage the reference corpus used by confidential document similarity detection.";
   } else if (path.startsWith("/policy")) {
     title = "Policy & Tools";
     subtitle = "Configure detection rules, redaction classes, internal document embeddings and AI tools.";
@@ -260,25 +276,20 @@ function HeaderBar() {
       </div>
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 text-xs text-slate-500">
-          <span>Data as of: 12 May 2025, 10:24 AM</span>
+          <span>Data as of: {dataAsOf}</span>
           <button
             type="button"
             className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
             title="Refresh data"
+            aria-label="Refresh dashboard data"
+            onClick={() => {
+              setUpdatedAt(new Date());
+              window.location.reload();
+            }}
           >
             ↻
           </button>
         </div>
-
-        <button
-          type="button"
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
-          title="Help &amp; Documentation"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </button>
 
         <div className="flex items-center gap-3 border-l border-slate-200 pl-4">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-white shadow-sm">
@@ -296,9 +307,9 @@ function HeaderBar() {
 
 function Shell() {
   return (
-    <div className="flex min-h-screen bg-[#f8fafc]">
+    <div className="min-h-screen bg-[#f8fafc]">
       <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="ml-64 flex min-w-0 flex-1 flex-col">
         <HeaderBar />
         <main className="min-w-0 flex-1">
           <ErrorBoundary>
