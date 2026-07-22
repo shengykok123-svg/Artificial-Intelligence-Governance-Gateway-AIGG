@@ -577,51 +577,52 @@ export default function Overview() {
       {/* 4. Bottom Table: Recent High-risk Activity */}
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-bold text-slate-800">Recent High-risk Activity</h3>
-          <Link to="/" className="text-xs font-semibold text-blue-600 hover:text-blue-800">
-            View all in Audit Log ›
+          <h3 className="text-xs font-bold text-slate-900">Recent High-risk Activity</h3>
+          <Link to="/" className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800">
+            <span>View all in Audit Log</span>
+            <span>&gt;</span>
           </Link>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-200 bg-slate-50/80 font-bold text-slate-700 align-middle text-center">
+            <thead className="border-b border-slate-100 font-semibold text-slate-400 align-middle">
               <tr>
-                <th className="px-3 py-2.5 whitespace-nowrap text-left">Date &amp; Time ↓</th>
-                <th className="px-3 py-2.5 whitespace-nowrap text-left">User</th>
-                <th className="px-3 py-2.5 whitespace-nowrap text-left">AI Tool</th>
-                <th className="px-3 py-2.5 whitespace-nowrap text-center">User Dept.</th>
-                <th className="px-3 py-2.5 whitespace-nowrap text-center">Predicted Content Dept.</th>
-                <th className="px-3 py-2.5 whitespace-nowrap text-center">Doc Similarity Detect</th>
-                <th className="px-3 py-2.5 whitespace-nowrap text-center">Confidential Sensitivity Score</th>
-                <th className="px-3 py-2.5 whitespace-nowrap text-center">Cross Dept. (Confidence)</th>
-                <th className="px-3 py-2.5 whitespace-nowrap text-center">Verdict</th>
-                <th className="px-3 py-2.5 whitespace-nowrap text-center">Review Status</th>
-                <th className="px-3 py-2.5 whitespace-nowrap text-center">Risk Level</th>
+                <th className="px-3 py-3 whitespace-nowrap text-left font-semibold">Date &amp; Time ↓</th>
+                <th className="px-3 py-3 whitespace-nowrap text-left font-semibold">User</th>
+                <th className="px-3 py-3 whitespace-nowrap text-left font-semibold">AI Tool</th>
+                <th className="px-3 py-3 whitespace-nowrap text-left font-semibold">User Dept.</th>
+                <th className="px-3 py-3 whitespace-nowrap text-left font-semibold">Predicted Content Dept.</th>
+                <th className="px-3 py-3 whitespace-nowrap text-center font-semibold">Doc Similarity Detect</th>
+                <th className="px-3 py-3 whitespace-nowrap text-center font-semibold">Confidential Sensitivity Score</th>
+                <th className="px-3 py-3 whitespace-nowrap text-center font-semibold">Cross Dept. (Confidence)</th>
+                <th className="px-3 py-3 whitespace-nowrap text-center font-semibold">Verdict</th>
+                <th className="px-3 py-3 whitespace-nowrap text-center font-semibold">Review Status</th>
+                <th className="px-3 py-3 whitespace-nowrap text-center font-semibold">Risk Level</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 align-middle">
+            <tbody className="divide-y divide-slate-50 align-middle">
               {RECENT_HIGH_RISK.map((row, idx) => (
-                <tr key={idx} className="hover:bg-slate-50/60">
-                  <td className="px-3 py-3 whitespace-nowrap text-slate-600 text-left">{row.ts}</td>
-                  <td className="px-3 py-3 whitespace-nowrap font-medium text-slate-800 text-left">{row.user}</td>
-                  <td className="px-3 py-3 whitespace-nowrap text-slate-700 text-left">{row.tool}</td>
-                  <td className="px-3 py-3 whitespace-nowrap text-slate-600 text-center">{row.userDept}</td>
-                  <td className="px-3 py-3 whitespace-nowrap text-slate-700 font-medium text-center">{row.predDept}</td>
-                  <td className={`px-3 py-3 whitespace-nowrap text-center ${row.simTone}`}>{row.similarity}</td>
-                  <td className={`px-3 py-3 whitespace-nowrap text-center ${row.sensTone}`}>{row.sensitivity}</td>
-                  <td className={`px-3 py-3 whitespace-nowrap text-center ${row.crossTone}`}>{row.cross}</td>
-                  <td className="px-3 py-3 whitespace-nowrap text-center">
+                <tr key={idx} className="hover:bg-slate-50/50">
+                  <td className="px-3 py-3.5 whitespace-nowrap text-slate-500 text-left font-normal">{row.ts}</td>
+                  <td className="px-3 py-3.5 whitespace-nowrap font-bold text-slate-800 text-left">{row.user}</td>
+                  <td className="px-3 py-3.5 whitespace-nowrap font-medium text-slate-700 text-left">{row.tool}</td>
+                  <td className="px-3 py-3.5 whitespace-nowrap text-slate-600 text-left">{row.userDept}</td>
+                  <td className="px-3 py-3.5 whitespace-nowrap text-slate-700 font-medium text-left">{row.predDept}</td>
+                  <td className={`px-3 py-3.5 whitespace-nowrap text-center ${row.simTone}`}>{row.similarity}</td>
+                  <td className={`px-3 py-3.5 whitespace-nowrap text-center ${row.sensTone}`}>{row.sensitivity}</td>
+                  <td className={`px-3 py-3.5 whitespace-nowrap text-center ${row.crossTone}`}>{row.cross}</td>
+                  <td className="px-3 py-3.5 whitespace-nowrap text-center">
                     <span className={`inline-block rounded-md px-2.5 py-1 text-[11px] font-bold ${row.verdictBadge}`}>
                       {row.verdict}
                     </span>
                   </td>
-                  <td className="px-3 py-3 whitespace-nowrap text-center">
+                  <td className="px-3 py-3.5 whitespace-nowrap text-center">
                     <span className={`inline-block rounded-md px-2.5 py-1 text-[11px] font-semibold ${row.statusBadge}`}>
                       {row.status}
                     </span>
                   </td>
-                  <td className="px-3 py-3 whitespace-nowrap text-center">
+                  <td className="px-3 py-3.5 whitespace-nowrap text-center">
                     <span className={`inline-block rounded-md px-2.5 py-1 text-[11px] font-bold ${row.riskBadge}`}>
                       {row.risk}
                     </span>
