@@ -66,18 +66,19 @@ def _best_confidence(data_class: str, classification: Classification) -> float:
 def _detector_confidence(
     data_class: str, detector: str, classification: Classification,
 ) -> float:
-    """Per-detector best confidence for a `detector != "*"` rule: the max
-    confidence of spans of this class THAT DETECTOR emitted, or 0.0 if it
-    emitted none (the rule then fails min_confidence and simply does not
-    match -- the classification.confidence fallback is a "*"-rule-only
-    behaviour)."""
-    if detector == "*":
-        return _best_confidence(data_class, classification)
-    class_confidences = [
-        s.confidence for s in classification.spans
-        if s.data_class == data_class and s.detector == detector
-    ]
-    return max(class_confidences) if class_confidences else 0.0
+    """Per-detector confidence for a `detector != "*"` rule. M8 (embed) and
+    M9 (deberta) are judged on their whole-document score -- classify()'s
+    unthresholded read of the entire prompt+attachments -- not on whether any
+    individual sentence's span cleared SPAN_THRESHOLD. A document can read as
+    confidential in aggregate even when no single sentence does; gating on
+    per-sentence spans silently dropped that signal entirely (the "*"-rule
+    classification.confidence fallback is unrelated and stays span-based, for
+    non-semantic detectors that have no document-level score to fall back to)."""
+    if detector == "embed":
+        return classification.m8_confidence
+    if detector == "deberta":
+        return classification.m9_sensitivity_confidence
+    return _best_confidence(data_class, classification)
 
 
 def _content_department_matches(

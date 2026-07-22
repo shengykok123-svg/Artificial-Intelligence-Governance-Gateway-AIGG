@@ -212,6 +212,7 @@ def test_deduped_span_still_lands_in_the_correct_policy_tier():
     classification = Classification(
         data_classes=["DEPT_CONFIDENTIAL"], confidence=0.91, spans=spans,
         content_department="engineering", department_confidence=0.91,
+        m8_confidence=0.0, m9_sensitivity_confidence=0.91,
     )
     ctx = PolicyContext(user_role="staff", department="engineering", ai_tool_tier="PUBLIC_AI",
                         tool_status="approved", purpose="GENERAL", target_host="chatgpt.com")
