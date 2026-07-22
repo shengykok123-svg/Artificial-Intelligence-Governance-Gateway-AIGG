@@ -299,7 +299,20 @@ export default function ApprovalQueue() {
                 const initials = getInitials(userName);
                 const avatarBg = getAvatarBg(userName);
                 const waitLabel = formatWaitLabel(row.ts);
-                const isHighRisk = row.m9_sensitivity_confidence > 0.7 || cross;
+                const simScore = row.department_confidence ?? 0;
+                const sensScore = row.m9_sensitivity_confidence ?? 0;
+
+                const itemRisk = (sensScore > 0.7 || simScore > 0.7 || cross)
+                  ? "HIGH"
+                  : (sensScore > 0.4 || simScore > 0.4)
+                  ? "MEDIUM"
+                  : "LOW";
+
+                const itemBadge = itemRisk === "HIGH"
+                  ? "bg-rose-100 text-rose-700"
+                  : itemRisk === "MEDIUM"
+                  ? "bg-amber-100 text-amber-800"
+                  : "bg-emerald-100 text-emerald-700";
 
                 return (
                   <div
@@ -326,12 +339,8 @@ export default function ApprovalQueue() {
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                            isHighRisk ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"
-                          }`}
-                        >
-                          {isHighRisk ? "HIGH" : "LOW"}
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${itemBadge}`}>
+                          {itemRisk}
                         </span>
                         {cross && (
                           <span className="rounded bg-rose-50 border border-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-600">
@@ -479,9 +488,15 @@ export default function ApprovalQueue() {
                         </div>
                         <div className="flex justify-between py-0.5">
                           <span className="text-slate-500">Cross-department</span>
-                          <span className="font-semibold text-rose-600">
-                            Yes ({selected.user_department ?? "Finance"} &rarr; {selected.content_department ?? "HR"})
-                          </span>
+                          {isCrossDepartment(selected) ? (
+                            <span className="font-semibold text-rose-600">
+                              Yes ({selected.user_department ?? "finance"} &rarr; {selected.content_department ?? "hr"})
+                            </span>
+                          ) : (
+                            <span className="font-semibold text-emerald-600">
+                              No ({selected.user_department ?? "finance"} &rarr; {selected.content_department ?? selected.user_department ?? "finance"})
+                            </span>
+                          )}
                         </div>
                         <div className="flex justify-between py-0.5">
                           <span className="text-slate-500">Cross-department Confidence</span>
