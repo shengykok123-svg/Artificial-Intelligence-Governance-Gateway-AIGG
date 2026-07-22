@@ -315,7 +315,7 @@ function EvidenceDrawer({
                     1 file ({row.filename})
                   </button>
                 ) : (
-                  "1 file (Quarterly_Budget_FY2025.xlsx)"
+                  "None"
                 )}
               </span>
             </div>
@@ -323,14 +323,14 @@ function EvidenceDrawer({
             <div className="py-1 border-b border-slate-100">
               <span className="block text-slate-500 mb-0.5">Policy That Matched</span>
               <span className="font-medium text-slate-900">
-                {cross ? "Cross-department confidential content rule" : row.reason}
+                {cross ? "Cross-department confidential content rule" : (row.reason || "Default governance policy")}
               </span>
             </div>
 
             <div className="py-1 border-b border-slate-100">
               <span className="block text-slate-500 mb-0.5">Policy Outcome Reason</span>
               <span className="font-medium text-slate-900 leading-relaxed">
-                {row.reason || "High similarity to internal Finance document Cross-department access without business purpose"}
+                {row.reason || "No sensitive data class detected."}
               </span>
             </div>
 
@@ -346,7 +346,7 @@ function EvidenceDrawer({
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Detection Evidence</h3>
           <div className="space-y-2 text-xs">
             <div className="flex justify-between py-1 border-b border-slate-100">
-              <span className="text-slate-500">Document Similarity Detect</span>
+              <span className="text-slate-500">Document Similarity</span>
               <span className={`font-semibold ${simColor}`}>{similarity}% ({simBand})</span>
             </div>
             <div className="flex justify-between py-1 border-b border-slate-100">
@@ -359,8 +359,8 @@ function EvidenceDrawer({
             </div>
             <div className="flex justify-between py-1">
               <span className="text-slate-500">Cross Department (Confidence)</span>
-              <span className="font-semibold text-rose-600">
-                {cross ? `Yes (${formatDepartment(row.user_department)} → ${formatDepartment(predictedDept)}) ${crossConf}%` : `No 15%`}
+              <span className={`font-semibold ${cross ? "text-rose-600" : "text-slate-600"}`}>
+                {cross ? `Yes (${formatDepartment(row.user_department)} → ${formatDepartment(predictedDept)}) ${crossConf}%` : "No"}
               </span>
             </div>
           </div>
