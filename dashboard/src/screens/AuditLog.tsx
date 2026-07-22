@@ -646,15 +646,15 @@ export default function AuditLog() {
                   </th>
                   <th className="px-4 py-2.5 whitespace-nowrap text-center">
                     <span className="block">Document Similarity</span>
-                    <span className="block font-medium text-slate-500">Detect <span className="text-slate-400 font-normal">ⓘ</span></span>
+                    <span className="block font-medium text-slate-500">Detect</span>
                   </th>
                   <th className="px-4 py-2.5 whitespace-nowrap text-center">
                     <span className="block">Predicted Content</span>
-                    <span className="block font-medium text-slate-500">(Sensitivity) <span className="text-slate-400 font-normal">ⓘ</span></span>
+                    <span className="block font-medium text-slate-500">(Sensitivity)</span>
                   </th>
                   <th className="px-4 py-2.5 whitespace-nowrap text-center">
                     <span className="block">Cross Department</span>
-                    <span className="block font-medium text-slate-500">(Confidence) <span className="text-slate-400 font-normal">ⓘ</span></span>
+                    <span className="block font-medium text-slate-500">(Confidence)</span>
                   </th>
                   <th className="px-4 py-2.5 whitespace-nowrap text-center">
                     <span className="block">Verdict</span>
