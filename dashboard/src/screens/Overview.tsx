@@ -446,7 +446,7 @@ export default function Overview() {
               <LineChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} domain={[0, 500]} />
+                <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} domain={[0, (max: number) => (max === 0 ? 10 : Math.ceil(max * 1.15))]} />
                 <Tooltip />
                 <Line type="monotone" dataKey="allow" stroke="#16a34a" strokeWidth={2} dot={{ r: 3.5, fill: "#16a34a", strokeWidth: 0 }} />
                 <Line type="monotone" dataKey="redact" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3.5, fill: "#f59e0b", strokeWidth: 0 }} />
