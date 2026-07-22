@@ -11,7 +11,7 @@ import {
 } from "recharts";
 
 import type { Decision } from "../api/types";
-import { useLogsQuery, useStatsQuery } from "../api/queries";
+import { useLogsQuery, useStatsQuery, useToolsQuery } from "../api/queries";
 
 export interface DayPoint {
   date: string;
@@ -31,6 +31,24 @@ export function pivotByDay(byDay: [string, string, number][]): DayPoint[] {
     map.set(date, existing);
   }
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function formatTs(iso: string) {
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) +
+      ", " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return iso;
+  }
+}
+
+function formatUserName(email: string) {
+  if (!email) return "Unknown User";
+  const prefix = email.split("@")[0];
+  const parts = prefix.split(".");
+  return parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
 }
 
 const TREND_DATA = [
@@ -169,6 +187,7 @@ const RECENT_HIGH_RISK = [
 export default function Overview() {
   const stats = useStatsQuery();
   const logs = useLogsQuery({ limit: 5, offset: 0 });
+  const tools = useToolsQuery();
 
   const byDecision = stats.data?.by_decision ?? {};
   const allowedCount = byDecision.allow ?? 1248;
@@ -185,6 +204,93 @@ export default function Overview() {
   const trendData = stats.data?.by_day && stats.data.by_day.length > 0
     ? pivotByDay(stats.data.by_day)
     : TREND_DATA;
+
+  // 1. Top Data Classes
+  const liveDataClasses = stats.data?.top_data_classes && stats.data.top_data_classes.length > 0
+    ? (() => {
+        const maxCnt = Math.max(...stats.data.top_data_classes.map(([_, n]) => n)) || 1;
+        return stats.data.top_data_classes.map(([dc, n]) => ({
+          name: dc,
+          count: n.toLocaleString(),
+          pct: `${((n / totalCount) * 100).toFixed(1)}%`,
+          barPct: `${Math.round((n / maxCnt) * 100)}%`,
+        }));
+      })()
+    : DATA_CLASSES;
+
+  // 2. Top AI Tools
+  const liveAiTools = tools.data && tools.data.length > 0
+    ? (() => {
+        const toolUsagesTotal = tools.data.reduce((acc, t) => acc + t.usage_count, 0) || 1;
+        const maxToolUsage = Math.max(...tools.data.map(t => t.usage_count)) || 1;
+        return tools.data.map((t) => ({
+          name: t.host,
+          domain: t.host,
+          count: t.usage_count.toLocaleString(),
+          pct: `${((t.usage_count / toolUsagesTotal) * 100).toFixed(1)}%`,
+          barPct: `${Math.round((t.usage_count / maxToolUsage) * 100)}%`,
+        }));
+      })()
+    : AI_TOOLS;
+
+  // 3. Top Risk Users
+  const liveTopUsers = stats.data?.top_users && stats.data.top_users.length > 0
+    ? stats.data.top_users.map(([u, n]) => ({
+        name: formatUserName(u),
+        dept: "Finance",
+        events: n,
+        trend: "↑ 15%",
+        isUp: true,
+      }))
+    : TOP_RISK_USERS;
+
+  // 4. Recent High-risk Activity
+  const liveRecentLogs = logs.data?.items && logs.data.items.length > 0
+    ? logs.data.items.slice(0, 5).map((log) => {
+        const simVal = Math.round((log.department_confidence ?? 0.8) * 100);
+        const simBand = simVal > 70 ? "High" : simVal > 40 ? "Medium" : "Low";
+        const sensVal = (log.m9_sensitivity_confidence ?? 0.85).toFixed(2);
+        const sensBand = log.m9_sensitivity_confidence > 0.7 ? "High" : log.m9_sensitivity_confidence > 0.4 ? "Medium" : "Low";
+        const isCross = log.cross_department_confidence != null;
+        const confVal = Math.round(((isCross ? log.cross_department_confidence : log.department_confidence) ?? 0.8) * 100);
+        const riskLevel = log.m9_sensitivity_confidence > 0.7 ? "High" : log.m9_sensitivity_confidence > 0.4 ? "Medium" : "Low";
+        
+        const vText = log.decision.charAt(0).toUpperCase() + log.decision.slice(1);
+        const sText = log.status === "pending" ? "Pending" : "Reviewed";
+
+        let vBadge = "bg-amber-100/80 text-amber-800 border border-amber-200";
+        if (log.decision === "allow") vBadge = "bg-emerald-100/80 text-emerald-800 border border-emerald-200";
+        else if (log.decision === "deny") vBadge = "bg-rose-100/80 text-rose-800 border border-rose-200";
+        else if (log.decision === "redact") vBadge = "bg-amber-100/80 text-amber-800 border border-amber-200";
+
+        let sBadge = "bg-blue-100/80 text-blue-800 border border-blue-200";
+        if (sText === "Reviewed") sBadge = "bg-emerald-100/80 text-emerald-800 border border-emerald-200";
+
+        let rBadge = "bg-rose-100/80 text-rose-800 border border-rose-200";
+        if (riskLevel === "Medium") rBadge = "bg-amber-100/80 text-amber-800 border border-amber-200";
+        else if (riskLevel === "Low") rBadge = "bg-emerald-100/80 text-emerald-800 border border-emerald-200";
+
+        return {
+          ts: formatTs(log.ts),
+          user: formatUserName(log.user_id),
+          tool: log.target_host,
+          userDept: log.user_department ?? "Finance",
+          predDept: log.content_department ? `${log.content_department} (${confVal}%)` : `${log.user_department ?? "Finance"} (${confVal}%)`,
+          similarity: `${simVal}% (${simBand})`,
+          simTone: simBand === "High" ? "text-rose-600 font-semibold" : simBand === "Medium" ? "text-amber-600 font-semibold" : "text-emerald-600 font-semibold",
+          sensitivity: `${sensVal} (${sensBand})`,
+          sensTone: sensBand === "High" ? "text-rose-600 font-semibold" : sensBand === "Medium" ? "text-amber-600 font-semibold" : "text-emerald-600 font-semibold",
+          cross: `${isCross ? "Yes" : "No"} (${confVal}%)`,
+          crossTone: isCross ? "text-rose-600 font-semibold" : "text-emerald-600 font-semibold",
+          verdict: vText,
+          verdictBadge: vBadge,
+          status: sText,
+          statusBadge: sBadge,
+          risk: riskLevel,
+          riskBadge: rBadge,
+        };
+      })
+    : RECENT_HIGH_RISK;
 
   return (
     <main className="p-6 space-y-6 bg-slate-50 min-h-screen">
@@ -493,7 +599,7 @@ export default function Overview() {
               Top Data Classes Detected <span className="font-normal text-slate-400">(Last 7 Days)</span>
             </h3>
             <div className="space-y-3.5">
-              {DATA_CLASSES.map((item) => (
+              {liveDataClasses.map((item) => (
                 <div key={item.name} className="flex items-center justify-between gap-3 text-xs">
                   <span className="w-28 shrink-0 font-bold text-slate-800 truncate">{item.name}</span>
                   <div className="flex-1 flex items-center px-1">
@@ -524,7 +630,7 @@ export default function Overview() {
               Top AI Tools by Usage <span className="font-normal text-slate-400">(Last 7 Days)</span>
             </h3>
             <div className="space-y-3.5">
-              {AI_TOOLS.map((tool) => (
+              {liveAiTools.map((tool) => (
                 <div key={tool.name} className="flex items-center justify-between gap-3 text-xs">
                   <span className="w-36 shrink-0 font-bold text-slate-800 truncate">
                     {tool.name} {tool.domain && <span className="text-slate-400 font-normal text-[11px]">({tool.domain})</span>}
@@ -567,7 +673,7 @@ export default function Overview() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {TOP_RISK_USERS.map((user) => (
+                  {liveTopUsers.map((user) => (
                     <tr key={user.name}>
                       <td className="py-2.5 font-bold text-slate-800 text-left">{user.name}</td>
                       <td className="py-2.5 text-slate-600 text-left">{user.dept}</td>
@@ -618,7 +724,7 @@ export default function Overview() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 align-middle">
-              {RECENT_HIGH_RISK.map((row, idx) => (
+              {liveRecentLogs.map((row, idx) => (
                 <tr key={idx} className="hover:bg-slate-50/50">
                   <td className="px-3 py-3.5 whitespace-nowrap text-slate-500 text-left font-normal">{row.ts}</td>
                   <td className="px-3 py-3.5 whitespace-nowrap font-bold text-slate-800 text-left">{row.user}</td>
