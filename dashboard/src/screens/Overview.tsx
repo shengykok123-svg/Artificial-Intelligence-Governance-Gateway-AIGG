@@ -81,12 +81,12 @@ const RECENT_HIGH_RISK = [
     sensTone: "text-rose-600 font-semibold",
     cross: "Yes (88%)",
     crossTone: "text-rose-600 font-semibold",
-    verdict: "HOLD",
-    verdictBadge: "bg-amber-100 text-amber-800 border border-amber-200",
+    verdict: "Hold",
+    verdictBadge: "bg-amber-100/80 text-amber-800 border border-amber-200",
     status: "Pending",
-    statusBadge: "bg-blue-100 text-blue-700",
+    statusBadge: "bg-blue-100/80 text-blue-800 border border-blue-200",
     risk: "High",
-    riskBadge: "bg-rose-100 text-rose-700",
+    riskBadge: "bg-rose-100/80 text-rose-800 border border-rose-200",
   },
   {
     ts: "12 May 2025, 09:58 AM",
@@ -100,12 +100,12 @@ const RECENT_HIGH_RISK = [
     sensTone: "text-rose-600 font-semibold",
     cross: "Yes (81%)",
     crossTone: "text-rose-600 font-semibold",
-    verdict: "DENY",
-    verdictBadge: "bg-rose-100 text-rose-800 border border-rose-200",
+    verdict: "Deny",
+    verdictBadge: "bg-rose-100/80 text-rose-800 border border-rose-200",
     status: "Reviewed",
-    statusBadge: "bg-emerald-100 text-emerald-700",
+    statusBadge: "bg-emerald-100/80 text-emerald-800 border border-emerald-200",
     risk: "High",
-    riskBadge: "bg-rose-100 text-rose-700",
+    riskBadge: "bg-rose-100/80 text-rose-800 border border-rose-200",
   },
   {
     ts: "12 May 2025, 09:33 AM",
@@ -119,12 +119,12 @@ const RECENT_HIGH_RISK = [
     sensTone: "text-amber-600 font-semibold",
     cross: "No (22%)",
     crossTone: "text-emerald-600 font-semibold",
-    verdict: "REDACT",
-    verdictBadge: "bg-orange-100 text-orange-800 border border-orange-200",
+    verdict: "Redact",
+    verdictBadge: "bg-amber-100/80 text-amber-800 border border-amber-200",
     status: "Reviewed",
-    statusBadge: "bg-emerald-100 text-emerald-700",
+    statusBadge: "bg-emerald-100/80 text-emerald-800 border border-emerald-200",
     risk: "Medium",
-    riskBadge: "bg-amber-100 text-amber-700",
+    riskBadge: "bg-amber-100/80 text-amber-800 border border-amber-200",
   },
   {
     ts: "12 May 2025, 09:10 AM",
@@ -138,12 +138,12 @@ const RECENT_HIGH_RISK = [
     sensTone: "text-rose-600 font-semibold",
     cross: "Yes (76%)",
     crossTone: "text-rose-600 font-semibold",
-    verdict: "HOLD",
-    verdictBadge: "bg-amber-100 text-amber-800 border border-amber-200",
+    verdict: "Hold",
+    verdictBadge: "bg-amber-100/80 text-amber-800 border border-amber-200",
     status: "Pending",
-    statusBadge: "bg-blue-100 text-blue-700",
+    statusBadge: "bg-blue-100/80 text-blue-800 border border-blue-200",
     risk: "High",
-    riskBadge: "bg-rose-100 text-rose-700",
+    riskBadge: "bg-rose-100/80 text-rose-800 border border-rose-200",
   },
   {
     ts: "12 May 2025, 08:55 AM",
@@ -157,12 +157,12 @@ const RECENT_HIGH_RISK = [
     sensTone: "text-emerald-600 font-semibold",
     cross: "No (9%)",
     crossTone: "text-emerald-600 font-semibold",
-    verdict: "ALLOW",
-    verdictBadge: "bg-emerald-100 text-emerald-800 border border-emerald-200",
+    verdict: "Allow",
+    verdictBadge: "bg-emerald-100/80 text-emerald-800 border border-emerald-200",
     status: "Reviewed",
-    statusBadge: "bg-emerald-100 text-emerald-700",
+    statusBadge: "bg-emerald-100/80 text-emerald-800 border border-emerald-200",
     risk: "Low",
-    riskBadge: "bg-emerald-100 text-emerald-700",
+    riskBadge: "bg-emerald-100/80 text-emerald-800 border border-emerald-200",
   },
 ];
 
@@ -613,17 +613,17 @@ export default function Overview() {
                   <td className={`px-3 py-3.5 whitespace-nowrap text-center ${row.sensTone}`}>{row.sensitivity}</td>
                   <td className={`px-3 py-3.5 whitespace-nowrap text-center ${row.crossTone}`}>{row.cross}</td>
                   <td className="px-3 py-3.5 whitespace-nowrap text-center">
-                    <span className={`inline-block rounded-md px-2.5 py-1 text-[11px] font-bold ${row.verdictBadge}`}>
+                    <span className={`inline-flex items-center justify-center min-w-[72px] h-6 rounded-md px-2.5 text-xs font-semibold leading-none ${row.verdictBadge}`}>
                       {row.verdict}
                     </span>
                   </td>
                   <td className="px-3 py-3.5 whitespace-nowrap text-center">
-                    <span className={`inline-block rounded-md px-2.5 py-1 text-[11px] font-semibold ${row.statusBadge}`}>
+                    <span className={`inline-flex items-center justify-center min-w-[72px] h-6 rounded-md px-2.5 text-xs font-semibold leading-none ${row.statusBadge}`}>
                       {row.status}
                     </span>
                   </td>
                   <td className="px-3 py-3.5 whitespace-nowrap text-center">
-                    <span className={`inline-block rounded-md px-2.5 py-1 text-[11px] font-bold ${row.riskBadge}`}>
+                    <span className={`inline-flex items-center justify-center min-w-[72px] h-6 rounded-md px-2.5 text-xs font-semibold leading-none ${row.riskBadge}`}>
                       {row.risk}
                     </span>
                   </td>
