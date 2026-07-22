@@ -480,9 +480,11 @@ export default function AuditLog() {
   const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  const isSearching = Boolean(search.trim());
+
   const logs = useLogsQuery({
-    limit: pageSize,
-    offset,
+    limit: isSearching ? 1000 : pageSize,
+    offset: isSearching ? 0 : offset,
     decision: decision || undefined,
     status: status || undefined,
     cross_department_only: crossFilter === "Yes" ? true : undefined,
@@ -491,8 +493,8 @@ export default function AuditLog() {
 
   const rawItems = logs.data?.items ?? [];
 
-  const items = useMemo(() => {
-    if (!search.trim()) return rawItems;
+  const filteredLogs = useMemo(() => {
+    if (!isSearching) return rawItems;
     const q = search.toLowerCase().trim();
     return rawItems.filter((row) => {
       const toolMeta = getToolMeta(row.target_host);
@@ -508,9 +510,10 @@ export default function AuditLog() {
         (row.filename && row.filename.toLowerCase().includes(q))
       );
     });
-  }, [rawItems, search]);
+  }, [rawItems, search, isSearching]);
 
-  const total = search.trim() ? items.length : (logs.data?.total ?? rawItems.length);
+  const total = isSearching ? filteredLogs.length : (logs.data?.total ?? rawItems.length);
+  const items = isSearching ? filteredLogs.slice(offset, offset + pageSize) : filteredLogs;
   const selected = items.find((item) => item.log_id === selectedId) ?? (items.length > 0 ? items[0] : null);
   const toolByHost = useMemo(() => new Map((tools.data ?? []).map((tool) => [tool.host, tool])), [tools.data]);
 
