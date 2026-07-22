@@ -582,7 +582,6 @@ export default function AuditLog() {
                   <th className="px-4 py-3 whitespace-nowrap">
                     Cross Department (Confidence) <span className="text-slate-400 font-normal">ⓘ</span>
                   </th>
-                  <th className="px-4 py-3 text-right">Risk Level</th>
                 </tr>
               </thead>
 
@@ -693,11 +692,6 @@ export default function AuditLog() {
                         <span className={`block text-[11px] ${cross ? "text-rose-600 font-bold" : "text-slate-400"}`}>
                           {cross ? `${crossConf}%` : "15%"}
                         </span>
-                      </td>
-
-                      {/* 10. Risk Level */}
-                      <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                        <RiskLevelBadge decision={row.decision} cross={cross} />
                       </td>
                     </tr>
                   );
