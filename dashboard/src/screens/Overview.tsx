@@ -69,8 +69,9 @@ function formatUserName(email: string) {
 function getOldestPendingInfo(pendingItems?: AuditRecord[]) {
   if (!pendingItems || pendingItems.length === 0) {
     return {
-      durationText: "18 minutes",
-      sinceText: "Since 12 May 2025, 10:18 AM",
+      durationText: "None",
+      sinceText: "No pending requests",
+      hasPending: false,
     };
   }
 
@@ -88,14 +89,17 @@ function getOldestPendingInfo(pendingItems?: AuditRecord[]) {
   if (days > 0) {
     durationText = `${days} day${days > 1 ? "s" : ""} ${hours % 24} hr${hours % 24 > 1 ? "s" : ""}`;
   } else if (hours > 0) {
-    durationText = `${hours} hour${hours > 1 ? "s" : ""} ${totalMins % 60} min${totalMins % 60 > 1 ? "s" : ""}`;
+    durationText = `${hours} hr${hours > 1 ? "s" : ""} ${totalMins % 60} min`;
   } else {
-    durationText = `${Math.max(1, totalMins)} minutes`;
+    durationText = `${totalMins} min`;
   }
+
+  const formattedTs = formatTs(oldest.ts);
 
   return {
     durationText,
-    sinceText: `Since ${formatTs(oldest.ts)}`,
+    sinceText: `Since ${formattedTs}`,
+    hasPending: true,
   };
 }
 
@@ -629,17 +633,29 @@ export default function Overview() {
           </div>
 
           {/* Bottom Alert Banner */}
-          <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50/70 p-3 text-xs">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-100/90 text-rose-600 font-bold text-sm">
-              ⏰
-            </div>
-            <div>
-              <div className="text-slate-700 font-semibold">Oldest request waiting</div>
-              <div className="text-rose-600 font-bold">
-                {oldestPendingInfo.durationText} <span className="text-slate-400 font-normal">{oldestPendingInfo.sinceText}</span>
+          {oldestPendingInfo.hasPending ? (
+            <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50/70 p-3 text-xs">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-100/90 text-rose-600 font-bold text-sm">
+                ⏰
+              </div>
+              <div>
+                <div className="text-slate-700 font-semibold">Oldest request waiting</div>
+                <div className="text-rose-600 font-bold">
+                  {oldestPendingInfo.durationText} <span className="text-slate-400 font-normal">{oldestPendingInfo.sinceText}</span>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 text-xs">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100/90 text-emerald-600 font-bold text-sm">
+                ✓
+              </div>
+              <div>
+                <div className="text-slate-700 font-semibold">All requests reviewed</div>
+                <div className="text-emerald-600 font-bold">No pending requests in queue</div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Cross-department Activity Donut */}
