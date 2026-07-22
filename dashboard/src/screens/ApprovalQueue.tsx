@@ -566,41 +566,60 @@ export default function ApprovalQueue() {
                       </div>
                     </div>
 
-                    {/* Key Risk Indicators Row (5 Columns) */}
-                    <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
+                    {/* Key Risk Indicators Row (5 Individual Sub-cards) */}
+                    <div className="space-y-2.5">
                       <h4 className="text-xs font-bold text-slate-900">Key Risk Indicators</h4>
-                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5 text-xs">
-                        <div>
-                          <div className="text-slate-500 text-[11px] font-medium">Document Similarity Detect</div>
-                          <div className="text-lg font-bold text-rose-600 mt-0.5">87%</div>
-                          <div className="text-xs font-semibold text-rose-600">High</div>
-                        </div>
-
-                        <div>
-                          <div className="text-slate-500 text-[11px] font-medium">Predicted Content Department</div>
-                          <div className="text-sm font-bold text-slate-900 mt-1">
-                            {selected.content_department ?? "HR"} ({Math.round((selected.department_confidence ?? 0.92) * 100)}%)
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-5 text-xs">
+                        {/* Card 1 */}
+                        <div className="rounded-xl border border-slate-200/90 bg-white p-3.5 shadow-sm flex flex-col justify-between space-y-3">
+                          <div className="text-slate-500 text-[11px] font-medium leading-snug">
+                            Document Similarity Detect
+                          </div>
+                          <div>
+                            <div className="text-base font-bold text-rose-600">87%</div>
+                            <div className="text-xs font-bold text-rose-600">High</div>
                           </div>
                         </div>
 
-                        <div>
-                          <div className="text-slate-500 text-[11px] font-medium">Confidential Sensitivity Score</div>
-                          <div className="text-lg font-bold text-rose-600 mt-0.5">
-                            {(selected.m9_sensitivity_confidence ?? 0.91).toFixed(2)}
+                        {/* Card 2 */}
+                        <div className="rounded-xl border border-slate-200/90 bg-white p-3.5 shadow-sm flex flex-col justify-between space-y-3">
+                          <div className="text-slate-500 text-[11px] font-medium leading-snug">
+                            Predicted Content Department
                           </div>
-                          <div className="text-xs font-semibold text-rose-600">High</div>
+                          <div className="text-sm font-bold text-slate-900">
+                            {(selected.content_department ?? "HR").toUpperCase()} ({Math.round((selected.department_confidence ?? 0.92) * 100)}%)
+                          </div>
                         </div>
 
-                        <div>
-                          <div className="text-slate-500 text-[11px] font-medium">Cross Department (Confidence)</div>
-                          <div className="text-sm font-bold text-rose-600 mt-1">
+                        {/* Card 3 */}
+                        <div className="rounded-xl border border-slate-200/90 bg-white p-3.5 shadow-sm flex flex-col justify-between space-y-3">
+                          <div className="text-slate-500 text-[11px] font-medium leading-snug">
+                            Confidential Sensitivity Score
+                          </div>
+                          <div>
+                            <div className="text-base font-bold text-rose-600">
+                              {(selected.m9_sensitivity_confidence ?? 0.91).toFixed(2)}
+                            </div>
+                            <div className="text-xs font-bold text-rose-600">High</div>
+                          </div>
+                        </div>
+
+                        {/* Card 4 */}
+                        <div className="rounded-xl border border-slate-200/90 bg-white p-3.5 shadow-sm flex flex-col justify-between space-y-3">
+                          <div className="text-slate-500 text-[11px] font-medium leading-snug">
+                            Cross Department (Confidence)
+                          </div>
+                          <div className="text-sm font-bold text-rose-600">
                             Yes ({Math.round(((selected.cross_department_confidence ?? selected.department_confidence) ?? 0.88) * 100)}%)
                           </div>
                         </div>
 
-                        <div>
-                          <div className="text-slate-500 text-[11px] font-medium">Risk Level</div>
-                          <div className="text-lg font-bold text-rose-600 mt-0.5">High</div>
+                        {/* Card 5 */}
+                        <div className="rounded-xl border border-slate-200/90 bg-white p-3.5 shadow-sm flex flex-col justify-between space-y-3">
+                          <div className="text-slate-500 text-[11px] font-medium leading-snug">
+                            Risk Level
+                          </div>
+                          <div className="text-sm font-bold text-rose-600">High</div>
                         </div>
                       </div>
                     </div>
