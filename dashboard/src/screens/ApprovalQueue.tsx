@@ -46,6 +46,14 @@ function formatWaitLabel(ts: string): string {
   return `${days}d waiting`;
 }
 
+function collapseBlankLines(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function formatUserName(email: string): string {
   if (!email) return "Unknown User";
   const prefix = email.split("@")[0];
@@ -675,8 +683,8 @@ export default function ApprovalQueue() {
                 {activeTab === "content" && (
                   <div className="space-y-3">
                     <h4 className="text-xs font-bold text-slate-900">Full Prompt Text</h4>
-                    <div className="rounded-xl border border-slate-200 bg-slate-900 p-4 font-mono text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
-                      {selected.prompt_text}
+                    <div className="rounded-xl border border-slate-200 bg-slate-900 p-4 font-mono text-xs text-slate-200 leading-relaxed whitespace-pre-wrap max-h-[550px] overflow-y-auto">
+                      {collapseBlankLines(selected.prompt_text)}
                     </div>
                   </div>
                 )}
