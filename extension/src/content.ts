@@ -645,11 +645,11 @@ function init(site: SiteKey): void {
     capturedAttachments = stillVisible;
   }
 
-  function removeBannerSoon(expectedText: string): void {
+  function removeBannerSoon(expectedText: string, ms = 8_000): void {
     window.setTimeout(() => {
       const banner = document.getElementById("aigg-banner");
       if (banner?.textContent?.includes(expectedText)) removeBanner();
-    }, 3_000);
+    }, ms);
   }
 
   function replaySend(composer: HTMLElement, replay: ReplayContext): void {
