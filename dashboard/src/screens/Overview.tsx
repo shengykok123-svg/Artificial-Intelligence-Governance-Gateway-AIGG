@@ -44,20 +44,20 @@ const TREND_DATA = [
 ];
 
 const DATA_CLASSES = [
-  { name: "PERSON (Name)", count: 612, pct: "31.4%" },
-  { name: "EMAIL", count: 487, pct: "25.0%" },
-  { name: "SALARY", count: 312, pct: "16.0%" },
-  { name: "PHONE", count: 221, pct: "11.3%" },
-  { name: "BANK_ACCT", count: 148, pct: "7.6%" },
-  { name: "API_KEY", count: 68, pct: "3.5%" },
+  { name: "PERSON (Name)", count: 612, pct: "31.4%", barPct: "100%" },
+  { name: "EMAIL", count: 487, pct: "25.0%", barPct: "79.6%" },
+  { name: "SALARY", count: 312, pct: "16.0%", barPct: "51.0%" },
+  { name: "PHONE", count: 221, pct: "11.3%", barPct: "36.1%" },
+  { name: "BANK_ACCT", count: 148, pct: "7.6%", barPct: "24.2%" },
+  { name: "API_KEY", count: 68, pct: "3.5%", barPct: "11.1%" },
 ];
 
 const AI_TOOLS = [
-  { name: "ChatGPT", domain: "chatgpt.com", count: "1,102", pct: "56.6%" },
-  { name: "Gemini", domain: "gemini.google.com", count: "564", pct: "29.0%" },
-  { name: "Microsoft Copilot", domain: "copilot.microsoft.com", count: "184", pct: "9.4%" },
-  { name: "Claude", domain: "claude.ai", count: "68", pct: "3.5%" },
-  { name: "Other / Unlisted", domain: "", count: "30", pct: "1.5%" },
+  { name: "ChatGPT", domain: "chatgpt.com", count: "1,102", pct: "56.6%", barPct: "100%" },
+  { name: "Gemini", domain: "gemini.google.com", count: "564", pct: "29.0%", barPct: "51.2%" },
+  { name: "Microsoft Copilot", domain: "copilot.microsoft.com", count: "184", pct: "9.4%", barPct: "16.6%" },
+  { name: "Claude", domain: "claude.ai", count: "68", pct: "3.5%", barPct: "6.2%" },
+  { name: "Other / Unlisted", domain: "", count: "30", pct: "1.5%", barPct: "2.7%" },
 ];
 
 const TOP_RISK_USERS = [
@@ -480,10 +480,10 @@ export default function Overview() {
               {DATA_CLASSES.map((item) => (
                 <div key={item.name} className="flex items-center justify-between gap-3 text-xs">
                   <span className="w-28 shrink-0 font-bold text-slate-800 truncate">{item.name}</span>
-                  <div className="flex-1 max-w-[140px]">
+                  <div className="flex-1 flex items-center px-1">
                     <div
-                      className="h-2.5 rounded-full bg-emerald-700"
-                      style={{ width: item.pct }}
+                      className="h-1.5 rounded-full bg-emerald-700 min-w-[4px]"
+                      style={{ width: item.barPct }}
                     />
                   </div>
                   <span className="shrink-0 text-right font-semibold text-slate-800">
@@ -513,10 +513,10 @@ export default function Overview() {
                   <span className="w-36 shrink-0 font-bold text-slate-800 truncate">
                     {tool.name} {tool.domain && <span className="text-slate-400 font-normal text-[11px]">({tool.domain})</span>}
                   </span>
-                  <div className="flex-1 max-w-[120px]">
+                  <div className="flex-1 flex items-center px-1">
                     <div
-                      className="h-2.5 rounded-full bg-emerald-700"
-                      style={{ width: tool.pct }}
+                      className="h-1.5 rounded-full bg-emerald-700 min-w-[4px]"
+                      style={{ width: tool.barPct }}
                     />
                   </div>
                   <span className="shrink-0 text-right font-semibold text-slate-800">
